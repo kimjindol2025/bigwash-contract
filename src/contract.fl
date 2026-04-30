@@ -1,6 +1,6 @@
 ;;; Contract Management Logic
 
-(load "db.fl")
+(load "/root/bigwash-contract/src/db.fl")
 
 ;;; Status constants
 (define STATUS-DRAFT "DRAFT")
@@ -9,123 +9,101 @@
 (define STATUS-COMPLETED "COMPLETED")
 (define STATUS-CANCELLED "CANCELLED")
 
+;;; Generate contract number
+(defn generate-contract-number []
+  (let [[ts (now_ms)]
+        [rand-val (+ 1000 (floor (* (random) 8999)))]]
+    (str "CTR-" ts "-" rand-val)))
+
+;;; Validate status transition
+(defn valid-transition? [from to]
+  (cond
+    [(= from STATUS-DRAFT)
+     (or (= to STATUS-PENDING) (= to STATUS-CANCELLED))]
+    [(= from STATUS-PENDING)
+     (or (= to STATUS-APPROVED) (= to STATUS-CANCELLED))]
+    [(= from STATUS-APPROVED)
+     (or (= to STATUS-COMPLETED) (= to STATUS-CANCELLED))]
+    [true false]))
+
 ;;; Create new contract
-(define (create-contract client-id amount items)
-  (let ((conn (get-conn))
-        (contract-num (generate-contract-number)))
+(defn create-contract [client-id amount items]
+  (let [[db (get-db)]
+        [contract-num (generate-contract-number)]]
     (try
       (do
         ;; Insert contract
-        (sqlite-exec conn
-          (format "INSERT INTO contracts (number, status, client_id, amount) 
-                   VALUES (?, ?, ?, ?)"
-                  contract-num STATUS-DRAFT client-id amount))
+        (db_exec db
+          "INSERT INTO contracts (number, status, client_id, amount) VALUES (?, ?, ?, ?)"
+          [contract-num STATUS-DRAFT client-id amount])
         
         ;; Get contract ID
-        (let ((contract-id 
-               (car (sqlite-query conn 
-                 "SELECT id FROM contracts WHERE number = ?" contract-num))))
-          
-          ;; Insert items
-          (for-each 
-            (lambda (item)
-              (sqlite-exec conn
-                (format "INSERT INTO contract_items 
-                        (contract_id, description, quantity, unit_price, subtotal)
-                        VALUES (?, ?, ?, ?, ?)"
-                        contract-id
-                        (get item "description")
-                        (get item "quantity")
-                        (get item "unit_price")
-                        (* (get item "quantity") (get item "unit_price")))))
-            items)
-          
-          (sqlite-close conn)
-          (dict "id" contract-id "number" contract-num "status" STATUS-DRAFT)))
+        (let [[rows (db_query db "SELECT id FROM contracts WHERE number = ?" [contract-num])]]
+          (if (= (length rows) 0) (error "Failed to retrieve contract ID"))
+          (let [[contract-id (get (first rows) "id")]]
+            
+            ;; Insert items
+            (map 
+              (fn [item]
+                (db_exec db
+                  "INSERT INTO contract_items (contract_id, description, quantity, unit_price, subtotal)
+                   VALUES (?, ?, ?, ?, ?)"
+                  [contract-id
+                   (get item "description")
+                   (get item "quantity")
+                   (get item "unit_price")
+                   (* (get item "quantity") (get item "unit_price"))]))
+              items)
+            
+            {:id contract-id :number contract-num :status STATUS-DRAFT})))
       
-      (catch (e)
-        (sqlite-close conn)
-        (throw (dict "error" (to-string e)))))))
+      (catch [e]
+        (error (str "Contract creation failed"))))))
 
 ;;; Update contract status
-(define (update-status contract-id new-status)
-  (let ((conn (get-conn)))
+(defn update-status [contract-id new-status]
+  (let [[db (get-db)]]
     (try
       (do
         ;; Get current status
-        (let ((current-status 
-               (car (sqlite-query conn 
-                 "SELECT status FROM contracts WHERE id = ?" contract-id))))
-          
-          ;; Validate status transition
-          (if (not (valid-transition? current-status new-status))
-            (throw "Invalid status transition"))
-          
-          ;; Update status
-          (sqlite-exec conn
-            (format "UPDATE contracts SET status = ?, updated_at = CURRENT_TIMESTAMP 
-                     WHERE id = ?" new-status contract-id))
-          
-          ;; Log history
-          (sqlite-exec conn
-            (format "INSERT INTO contract_history 
-                    (contract_id, old_status, new_status)
-                    VALUES (?, ?, ?)"
-                    contract-id current-status new-status))
-          
-          (sqlite-close conn)
-          (dict "success" true "old_status" current-status "new_status" new-status)))
+        (let [[rows (db_query db "SELECT status FROM contracts WHERE id = ?" [contract-id])]]
+          (if (= (length rows) 0) (error "Contract not found"))
+          (let [[current-status (get (first rows) "status")]]
+            
+            ;; Validate status transition
+            (if (not (valid-transition? current-status new-status))
+              (error (str "Invalid status transition")))
+            
+            ;; Update status
+            (db_exec db
+              "UPDATE contracts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+              [new-status contract-id])
+            
+            ;; Log history
+            (db_exec db
+              "INSERT INTO contract_history (contract_id, old_status, new_status) VALUES (?, ?, ?)"
+              [contract-id current-status new-status])
+            
+            {:success true :old_status current-status :new_status new-status})))
       
-      (catch (e)
-        (sqlite-close conn)
-        (throw (dict "error" (to-string e)))))))
-
-;;; Validate status transition
-(define (valid-transition? from to)
-  (cond
-    ((= from STATUS-DRAFT)
-     (or (= to STATUS-PENDING) (= to STATUS-CANCELLED)))
-    ((= from STATUS-PENDING)
-     (or (= to STATUS-APPROVED) (= to STATUS-CANCELLED)))
-    ((= from STATUS-APPROVED)
-     (or (= to STATUS-COMPLETED) (= to STATUS-CANCELLED)))
-    (else false)))
+      (catch [e]
+        (error (str "Update status failed"))))))
 
 ;;; Get contract by ID
-(define (get-contract contract-id)
-  (let ((conn (get-conn)))
+(defn get-contract [contract-id]
+  (let [[db (get-db)]]
     (try
-      (let ((contract 
-             (car (sqlite-query conn
-               "SELECT * FROM contracts WHERE id = ?" contract-id)))
-            (items 
-             (sqlite-query conn
-               "SELECT * FROM contract_items WHERE contract_id = ?" contract-id)))
-        (sqlite-close conn)
-        (dict "contract" contract "items" items))
-      
-      (catch (e)
-        (sqlite-close conn)
-        (throw (dict "error" (to-string e)))))))
-
-;;; Generate contract number
-(define (generate-contract-number)
-  (let ((timestamp (to-string (current-time))))
-    (format "CTR-%s-%d" 
-            (substring timestamp 0 8)
-            (random 10000 99999))))
+      (let [[contract-rows (db_query db "SELECT * FROM contracts WHERE id = ?" [contract-id])]
+            [item-rows (db_query db "SELECT * FROM contract_items WHERE contract_id = ?" [contract-id])]]
+        (if (= (length contract-rows) 0) (error "Contract not found"))
+        {:contract (first contract-rows) :items item-rows})
+      (catch [e]
+        (error (str "Get contract failed"))))))
 
 ;;; List contracts by status
-(define (list-contracts status)
-  (let ((conn (get-conn)))
+(defn list-contracts [status]
+  (let [[db (get-db)]]
     (try
-      (let ((contracts 
-             (sqlite-query conn
-               "SELECT * FROM contracts WHERE status = ? ORDER BY created_at DESC" 
-               status)))
-        (sqlite-close conn)
-        contracts)
-      
-      (catch (e)
-        (sqlite-close conn)
-        (throw (dict "error" (to-string e)))))))
+      (db_query db "SELECT * FROM contracts WHERE status = ? ORDER BY created_at DESC" [status])
+      (catch [e]
+        (error (str "List contracts failed"))))))

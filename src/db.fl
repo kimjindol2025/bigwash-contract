@@ -3,10 +3,10 @@
 (define DB "/root/bigwash-contract/db/contracts.sqlite")
 
 ;;; Initialize database
-(define (init-db)
-  (let ((conn (sqlite-open DB)))
+(defn init-db []
+  (do
     ;; Contracts table
-    (sqlite-exec conn
+    (db_exec DB
       "CREATE TABLE IF NOT EXISTS contracts (
         id INTEGER PRIMARY KEY,
         number TEXT UNIQUE NOT NULL,
@@ -18,7 +18,7 @@
       )")
     
     ;; Contract items table
-    (sqlite-exec conn
+    (db_exec DB
       "CREATE TABLE IF NOT EXISTS contract_items (
         id INTEGER PRIMARY KEY,
         contract_id INTEGER NOT NULL,
@@ -30,7 +30,7 @@
       )")
     
     ;; Audit log
-    (sqlite-exec conn
+    (db_exec DB
       "CREATE TABLE IF NOT EXISTS contract_history (
         id INTEGER PRIMARY KEY,
         contract_id INTEGER NOT NULL,
@@ -40,14 +40,9 @@
         FOREIGN KEY(contract_id) REFERENCES contracts(id)
       )")
     
-    (sqlite-close conn)
-    (print "✓ Database initialized")))
+    (println "✓ Database initialized")))
 
 ;;; Utility functions
-(define (get-conn)
-  (sqlite-open DB))
-
-(define (close-conn conn)
-  (sqlite-close conn))
+(defn get-db [] DB)
 
 (init-db)

@@ -1,0 +1,51 @@
+;;; Contract API Server
+
+(load "/root/bigwash-contract/src/contract.fl")
+
+;;; Handlers
+(defn handle-list-contracts [req]
+  (let [[status (server_req_query req "status")]]
+    (if (nil? status)
+      (server_json {:ok true :data (list-contracts "DRAFT")})
+      (server_json {:ok true :data (list-contracts status)}))))
+
+(defn handle-get-contract [req]
+  (let [[params (server_req_params req)]
+        [id (get params "id")]]
+    (try
+      (server_json {:ok true :data (get-contract id)})
+      (catch [e]
+        (server_status 404 {:ok false :error "Contract not found"})))))
+
+(defn handle-create-contract [req]
+  (let [[body (server_req_body req)]
+        [client-id (get body "client_id")]
+        [amount (get body "amount")]
+        [items (get body "items")]]
+    (try
+      (let [[result (create-contract client-id amount items)]]
+        (server_json {:ok true :data result}))
+      (catch [e]
+        (server_status 400 {:ok false :error "Failed to create contract"})))))
+
+(defn handle-update-status [req]
+  (let [[params (server_req_params req)]
+        [id (get params "id")]
+        [body (server_req_body req)]
+        [new-status (get body "status")]]
+    (try
+      (let [[result (update-status id new-status)]]
+        (server_json {:ok true :data result}))
+      (catch [e]
+        (server_status 400 {:ok false :error "Failed to update status"})))))
+
+;;; Routes
+(server_get    "/contracts"      "handle-list-contracts")
+(server_get    "/contracts/:id"  "handle-get-contract")
+(server_post   "/contracts"      "handle-create-contract")
+(server_put    "/contracts/:id"  "handle-update-status")
+
+;;; Start Server
+(define PORT 40100)
+(println (str "🚀 Contract API Server starting on port " PORT))
+(server_start PORT)
