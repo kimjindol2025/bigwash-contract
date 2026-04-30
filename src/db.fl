@@ -1,0 +1,53 @@
+;;; Database Schema for BigWash Contract System
+
+(define DB "/root/bigwash-contract/db/contracts.sqlite")
+
+;;; Initialize database
+(define (init-db)
+  (let ((conn (sqlite-open DB)))
+    ;; Contracts table
+    (sqlite-exec conn
+      "CREATE TABLE IF NOT EXISTS contracts (
+        id INTEGER PRIMARY KEY,
+        number TEXT UNIQUE NOT NULL,
+        status TEXT DEFAULT 'DRAFT',
+        client_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )")
+    
+    ;; Contract items table
+    (sqlite-exec conn
+      "CREATE TABLE IF NOT EXISTS contract_items (
+        id INTEGER PRIMARY KEY,
+        contract_id INTEGER NOT NULL,
+        description TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        unit_price REAL NOT NULL,
+        subtotal REAL NOT NULL,
+        FOREIGN KEY(contract_id) REFERENCES contracts(id)
+      )")
+    
+    ;; Audit log
+    (sqlite-exec conn
+      "CREATE TABLE IF NOT EXISTS contract_history (
+        id INTEGER PRIMARY KEY,
+        contract_id INTEGER NOT NULL,
+        old_status TEXT,
+        new_status TEXT,
+        changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(contract_id) REFERENCES contracts(id)
+      )")
+    
+    (sqlite-close conn)
+    (print "✓ Database initialized")))
+
+;;; Utility functions
+(define (get-conn)
+  (sqlite-open DB))
+
+(define (close-conn conn)
+  (sqlite-close conn))
+
+(init-db)
