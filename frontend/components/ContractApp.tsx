@@ -1,241 +1,234 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import styles from '../styles/contract-app.module.css';
 
+// 타입 정의
 interface ContractItem {
-  id: string;
-  description: string;
+  id: number;
+  productName: string;
   quantity: number;
   unitPrice: number;
-}
-
-interface ContractData {
-  number: string;
-  clientId: number;
-  clientName: string;
-  items: ContractItem[];
   amount: number;
-  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'COMPLETED' | 'CANCELLED';
 }
 
-export default function ContractApp() {
-  const [currentPage, setCurrentPage] = useState('dashboard');
-  const [contracts, setContracts] = useState<ContractData[]>([]);
-  const [newContract, setNewContract] = useState<Partial<ContractData>>({
-    items: [],
-    status: 'DRAFT'
-  });
+interface Contract {
+  id: string;
+  type: string;
+  status: 'draft' | 'sent' | 'signed' | 'completed';
+  client: string;
+  amount: string;
+  date: string;
+}
 
-  const handleCreateContract = () => {
-    if (newContract.clientName && newContract.items?.length > 0) {
-      const total = newContract.items.reduce(
-        (sum, item) => sum + item.quantity * item.unitPrice,
-        0
-      );
-      const contract: ContractData = {
-        number: `CTR-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        clientId: newContract.clientId || 0,
-        clientName: newContract.clientName || '',
-        items: newContract.items || [],
-        amount: total,
-        status: 'DRAFT'
-      };
-      setContracts([...contracts, contract]);
-      setNewContract({ items: [], status: 'DRAFT' });
-      setCurrentPage('dashboard');
-    }
-  };
+// 헤더 컴포넌트
+function Header() {
+  return (
+    <header className={styles.header}>
+      <div className={styles.headerContainer}>
+        <div className={styles.logoSection}>
+          <div className={styles.logo}>
+            <span className={styles.logoIcon}>⚡</span>
+            <span className={styles.logoText}>BigWash</span>
+          </div>
+          <span className={styles.logoSubtext}>계약관리</span>
+        </div>
+        <nav className={styles.nav}>
+          <a href="#" className={styles.navLink}>계약서 관리</a>
+          <a href="#" className={styles.navLink}>거래명세서</a>
+          <a href="#" className={styles.navLink}>설정</a>
+        </nav>
+        <div className={styles.userSection}>
+          <button className={styles.notificationBtn}>
+            <span className={styles.notificationIcon}>🔔</span>
+            <span className={styles.badge}>2</span>
+          </button>
+          <div className={styles.userAvatar}>KC</div>
+        </div>
+      </div>
+    </header>
+  );
+}
 
-  const handleAddItem = () => {
-    setNewContract({
-      ...newContract,
-      items: [
-        ...(newContract.items || []),
-        {
-          id: `item-${Date.now()}`,
-          description: '',
-          quantity: 1,
-          unitPrice: 0
-        }
-      ]
-    });
-  };
+// 대시보드 페이지
+function DashboardPage() {
+  const [filterStatus, setFilterStatus] = useState('all');
+
+  const contracts: Contract[] = [
+    {
+      id: 'BW-2026-0001',
+      client: '(주)세차마을 서울지점',
+      type: '장비공급',
+      amount: '₩8.5M',
+      status: 'signed',
+      date: '2026-04-28',
+    },
+    {
+      id: 'BW-2026-0002',
+      client: '강남 세차카페',
+      type: '설치시공',
+      amount: '₩12.3M',
+      status: 'sent',
+      date: '2026-04-25',
+    },
+  ];
 
   return (
-    <div className={styles.container}>
-      <header className={styles.header}>
-        <h1 className={styles.logo}>🏢 BigWash Contract</h1>
-        <nav className={styles.nav}>
-          <button
-            className={`${styles.navBtn} ${currentPage === 'dashboard' ? styles.active : ''}`}
-            onClick={() => setCurrentPage('dashboard')}
-          >
-            📊 Dashboard
-          </button>
-          <button
-            className={`${styles.navBtn} ${currentPage === 'new' ? styles.active : ''}`}
-            onClick={() => setCurrentPage('new')}
-          >
-            ✍️ New Contract
-          </button>
-        </nav>
-      </header>
+    <div className={styles.dashboardContainer}>
+      <div className={styles.actionBar}>
+        <div>
+          <h1 className={styles.pageTitle}>계약서 관리</h1>
+          <p className={styles.pageSubtitle}>2026년 4월 기준</p>
+        </div>
+        <button className={styles.btnPrimary}>
+          <span className={styles.btnIcon}>+</span>
+          새 계약서 작성
+        </button>
+      </div>
 
-      <main className={styles.main}>
-        {currentPage === 'dashboard' && (
-          <div className={styles.dashboard}>
-            <h2>계약 현황</h2>
-            <div className={styles.stats}>
-              <div className={styles.statCard}>
-                <span className={styles.statLabel}>전체 계약</span>
-                <span className={styles.statValue}>{contracts.length}</span>
-              </div>
-              <div className={styles.statCard}>
-                <span className={styles.statLabel}>진행 중</span>
-                <span className={styles.statValue}>
-                  {contracts.filter(c => c.status === 'PENDING' || c.status === 'DRAFT').length}
-                </span>
-              </div>
-              <div className={styles.statCard}>
-                <span className={styles.statLabel}>완료</span>
-                <span className={styles.statValue}>
-                  {contracts.filter(c => c.status === 'COMPLETED').length}
-                </span>
-              </div>
-            </div>
+      <div className={styles.statsGrid}>
+        <div className={`${styles.statCard} ${styles.statCardOrange}`}>
+          <div className={styles.statLabel}>진행 중</div>
+          <div className={styles.statValue}>12</div>
+          <div className={styles.statChange}>+2</div>
+        </div>
+        <div className={`${styles.statCard} ${styles.statCardWarning}`}>
+          <div className={styles.statLabel}>서명 대기</div>
+          <div className={styles.statValue}>5</div>
+        </div>
+        <div className={`${styles.statCard} ${styles.statCardSuccess}`}>
+          <div className={styles.statLabel}>완료</div>
+          <div className={styles.statValue}>127</div>
+          <div className={styles.statChange}>+8</div>
+        </div>
+      </div>
 
-            <div className={styles.contractList}>
-              <h3>최근 계약</h3>
-              {contracts.length === 0 ? (
-                <p className={styles.empty}>계약이 없습니다.</p>
-              ) : (
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th>계약번호</th>
-                      <th>고객명</th>
-                      <th>금액</th>
-                      <th>상태</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {contracts.map((contract) => (
-                      <tr key={contract.number}>
-                        <td className={styles.contractNumber}>{contract.number}</td>
-                        <td>{contract.clientName}</td>
-                        <td className={styles.amount}>₩{contract.amount.toLocaleString()}</td>
-                        <td>
-                          <span className={`${styles.status} ${styles[contract.status.toLowerCase()]}`}>
-                            {contract.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+      <div className={styles.listSection}>
+        <h2 className={styles.sectionTitle}>최근 계약서</h2>
+        <div className={styles.contractTable}>
+          <div className={styles.tableHeader}>
+            <div className={styles.colContractNo}>계약번호</div>
+            <div className={styles.colClient}>거래처</div>
+            <div className={styles.colType}>계약유형</div>
+            <div className={styles.colAmount}>계약액</div>
+            <div className={styles.colStatus}>상태</div>
           </div>
-        )}
+          {contracts.map((contract) => (
+            <div key={contract.id} className={styles.tableRow}>
+              <div className={styles.colContractNo}>
+                <span className={styles.contractNoHighlight}>{contract.id}</span>
+              </div>
+              <div className={styles.colClient}>{contract.client}</div>
+              <div className={styles.colType}>
+                <span className={styles.typeBadge}>{contract.type}</span>
+              </div>
+              <div className={styles.colAmount}>{contract.amount}</div>
+              <div className={styles.colStatus}>
+                <span className={styles[`status${contract.status.charAt(0).toUpperCase() + contract.status.slice(1)}`]}>
+                  {contract.status === 'draft' && '초안'}
+                  {contract.status === 'sent' && '발송됨'}
+                  {contract.status === 'signed' && '서명됨'}
+                  {contract.status === 'completed' && '완료'}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        {currentPage === 'new' && (
-          <div className={styles.formContainer}>
-            <h2>신규 계약 작성</h2>
-            <form className={styles.form}>
-              <div className={styles.formGroup}>
-                <label>고객명 *</label>
+// 신규 계약서 작성 페이지
+function NewContractPage() {
+  const [formData, setFormData] = useState({
+    type: 'supply',
+    clientName: '',
+    contractDate: new Date().toISOString().split('T')[0],
+  });
+
+  const [items, setItems] = useState<ContractItem[]>([
+    { id: 1, productName: '', quantity: 1, unitPrice: 0, amount: 0 },
+  ]);
+
+  return (
+    <div className={styles.formContainer}>
+      <div className={styles.formHeader}>
+        <h1 className={styles.pageTitle}>새 계약서 작성</h1>
+        <p className={styles.pageSubtitle}>계약 정보를 입력하세요</p>
+      </div>
+
+      <form className={styles.form}>
+        <section className={styles.formSection}>
+          <h2 className={styles.sectionTitle}>계약 유형</h2>
+          <div className={styles.typeSelector}>
+            {[
+              { value: 'supply', label: '장비공급', icon: '📦' },
+              { value: 'install', label: '설치시공', icon: '🔧' },
+              { value: 'maintenance', label: '유지보수', icon: '🛠️' },
+              { value: 'repair', label: '수리', icon: '⚙️' },
+            ].map((type) => (
+              <label key={type.value} className={styles.typeOption}>
                 <input
-                  type="text"
-                  placeholder="고객 회사명"
-                  value={newContract.clientName || ''}
-                  onChange={(e) => setNewContract({ ...newContract, clientName: e.target.value })}
-                  className={styles.input}
+                  type="radio"
+                  name="contractType"
+                  value={type.value}
+                  checked={formData.type === type.value}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                 />
-              </div>
-
-              <div className={styles.formGroup}>
-                <label>계약 항목</label>
-                <div className={styles.itemsContainer}>
-                  {(newContract.items || []).map((item, index) => (
-                    <div key={item.id} className={styles.itemRow}>
-                      <input
-                        type="text"
-                        placeholder="항목 설명"
-                        value={item.description}
-                        onChange={(e) => {
-                          const updated = [...(newContract.items || [])];
-                          updated[index].description = e.target.value;
-                          setNewContract({ ...newContract, items: updated });
-                        }}
-                        className={styles.input}
-                      />
-                      <input
-                        type="number"
-                        placeholder="수량"
-                        value={item.quantity}
-                        onChange={(e) => {
-                          const updated = [...(newContract.items || [])];
-                          updated[index].quantity = parseInt(e.target.value) || 0;
-                          setNewContract({ ...newContract, items: updated });
-                        }}
-                        className={styles.input}
-                        style={{ width: '100px' }}
-                      />
-                      <input
-                        type="number"
-                        placeholder="단가"
-                        value={item.unitPrice}
-                        onChange={(e) => {
-                          const updated = [...(newContract.items || [])];
-                          updated[index].unitPrice = parseFloat(e.target.value) || 0;
-                          setNewContract({ ...newContract, items: updated });
-                        }}
-                        className={styles.input}
-                        style={{ width: '150px' }}
-                      />
-                      <span className={styles.subtotal}>
-                        ₩{(item.quantity * item.unitPrice).toLocaleString()}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddItem}
-                  className={styles.btnSecondary}
-                >
-                  + 항목 추가
-                </button>
-              </div>
-
-              <div className={styles.totalAmount}>
-                <label>합계</label>
-                <span className={styles.amount}>
-                  ₩{(newContract.items || [])
-                    .reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
-                    .toLocaleString()}
+                <span className={styles.typeOptionLabel}>
+                  <span className={styles.typeIcon}>{type.icon}</span>
+                  <span>{type.label}</span>
                 </span>
-              </div>
-
-              <div className={styles.actions}>
-                <button type="button" onClick={handleCreateContract} className={styles.btnPrimary}>
-                  계약 생성
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewContract({ items: [], status: 'DRAFT' });
-                    setCurrentPage('dashboard');
-                  }}
-                  className={styles.btnSecondary}
-                >
-                  취소
-                </button>
-              </div>
-            </form>
+              </label>
+            ))}
           </div>
-        )}
+        </section>
+
+        <section className={styles.formSection}>
+          <h2 className={styles.sectionTitle}>거래처 정보</h2>
+          <div className={styles.formGrid}>
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>거래처명 *</label>
+              <input
+                type="text"
+                placeholder="예: (주)세차마을 서울지점"
+                className={styles.formInput}
+                value={formData.clientName}
+                onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
+              />
+            </div>
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>계약일 *</label>
+              <input
+                type="date"
+                className={styles.formInput}
+                value={formData.contractDate}
+                onChange={(e) => setFormData({ ...formData, contractDate: e.target.value })}
+              />
+            </div>
+          </div>
+        </section>
+
+        <div className={styles.formActions}>
+          <button type="button" className={styles.btnSecondary}>취소</button>
+          <button type="submit" className={styles.btnPrimary}>계약서 생성</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// 메인 앱
+export default function ContractApp() {
+  const [currentPage, setCurrentPage] = useState('dashboard');
+
+  return (
+    <div className={styles.appWrapper}>
+      <Header />
+      <main className={styles.mainContent}>
+        {currentPage === 'dashboard' && <DashboardPage />}
+        {currentPage === 'new' && <NewContractPage />}
       </main>
     </div>
   );
