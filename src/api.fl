@@ -1,6 +1,11 @@
 ;;; Contract API Server
 
-(load "/root/bigwash-contract/src/contract.fl")
+;; 1. 스코프 오염 방지: load 대신 import 사용
+(import contract :from "/root/bigwash-contract/src/contract.fl")
+(import db :from "/root/bigwash-contract/src/db.fl")
+
+;; 4. 부작용(Side effect) 통제: 메인 실행부에서 명시적으로 DB 초기화
+(db:init-db)
 
 ;;; Helper to validate status string
 (defn valid-status-str? [status]
@@ -14,46 +19,59 @@
 (defn handle-list-contracts [req]
   (let [[status (server_req_query req "status")]]
     (if (nil? status)
-      (server_json {:ok true :data (list-contracts "DRAFT")})
+      (server_json {:ok true :data (contract:list-contracts "DRAFT")})
       (if (valid-status-str? status)
-        (server_json {:ok true :data (list-contracts status)})
+        (server_json {:ok true :data (contract:list-contracts status)})
         (server_status 400 {:ok false :error "Invalid status filter"})))))
 
 (defn handle-get-contract [req]
   (let [[params (server_req_params req)]
         [id (get params "id")]]
     (try
-      (server_json {:ok true :data (get-contract id)})
-      (catch [e]
-        (server_status 404 {:ok false :error "Contract not found"})))))
+      (do
+        ;; 파라미터 타입 단언 (안정성)
+        (assert-type id "string")
+        (server_json {:ok true :data (contract:get-contract id)}))
+      (catch e
+        ;; 3. 에러 객체의 message 속성을 명시적으로 추출하여 응답에 포함
+        (server_status 404 {:ok false :error (get e "message")}))))))
 
 (defn handle-create-contract [req]
   (let [[body (server_req_body req)]
         [client-id (get body "client_id")]
         [amount (get body "amount")]
         [items (get body "items")]]
-    (if (or (nil? client-id) (nil? amount) (nil? items) (= (length items) 0))
-      (server_status 400 {:ok false :error "Missing required fields: client_id, amount, items"})
-      (try
-        (let [[result (create-contract client-id amount items)]]
-          (server_json {:ok true :data result}))
-        (catch [e]
-          (server_status 400 {:ok false :error "Failed to create contract"}))))))
+    (try
+      (do
+        ;; 2. 방어 로직: 런타임 타입 검증 (assert-type)
+        (assert-type client-id "number")
+        (assert-type amount "number")
+        (assert-type items "array")
+        (if (= (length items) 0) (error "items array cannot be empty"))
+
+        (let [[result (contract:create-contract client-id amount items)]]
+          (server_json {:ok true :data result})))
+      (catch e
+        ;; 에러 은닉 현상 방지
+        (server_status 400 {:ok false :error (get e "message") :message "Failed to create contract"}))))))
 
 (defn handle-update-status [req]
   (let [[params (server_req_params req)]
         [id (get params "id")]
         [body (server_req_body req)]
         [new-status (get body "status")]]
-    (if (or (nil? id) (nil? new-status))
-      (server_status 400 {:ok false :error "Missing required fields: id, status"})
-      (if (not (valid-status-str? new-status))
-        (server_status 400 {:ok false :error "Invalid status value"})
-        (try
-          (let [[result (update-status id new-status)]]
-            (server_json {:ok true :data result}))
-          (catch [e]
-            (server_status 400 {:ok false :error "Failed to update status"})))))))
+    (try
+      (do
+        (assert-type id "string")
+        (assert-type new-status "string")
+
+        (if (not (valid-status-str? new-status))
+          (error "Invalid status value"))
+
+        (let [[result (contract:update-status id new-status)]]
+          (server_json {:ok true :data result})))
+      (catch e
+        (server_status 400 {:ok false :error (get e "message") :message "Failed to update status"}))))))
 
 ;;; Routes
 (server_get    "/contracts"      "handle-list-contracts")

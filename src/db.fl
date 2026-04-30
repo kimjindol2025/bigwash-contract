@@ -1,8 +1,11 @@
 ;;; Database Schema for BigWash Contract System
 
-(define DB "/root/bigwash-contract/db/contracts.sqlite")
+(define DB (let [[env-db (shell_env "CONTRACT_DB_PATH")]]
+             (if (not (nil? env-db)) 
+                 env-db 
+                 "/root/bigwash-contract/db/contracts.sqlite")))
 
-;;; Initialize database
+;;; Initialize database (명시적으로 호출해야만 실행됨)
 (defn init-db []
   (do
     ;; Contracts table
@@ -16,7 +19,7 @@
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )")
-
+    
     ;; Contract items table
     (db_exec DB
       "CREATE TABLE IF NOT EXISTS contract_items (
@@ -28,7 +31,7 @@
         subtotal REAL NOT NULL,
         FOREIGN KEY(contract_id) REFERENCES contracts(id)
       )")
-
+    
     ;; Audit log
     (db_exec DB
       "CREATE TABLE IF NOT EXISTS contract_history (
@@ -39,10 +42,8 @@
         changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(contract_id) REFERENCES contracts(id)
       )")
-
+    
     (println "✓ Database initialized")))
 
 ;;; Utility functions
 (defn get-db [] DB)
-
-(init-db)

@@ -1,33 +1,42 @@
-(load "/root/bigwash-contract/src/contract.fl")
+(import db :from "/root/bigwash-contract/src/db.fl")
+(import contract :from "/root/bigwash-contract/src/contract.fl")
 
 (println "--- Contract Test Start ---")
+
+;; 0. 명시적 DB 초기화
+(db:init-db)
 
 ;; 1. Create Contract
 (let [[items [{:description "Washing Service" :quantity 10 :unit_price 50.0}
               {:description "Detergent" :quantity 5 :unit_price 10.0}]]
       [client-id 101]
       [amount 550.0]]
-  (let [[result (create-contract client-id amount items)]]
+  (let [[result (contract:create-contract client-id amount items)]]
     (println "Contract created: " result)
     (let [[contract-id (get result :id)]]
       
       ;; 2. Get Contract
-      (let [[contract-data (get-contract contract-id)]]
+      (let [[contract-data (contract:get-contract contract-id)]]
         (println "Retrieved contract: " (get contract-data :contract))
         (println "Retrieved items: " (get contract-data :items)))
       
       ;; 3. Update Status (DRAFT -> PENDING)
-      (let [[update-res (update-status contract-id "PENDING")]]
+      (let [[update-res (contract:update-status contract-id "PENDING")]]
         (println "Status updated to PENDING: " update-res))
       
       ;; 4. List PENDING contracts
-      (let [[pending-list (list-contracts "PENDING")]]
+      (let [[pending-list (contract:list-contracts "PENDING")]]
         (println "Pending contracts count: " (length pending-list)))
 
       ;; 5. Invalid transition (PENDING -> COMPLETED is invalid, should go to APPROVED first)
       (try
-        (update-status contract-id "COMPLETED")
-        (catch [e] (println "Expected error caught (Invalid transition): " e)))
+        (contract:update-status contract-id "COMPLETED")
+        (catch [e] (println "Expected error caught (Invalid transition): " (get e "message"))))
+        
+      ;; 6. Type assertion error testing
+      (try
+        (assert-type client-id "string") ;; Intentionally fail (client-id is number)
+        (catch [e] (println "Expected type error caught: " (get e "message"))))
     )))
 
 (println "--- Contract Test End ---")
