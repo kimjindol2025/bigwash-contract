@@ -26,68 +26,80 @@
      (or (= to STATUS-COMPLETED) (= to STATUS-CANCELLED))]
     [true false]))
 
-;;; Create new contract
-(defn create-contract [client-id amount items]
+;;; Helper: Insert contract items recursively
+(defn insert-items-rec [db contract-id items idx]
+  (if (>= idx (length items))
+    true
+    (let [[item (get items idx)]]
+      (db_exec db
+        "INSERT INTO contract_items (contract_id, description, quantity, unit_price, subtotal) VALUES (?, ?, ?, ?, ?)"
+        [contract-id
+         (get item :description)
+         (get item :quantity)
+         (get item :unit_price)
+         (* (get item :quantity) (get item :unit_price))])
+      (insert-items-rec db contract-id items (+ idx 1)))))
+
+;;; Create new contract (no try-catch inside, let caller handle errors)
+(defn create-contract-impl [client-id amount items]
   (let [[db (get-db)]
         [contract-num (generate-contract-number)]]
-    (try
-      (do
-        ;; Insert contract
-        (db_exec db
-          "INSERT INTO contracts (number, status, client_id, amount) VALUES (?, ?, ?, ?)"
-          [contract-num STATUS-DRAFT client-id amount])
-        
-        ;; Get contract ID
-        (let [[rows (db_query db "SELECT id FROM contracts WHERE number = ?" [contract-num])]]
-          (if (= (length rows) 0) (error "Failed to retrieve contract ID"))
-          (let [[contract-id (get (first rows) "id")]]
-            
-            ;; Insert items
-            (map 
-              (fn [item]
-                (db_exec db
-                  "INSERT INTO contract_items (contract_id, description, quantity, unit_price, subtotal)
-                   VALUES (?, ?, ?, ?, ?)"
-                  [contract-id
-                   (get item "description")
-                   (get item "quantity")
-                   (get item "unit_price")
-                   (* (get item "quantity") (get item "unit_price"))]))
-              items)
-            
-            {:id contract-id :number contract-num :status STATUS-DRAFT})))
-      
-      (catch [e]
-        (error (str "Contract creation failed"))))))
+    (db_exec db "BEGIN TRANSACTION" [])
+    ;; Insert contract
+    (db_exec db
+      "INSERT INTO contracts (number, status, client_id, amount) VALUES (?, ?, ?, ?)"
+      [contract-num STATUS-DRAFT client-id amount])
+
+    ;; Get contract ID
+    (let [[rows (db_query db "SELECT id FROM contracts WHERE number = ?" [contract-num])]]
+      (if (= (length rows) 0) (error "Failed to retrieve contract ID"))
+      (let [[contract-id (get (first rows) :id)]]
+        ;; Insert items
+        (insert-items-rec db contract-id items 0)
+        ;; Return result
+        (db_exec db "COMMIT" [])
+        {:id contract-id :number contract-num :status STATUS-DRAFT}))))
+
+;;; Create new contract (with try-catch wrapper)
+(defn create-contract [client-id amount items]
+  (try
+    (create-contract-impl client-id amount items)
+    (catch [e]
+      (let [[db (get-db)]]
+        (db_exec db "ROLLBACK" [])
+        (error (str "Contract creation failed: " e))))))
 
 ;;; Update contract status
 (defn update-status [contract-id new-status]
   (let [[db (get-db)]]
     (try
       (do
+        (db_exec db "BEGIN TRANSACTION" [])
         ;; Get current status
         (let [[rows (db_query db "SELECT status FROM contracts WHERE id = ?" [contract-id])]]
           (if (= (length rows) 0) (error "Contract not found"))
-          (let [[current-status (get (first rows) "status")]]
-            
+          (let [[current-status (get (first rows) :status)]]
+
             ;; Validate status transition
             (if (not (valid-transition? current-status new-status))
               (error (str "Invalid status transition")))
-            
+
             ;; Update status
             (db_exec db
               "UPDATE contracts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
               [new-status contract-id])
-            
+
             ;; Log history
             (db_exec db
               "INSERT INTO contract_history (contract_id, old_status, new_status) VALUES (?, ?, ?)"
               [contract-id current-status new-status])
-            
+
+            (db_exec db "COMMIT" [])
             {:success true :old_status current-status :new_status new-status})))
-      
+
       (catch [e]
-        (error (str "Update status failed"))))))
+        (db_exec db "ROLLBACK" [])
+        (error (str "Update status failed: " e))))))
 
 ;;; Get contract by ID
 (defn get-contract [contract-id]

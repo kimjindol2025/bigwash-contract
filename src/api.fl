@@ -2,12 +2,22 @@
 
 (load "/root/bigwash-contract/src/contract.fl")
 
+;;; Helper to validate status string
+(defn valid-status-str? [status]
+  (or (= status "DRAFT")
+      (= status "PENDING")
+      (= status "APPROVED")
+      (= status "COMPLETED")
+      (= status "CANCELLED")))
+
 ;;; Handlers
 (defn handle-list-contracts [req]
   (let [[status (server_req_query req "status")]]
     (if (nil? status)
       (server_json {:ok true :data (list-contracts "DRAFT")})
-      (server_json {:ok true :data (list-contracts status)}))))
+      (if (valid-status-str? status)
+        (server_json {:ok true :data (list-contracts status)})
+        (server_status 400 {:ok false :error "Invalid status filter"})))))
 
 (defn handle-get-contract [req]
   (let [[params (server_req_params req)]
@@ -22,22 +32,28 @@
         [client-id (get body "client_id")]
         [amount (get body "amount")]
         [items (get body "items")]]
-    (try
-      (let [[result (create-contract client-id amount items)]]
-        (server_json {:ok true :data result}))
-      (catch [e]
-        (server_status 400 {:ok false :error "Failed to create contract"})))))
+    (if (or (nil? client-id) (nil? amount) (nil? items) (= (length items) 0))
+      (server_status 400 {:ok false :error "Missing required fields: client_id, amount, items"})
+      (try
+        (let [[result (create-contract client-id amount items)]]
+          (server_json {:ok true :data result}))
+        (catch [e]
+          (server_status 400 {:ok false :error "Failed to create contract"}))))))
 
 (defn handle-update-status [req]
   (let [[params (server_req_params req)]
         [id (get params "id")]
         [body (server_req_body req)]
         [new-status (get body "status")]]
-    (try
-      (let [[result (update-status id new-status)]]
-        (server_json {:ok true :data result}))
-      (catch [e]
-        (server_status 400 {:ok false :error "Failed to update status"})))))
+    (if (or (nil? id) (nil? new-status))
+      (server_status 400 {:ok false :error "Missing required fields: id, status"})
+      (if (not (valid-status-str? new-status))
+        (server_status 400 {:ok false :error "Invalid status value"})
+        (try
+          (let [[result (update-status id new-status)]]
+            (server_json {:ok true :data result}))
+          (catch [e]
+            (server_status 400 {:ok false :error "Failed to update status"})))))))
 
 ;;; Routes
 (server_get    "/contracts"      "handle-list-contracts")

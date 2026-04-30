@@ -1,0 +1,199 @@
+;;; 페이지 렌더링 시스템
+
+(load "/root/bigwash-contract/src/ui.fl")
+
+;;; 공통 헤더
+(defn render-header []
+  (str
+    "<header class='header'>"
+    "<div class='header-container'>"
+    "<div class='logo-section'>"
+    "<div class='logo'>"
+    "<span class='logo-icon'>⚡</span>"
+    "<span class='logo-text'>BigWash</span>"
+    "</div>"
+    "<span class='logo-subtext'>계약관리</span>"
+    "</div>"
+    "<nav class='nav'>"
+    "<a href='/' class='nav-link'>계약서 관리</a>"
+    "<a href='/estimate' class='nav-link'>거래명세서</a>"
+    "<a href='/settings' class='nav-link'>설정</a>"
+    "</nav>"
+    "<div class='user-section'>"
+    "<button class='notification-btn'>"
+    "<span class='notification-icon'>🔔</span>"
+    "<span class='badge'>2</span>"
+    "</button>"
+    "<div class='user-avatar'>KC</div>"
+    "</div>"
+    "</div>"
+    "</header>"))
+
+;;; 대시보드 페이지
+(defn render-dashboard [contracts]
+  (let [[header (render-header)]
+        [stats-html (str
+          (stat-card "진행 중" "12" "+2" "orange")
+          (stat-card "서명 대기" "5" "" "warning")
+          (stat-card "완료" "127" "+8" "success")
+          (stat-card "금월 계약액" "₩45.2M" "+12%" "orange")
+        )]
+        [table-rows (apply str (map contract-row contracts))]]
+    (page "계약서 관리 - BigWash"
+      (str
+        header
+        "<main class='main-content'>"
+        "<div class='dashboard-container'>"
+        "<div class='action-bar'>"
+        "<div>"
+        "<h1 class='page-title'>계약서 관리</h1>"
+        "<p class='page-subtitle'>2026년 4월 기준</p>"
+        "</div>"
+        "<button class='btn-primary' hx-get='/contract/new' hx-target='#main'>"
+        "<span class='btn-icon'>+</span> 새 계약서 작성"
+        "</button>"
+        "</div>"
+        "<div class='stats-grid'>" stats-html "</div>"
+        "<div class='list-section'>"
+        "<h2 class='section-title'>최근 계약서</h2>"
+        "<div class='contract-table'>"
+        "<div class='table-header'>"
+        "<div class='col-id'>계약번호</div>"
+        "<div class='col-client'>거래처</div>"
+        "<div class='col-type'>계약유형</div>"
+        "<div class='col-amount'>계약액</div>"
+        "<div class='col-status'>상태</div>"
+        "<div class='col-date'>계약일</div>"
+        "<div class='col-action'>작업</div>"
+        "</div>"
+        table-rows
+        "</div>"
+        "</div>"
+        "</div>"
+        "</main>"
+      ))))
+
+;;; 신규 계약서 작성 페이지
+(defn render-new-contract []
+  (let [[header (render-header)]]
+    (page "새 계약서 작성 - BigWash"
+      (str
+        header
+        "<main class='main-content'>"
+        "<div class='form-container'>"
+        "<div class='form-header'>"
+        "<h1 class='page-title'>새 계약서 작성</h1>"
+        "<p class='page-subtitle'>계약 정보를 입력하세요</p>"
+        "</div>"
+        "<form class='form' hx-post='/api/contracts' hx-target='#main'>"
+        "<section class='form-section'>"
+        "<h2 class='section-title'>계약 유형</h2>"
+        "<div class='type-selector'>"
+        "<label class='type-option'>"
+        "<input type='radio' name='type' value='supply' checked />"
+        "<span class='type-option-label'>"
+        "<span class='type-icon'>📦</span>"
+        "<span>장비공급</span>"
+        "</span>"
+        "</label>"
+        "<label class='type-option'>"
+        "<input type='radio' name='type' value='install' />"
+        "<span class='type-option-label'>"
+        "<span class='type-icon'>🔧</span>"
+        "<span>설치시공</span>"
+        "</span>"
+        "</label>"
+        "<label class='type-option'>"
+        "<input type='radio' name='type' value='maintenance' />"
+        "<span class='type-option-label'>"
+        "<span class='type-icon'>🛠️</span>"
+        "<span>유지보수</span>"
+        "</span>"
+        "</label>"
+        "<label class='type-option'>"
+        "<input type='radio' name='type' value='repair' />"
+        "<span class='type-option-label'>"
+        "<span class='type-icon'>⚙️</span>"
+        "<span>수리</span>"
+        "</span>"
+        "</label>"
+        "</div>"
+        "</section>"
+        "<section class='form-section'>"
+        "<h2 class='section-title'>거래처 정보</h2>"
+        "<div class='form-grid'>"
+        (form-group "거래처명 *" 
+          (form-input "clientName" "(주)세차마을 서울지점" ""))
+        (form-date "contractDate" "계약일 *" (to-string (now)))
+        "</div>"
+        "</section>"
+        "<div class='form-actions'>"
+        "<button type='button' class='btn-secondary' hx-get='/' hx-target='#main'>취소</button>"
+        "<button type='submit' class='btn-primary'>계약서 생성</button>"
+        "</div>"
+        "</form>"
+        "</div>"
+        "</main>"
+      ))))
+
+;;; 계약서 상세 페이지
+(defn render-contract-detail [contract]
+  (let [[header (render-header)]
+        [{:keys [id client type amount status date items]} contract]]
+    (page (str id " - BigWash")
+      (str
+        header
+        "<main class='main-content'>"
+        "<div class='detail-container'>"
+        "<div class='detail-header'>"
+        "<div class='detail-header-left'>"
+        "<h1 class='detail-title'>" id "</h1>"
+        (if (= status "signed")
+          "<span class='status-complete-sm'>✓ 서명완료</span>"
+          "")
+        "</div>"
+        "<div class='detail-actions'>"
+        "<button class='btn-secondary'>PDF 다운로드</button>"
+        "<button class='btn-secondary'>공유</button>"
+        "</div>"
+        "</div>"
+        "<div class='detail-content'>"
+        "<div class='detail-left'>"
+        "<div class='info-card'>"
+        "<h3 class='info-card-title'>거래처 정보</h3>"
+        "<div class='info-row'>"
+        "<span class='info-label'>거래처명</span>"
+        "<span class='info-value'>" client "</span>"
+        "</div>"
+        "<div class='info-row'>"
+        "<span class='info-label'>계약유형</span>"
+        "<span class='info-value'>" type "</span>"
+        "</div>"
+        "</div>"
+        "</div>"
+        "<div class='detail-right'>"
+        "<div class='items-detail-table'>"
+        "<div class='table-header'>"
+        "<div class='col-name'>품명/사양</div>"
+        "<div class='col-amount'>금액</div>"
+        "</div>"
+        (apply str (map (fn [item]
+          (str
+            "<div class='table-row'>"
+            "<div class='col-name'>" (get item "name") "</div>"
+            "<div class='col-amount'>₩" (get item "amount") "</div>"
+            "</div>"))
+          items))
+        "</div>"
+        "<div class='amount-detail-card'>"
+        "<div class='amount-detail-row'>"
+        "<span>합계</span>"
+        "<span class='amount'>" amount "</span>"
+        "</div>"
+        "</div>"
+        "</div>"
+        "</div>"
+        "</div>"
+        "</main>"
+      ))))
+

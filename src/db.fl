@@ -16,7 +16,7 @@
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )")
-    
+
     ;; Contract items table
     (db_exec DB
       "CREATE TABLE IF NOT EXISTS contract_items (
@@ -28,7 +28,7 @@
         subtotal REAL NOT NULL,
         FOREIGN KEY(contract_id) REFERENCES contracts(id)
       )")
-    
+
     ;; Audit log
     (db_exec DB
       "CREATE TABLE IF NOT EXISTS contract_history (
@@ -39,7 +39,7 @@
         changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(contract_id) REFERENCES contracts(id)
       )")
-    
+
     (println "✓ Database initialized")))
 
 ;;; Utility functions

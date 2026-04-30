@@ -1,0 +1,160 @@
+;;; UI 컴포넌트 시스템
+
+;;; HTML 속성을 문자열로 변환
+(defn attrs->str [attrs]
+  (if (nil? attrs)
+    ""
+    (let [[parts (reduce
+      (fn [acc [key val]]
+        (push acc (str (name key) "=\"" val "\"")))
+      []
+      (entries attrs))]]
+      (if (= (length parts) 0)
+        ""
+        (str " " (join parts " "))))))
+
+;;; 스타일 객체를 CSS 문자열로
+(defn style-str [style-obj]
+  (if (nil? style-obj)
+    ""
+    (let [[pairs (reduce
+      (fn [acc [key val]]
+        (push acc (str (name key) ":" val)))
+      []
+      (entries style-obj))]]
+      (join pairs ";"))))
+
+;;; 기본 HTML 요소들
+(defn div [attrs & children]
+  (str "<div" (attrs->str attrs) ">"
+       (join children "")
+       "</div>"))
+
+(defn header [attrs & children]
+  (str "<header" (attrs->str attrs) ">"
+       (join children "")
+       "</header>"))
+
+(defn nav [attrs & children]
+  (str "<nav" (attrs->str attrs) ">"
+       (join children "")
+       "</nav>"))
+
+(defn h1 [content]
+  (str "<h1>" content "</h1>"))
+
+(defn h2 [content]
+  (str "<h2>" content "</h2>"))
+
+(defn h3 [content]
+  (str "<h3>" content "</h3>"))
+
+(defn p [content]
+  (str "<p>" content "</p>"))
+
+(defn span [attrs content]
+  (str "<span" (attrs->str attrs) ">" content "</span>"))
+
+(defn a [attrs content]
+  (str "<a" (attrs->str attrs) ">" content "</a>"))
+
+(defn button [attrs content]
+  (str "<button" (attrs->str attrs) ">" content "</button>"))
+
+(defn input [attrs]
+  (str "<input" (attrs->str attrs) "/>"))
+
+(defn form [attrs & children]
+  (str "<form" (attrs->str attrs) ">"
+       (join children "")
+       "</form>"))
+
+(defn table [attrs & children]
+  (str "<table" (attrs->str attrs) ">"
+       (join children "")
+       "</table>"))
+
+(defn thead [& children]
+  (str "<thead>" (join children "") "</thead>"))
+
+(defn tbody [& children]
+  (str "<tbody>" (join children "") "</tbody>"))
+
+(defn tr [attrs & children]
+  (str "<tr" (attrs->str attrs) ">"
+       (join children "")
+       "</tr>"))
+
+(defn th [attrs content]
+  (str "<th" (attrs->str attrs) ">" content "</th>"))
+
+(defn td [attrs content]
+  (str "<td" (attrs->str attrs) ">" content "</td>"))
+
+;;; 상태 배지
+(defn status-badge [status]
+  (let [[label (if (= status "draft") "작성중"
+                    (if (= status "pending") "승인대기"
+                    (if (= status "approved") "승인됨"
+                    (if (= status "completed") "완료"
+                    status))))]
+        [color-class (if (= status "draft") "status-draft"
+                    (if (= status "pending") "status-pending"
+                    (if (= status "approved") "status-approved"
+                    (if (= status "completed") "status-completed"
+                    "status-default"))))]]
+    (str "<span class=\"status-badge " color-class "\">" label "</span>")))
+
+;;; 통계 카드
+(defn stat-card [label value change color]
+  (div {:class "stat-card"}
+    (h3 label)
+    (div {:class "stat-value"} value)
+    (div {:class "stat-change" :style (str "color:" color)}
+      (span {:class "change-indicator"} (if (>= (to-num change) 0) "↑" "↓"))
+      (span {} change))))
+
+;;; 계약서 행
+(defn contract-row [contract]
+  (tr {:class "contract-row"}
+    (td {:class "col-id"} (get contract :id))
+    (td {:class "col-client"} (get contract :client))
+    (td {:class "col-type"} (get contract :type))
+    (td {:class "col-amount"} (get contract :amount))
+    (td {:class "col-status"} (status-badge (get contract :status)))
+    (td {:class "col-date"} (get contract :date))
+    (td {:class "col-actions"}
+      (a {:href (str "/contract/" (get contract :id))
+          :hx-get (str "/contract/" (get contract :id))
+          :hx-target "#main"}
+        "상세보기"))))
+
+;;; 폼 그룹
+(defn form-group [label content]
+  (div {:class "form-group"}
+    (div {:class "form-label"} label)
+    content))
+
+;;; 폼 입력
+(defn form-input [name placeholder value type]
+  (input {:type type
+          :name name
+          :class "form-input"
+          :placeholder placeholder
+          :value value}))
+
+;;; 페이지 래퍼
+(defn page [title content]
+  (str "<!DOCTYPE html>"
+       "<html lang=\"ko\">"
+       "<head>"
+       "<meta charset=\"UTF-8\">"
+       "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+       "<title>" title "</title>"
+       "<link rel=\"stylesheet\" href=\"/styles.css\">"
+       "<script src=\"https://unpkg.com/htmx.org@1.9.10\"></script>"
+       "</head>"
+       "<body>"
+       content
+       "</body>"
+       "</html>"))
