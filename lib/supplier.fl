@@ -1,0 +1,5 @@
+;; 빅워시 자사(공급자) 정보 로더
+;; data/supplier.json을 읽어 모든 신규 계약에 자동 주입.
+
+(defn load-supplier []
+  (json_parse (file_read "/home/kim/contract-app/data/supplier.json")))

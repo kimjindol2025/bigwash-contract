@@ -1,0 +1,13 @@
+;; html-escape — HTML 인젝션 방어 (XSS)
+;; & < > " ' 5문자만 변환. nil/number 입력도 string으로 처리.
+
+(defn esc [v]
+  (if (nil? v)
+    ""
+    (do
+      (define s (str v))
+      (define s1 (regex_replace s "&" "&amp;"))
+      (define s2 (regex_replace s1 "<" "&lt;"))
+      (define s3 (regex_replace s2 ">" "&gt;"))
+      (define s4 (regex_replace s3 "\"" "&quot;"))
+      (regex_replace s4 "'" "&#39;"))))

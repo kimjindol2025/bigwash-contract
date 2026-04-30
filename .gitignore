@@ -1,0 +1,13 @@
+# 실데이터 (커밋 금지)
+data/contracts/*.json
+!data/contracts/.gitkeep
+
+# 임시
+*.tmp
+*.log
+*.swp
+.DS_Store
+
+# 환경
+.env
+.env.local

@@ -1,0 +1,47 @@
+;; storage.fl — JSON 파일 기반 계약 저장소
+;; data/contracts/<id>.json 1건 1파일
+
+(define DATA_DIR "/home/kim/contract-app/data/contracts")
+
+;; 새 계약 ID 생성: ct-<ms>-<rand4>
+(defn new-contract-id []
+  (str "ct-" (now_ms) "-" (wcrypto_random_hex 2)))
+
+;; 1건 로드 (없으면 nil)
+(defn load-contract [id]
+  (do
+    (define path (str DATA_DIR "/" id ".json"))
+    (if (file_exists path)
+      (json_parse (file_read path))
+      nil)))
+
+;; 1건 저장 (id 기반, 디렉토리 자동 생성)
+(defn save-contract [ct]
+  (do
+    (dir_create DATA_DIR)
+    (define id (get ct "id"))
+    (define path (str DATA_DIR "/" id ".json"))
+    (define ct2 (map-set ct "updated_at" (now_iso)))
+    (file_write path (json_stringify ct2))
+    ct2))
+
+;; 전체 목록 (created_at desc)
+(defn list-contracts []
+  (do
+    (dir_create DATA_DIR)
+    (define files (dir_list DATA_DIR))
+    (define jsons (filter (fn [f] (regex_test f "\\.json$")) files))
+    (define cts (map (fn [f]
+                       (json_parse (file_read (str DATA_DIR "/" f))))
+                     jsons))
+    (arr_sort_by_desc cts "created_at")))
+
+;; 토큰으로 검색 (서명 페이지용)
+(defn find-by-token [token]
+  (do
+    (define cts (list-contracts))
+    (define hits (filter (fn [ct]
+                           (and (not (nil? (get ct "sign_token")))
+                                (= (get ct "sign_token") token)))
+                         cts))
+    (if (= (length hits) 0) nil (get hits 0))))
