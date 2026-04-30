@@ -122,9 +122,9 @@
         "<section class='form-section'>"
         "<h2 class='section-title'>거래처 정보</h2>"
         "<div class='form-grid'>"
-        (form-group "거래처명 *" 
+        (form-group "거래처명 *"
           (form-input "clientName" "(주)세차마을 서울지점" ""))
-        (form-date "contractDate" "계약일 *" (to-string (now)))
+        (form-date "contractDate" "계약일 *" (str (now_ms)))
         "</div>"
         "</section>"
         "<div class='form-actions'>"
@@ -139,7 +139,12 @@
 ;;; 계약서 상세 페이지
 (defn render-contract-detail [contract]
   (let [[header (render-header)]
-        [{:keys [id client type amount status date items]} contract]]
+        [id (get contract :id)]
+        [client (get contract :client)]
+        [type (get contract :type)]
+        [amount (get contract :amount)]
+        [status (get contract :status)]
+        [items (get contract :items)]]
     (page (str id " - BigWash")
       (str
         header
@@ -163,11 +168,11 @@
         "<h3 class='info-card-title'>거래처 정보</h3>"
         "<div class='info-row'>"
         "<span class='info-label'>거래처명</span>"
-        "<span class='info-value'>" client "</span>"
+        "<span class='info-value'>" (if client client "정보없음") "</span>"
         "</div>"
         "<div class='info-row'>"
         "<span class='info-label'>계약유형</span>"
-        "<span class='info-value'>" type "</span>"
+        "<span class='info-value'>" (if type type "정보없음") "</span>"
         "</div>"
         "</div>"
         "</div>"
@@ -177,18 +182,20 @@
         "<div class='col-name'>품명/사양</div>"
         "<div class='col-amount'>금액</div>"
         "</div>"
-        (apply str (map (fn [item]
-          (str
-            "<div class='table-row'>"
-            "<div class='col-name'>" (get item "name") "</div>"
-            "<div class='col-amount'>₩" (get item "amount") "</div>"
-            "</div>"))
-          items))
+        (if items
+          (apply str (map (fn [item]
+            (str
+              "<div class='table-row'>"
+              "<div class='col-name'>" (get item :description) "</div>"
+              "<div class='col-amount'>₩" (get item :subtotal) "</div>"
+              "</div>"))
+            items))
+          "<div class='table-row'><div class='col-name'>항목 없음</div></div>")
         "</div>"
         "<div class='amount-detail-card'>"
         "<div class='amount-detail-row'>"
         "<span>합계</span>"
-        "<span class='amount'>" amount "</span>"
+        "<span class='amount'>" (if amount amount "₩0") "</span>"
         "</div>"
         "</div>"
         "</div>"
@@ -197,3 +204,10 @@
         "</main>"
       ))))
 
+;;; Helper: 날짜 입력 폼
+(defn form-date [name label value]
+  (str
+    "<div class='form-group'>"
+    "<label class='form-label'>" label "</label>"
+    "<input type='date' name='" name "' class='form-input' value='" value "' />"
+    "</div>"))

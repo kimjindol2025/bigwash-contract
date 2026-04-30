@@ -1,7 +1,6 @@
 ;;; Contract Management Logic
 
-;; 1. 스코프 오염 방지: load 대신 import 사용
-(import db :from "/root/bigwash-contract/src/db.fl")
+(load "/root/bigwash-contract/src/db.fl")
 
 ;;; Status constants
 (define STATUS-DRAFT "DRAFT")
@@ -35,15 +34,15 @@
       (db_exec db-conn
         "INSERT INTO contract_items (contract_id, description, quantity, unit_price, subtotal) VALUES (?, ?, ?, ?, ?)"
         [contract-id
-         (get item "description")
-         (get item "quantity")
-         (get item "unit_price")
-         (* (get item "quantity") (get item "unit_price"))])
+         (get item :description)
+         (get item :quantity)
+         (get item :unit_price)
+         (* (get item :quantity) (get item :unit_price))])
       (insert-items-rec db-conn contract-id items (+ idx 1)))))
 
 ;;; Create new contract (no try-catch inside, let caller handle errors)
 (defn create-contract-impl [client-id amount items]
-  (let [[db-conn (db:get-db)]
+  (let [[db-conn (get-db)]
         [contract-num (generate-contract-number)]]
     (db_exec db-conn "BEGIN TRANSACTION" [])
     ;; Insert contract
@@ -54,7 +53,7 @@
     ;; Get contract ID
     (let [[rows (db_query db-conn "SELECT id FROM contracts WHERE number = ?" [contract-num])]]
       (if (= (length rows) 0) (error "Failed to retrieve contract ID"))
-      (let [[contract-id (get (first rows) "id")]]
+      (let [[contract-id (get (first rows) :id)]]
         ;; Insert items
         (insert-items-rec db-conn contract-id items 0)
         ;; Return result
@@ -65,22 +64,21 @@
 (defn create-contract [client-id amount items]
   (try
     (create-contract-impl client-id amount items)
-    (catch e
-      (let [[db-conn (db:get-db)]]
+    (catch [e]
+      (let [[db-conn (get-db)]]
         (db_exec db-conn "ROLLBACK" [])
-        ;; JS Error 객체의 에러 메시지만 깔끔하게 전달
-        (error (str "Contract creation failed: " (get e "message")))))))
+        (error (str "Contract creation failed: " e))))))
 
 ;;; Update contract status
 (defn update-status [contract-id new-status]
-  (let [[db-conn (db:get-db)]]
+  (let [[db-conn (get-db)]]
     (try
       (do
         (db_exec db-conn "BEGIN TRANSACTION" [])
         ;; Get current status
         (let [[rows (db_query db-conn "SELECT status FROM contracts WHERE id = ?" [contract-id])]]
           (if (= (length rows) 0) (error "Contract not found"))
-          (let [[current-status (get (first rows) "status")]]
+          (let [[current-status (get (first rows) :status)]]
 
             ;; Validate status transition
             (if (not (valid-transition? current-status new-status))
@@ -99,25 +97,25 @@
             (db_exec db-conn "COMMIT" [])
             {:success true :old_status current-status :new_status new-status})))
 
-      (catch e
+      (catch [e]
         (db_exec db-conn "ROLLBACK" [])
-        (error (str "Update status failed: " (get e "message")))))))
+        (error (str "Update status failed: " e))))))
 
 ;;; Get contract by ID
 (defn get-contract [contract-id]
-  (let [[db-conn (db:get-db)]]
+  (let [[db-conn (get-db)]]
     (try
       (let [[contract-rows (db_query db-conn "SELECT * FROM contracts WHERE id = ?" [contract-id])]
             [item-rows (db_query db-conn "SELECT * FROM contract_items WHERE contract_id = ?" [contract-id])]]
         (if (= (length contract-rows) 0) (error "Contract not found"))
         {:contract (first contract-rows) :items item-rows})
-      (catch e
-        (error (str "Get contract failed: " (get e "message")))))))
+      (catch [e]
+        (error (str "Get contract failed"))))))
 
 ;;; List contracts by status
 (defn list-contracts [status]
-  (let [[db-conn (db:get-db)]]
+  (let [[db-conn (get-db)]]
     (try
       (db_query db-conn "SELECT * FROM contracts WHERE status = ? ORDER BY created_at DESC" [status])
-      (catch e
-        (error (str "List contracts failed: " (get e "message")))))))
+      (catch [e]
+        (error (str "List contracts failed"))))))
