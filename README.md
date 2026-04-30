@@ -34,4 +34,12 @@ data/                   # JSON 저장 (contracts/, seq.json, supplier.json)
 
 ## 상태
 
-🚧 작업 중 — Step 1/5 진행 중 (escape, storage, supplier 작성 완료)
+| Step | 내용 | 상태 |
+|------|------|------|
+| 1 | 골격 + 저장소 + 채번 + escape + /health | ✅ |
+| 2 | 목록·신규·상세 페이지 | 🚧 다음 |
+| 3 | 인쇄/PDF 뷰 | ⏸ |
+| 4 | 서명 토큰 + 모바일 서명 | ⏸ |
+| 5 | 상태 전환 + 검색·통계 | ⏸ |
+
+다음 세션 진입점: [CHECKPOINT.md](./CHECKPOINT.md)
