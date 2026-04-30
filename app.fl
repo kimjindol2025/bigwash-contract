@@ -1,0 +1,19 @@
+;; bigwash-contract — FreeLang v11 단독 스택
+;; 진입점. 라우트 등록 후 server_start.
+
+(load "/home/kim/contract-app/lib/escape.fl")
+(load "/home/kim/contract-app/lib/storage.fl")
+(load "/home/kim/contract-app/lib/contract_no.fl")
+(load "/home/kim/contract-app/lib/supplier.fl")
+
+;; ── 헬스체크 ────────────────────────────────────────
+(defn handle-health [req]
+  (server_json {:ok true
+                :app "bigwash-contract"
+                :ts (now_iso)}))
+
+(server_get "/health" "handle-health")
+
+;; ── 시작 ────────────────────────────────────────────
+(println "[bigwash-contract] starting on port 40310...")
+(server_start 40310)

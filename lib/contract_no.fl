@@ -1,0 +1,28 @@
+;; contract_no.fl — BW-YYYY-NNNN 채번
+;; data/seq.json 형식: {"2026": 12, "2027": 0}
+;; 단일 PM2 인스턴스 가정. 멀티 워커 시 파일 락 필요.
+
+(define SEQ_PATH "/home/kim/contract-app/data/seq.json")
+
+;; 4자리 0패딩 ("7" → "0007")
+(defn pad4 [n]
+  (do
+    (define s (str n))
+    (define len (length s))
+    (cond
+      [(>= len 4) s]
+      [(= len 3) (str "0" s)]
+      [(= len 2) (str "00" s)]
+      [true (str "000" s)])))
+
+;; 다음 계약번호 생성 + 시퀀스 영속화
+(defn next-contract-no []
+  (do
+    (define raw (file_read SEQ_PATH))
+    (define seq (json_parse raw))
+    (define year (str (get (date_parts (now_ms)) "year")))
+    (define cur (get seq year))
+    (define n (if (nil? cur) 1 (+ cur 1)))
+    (define seq2 (map-set seq year n))
+    (file_write SEQ_PATH (json_stringify seq2))
+    (str "BW-" year "-" (pad4 n))))
