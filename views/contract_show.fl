@@ -1,0 +1,73 @@
+;; views/contract_show.fl — 계약 상세
+;; (show-view ct)
+
+(defn party-block [title p]
+  (str "<div class=\"card\"><h2>" (esc title) "</h2>"
+       "<div><strong>" (esc (sg p "company")) "</strong></div>"
+       "<div class=\"muted\">사업자 " (esc (sg p "biz_no")) "</div>"
+       "<div>대표자: " (esc (sg p "rep")) "</div>"
+       "<div>" (esc (sg p "addr")) "</div>"
+       "<div>" (esc (sg p "phone")) "</div>"
+       "</div>"))
+
+(defn show-item-row [item]
+  (do
+    (define qty (sn item "qty"))
+    (define price (sn item "price"))
+    (define amount (sn item "amount"))
+    (str "<tr>"
+         "<td>" (esc (sg item "name")) "</td>"
+         "<td>" (esc (sg item "spec")) "</td>"
+         "<td class=\"right\">" (fmt-num qty) "</td>"
+         "<td class=\"right\">" (fmt-num price) "</td>"
+         "<td class=\"right\">" (fmt-num amount) "</td>"
+         "</tr>")))
+
+(defn show-items-table [items]
+  (str "<h2>품목</h2>"
+       "<table><thead><tr>"
+       "<th>품명</th><th>규격</th>"
+       "<th class=\"right\">수량</th><th class=\"right\">단가</th><th class=\"right\">금액</th>"
+       "</tr></thead><tbody>"
+       (cat-strs (map show-item-row items))
+       "</tbody></table>"))
+
+(defn or-empty [v]
+  (cond
+    [(nil? v) true]
+    [(= v "") true]
+    [true false]))
+
+(defn show-text-block [title val]
+  (if (or-empty val)
+    ""
+    (str "<div class=\"card\"><h2>" (esc title) "</h2>"
+         "<div style=\"white-space:pre-wrap\">" (esc val) "</div></div>")))
+
+(defn show-view [ct]
+  (page (str "계약 " (sg ct "no"))
+    (str "<h1>계약 " (esc (sg ct "no")) " "
+         "<span class=\"s s-" (esc (sg ct "status")) "\">"
+         (esc (status-label (get ct "status"))) "</span></h1>"
+         "<div class=\"muted\">"
+         "종류: " (esc (type-label (get ct "type")))
+         " · 생성: " (esc (fmt-date (get ct "created_at")))
+         " · 수정: " (esc (fmt-date (get ct "updated_at")))
+         "</div>"
+         "<div class=\"cards\">"
+         (party-block "갑 (고객)" (sg ct "client"))
+         (party-block "을 (빅워시)" (sg ct "supplier"))
+         "</div>"
+         (show-items-table (get ct "items"))
+         "<div class=\"totals\">"
+         "공급가액: " (fmt-num (sn ct "subtotal")) " · "
+         "부가세: " (fmt-num (sn ct "vat")) " · "
+         "<span class=\"t\">총액: " (fmt-num (sn ct "total")) "</span>"
+         "</div>"
+         (show-text-block "결제조건" (sg ct "payment"))
+         (show-text-block "보증조건" (sg ct "warranty"))
+         (show-text-block "특약사항" (sg ct "notes"))
+         "<div class=\"actions\">"
+         "<a class=\"btn\" href=\"/contracts/" (esc (sg ct "id")) "/edit\">수정</a>"
+         "<a class=\"btn btn-2\" href=\"/contracts\">목록</a>"
+         "</div>")))

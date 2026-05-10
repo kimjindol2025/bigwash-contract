@@ -1,0 +1,27 @@
+;; views/contract_list.fl — 계약 목록
+;; (list-view cts) — cts는 list-contracts 결과 (created_at desc)
+
+(defn list-row [ct]
+  (str "<tr onclick=\"location='/contracts/" (esc (sg ct "id")) "'\" style=\"cursor:pointer\">"
+       "<td>" (esc (sg ct "no")) "</td>"
+       "<td>" (esc (type-label (get ct "type"))) "</td>"
+       "<td>" (esc (sg (get ct "client") "company")) "</td>"
+       "<td class=\"right\">" (fmt-num (sn ct "total")) "</td>"
+       "<td><span class=\"s s-" (esc (sg ct "status")) "\">" (esc (status-label (get ct "status"))) "</span></td>"
+       "<td>" (esc (fmt-date (get ct "created_at"))) "</td>"
+       "</tr>"))
+
+(defn list-rows [cts]
+  (cat-strs (map list-row cts)))
+
+(defn list-view [cts]
+  (page "계약 목록"
+    (str "<h1>계약 목록</h1>"
+         (if (= (length cts) 0)
+           "<div class=\"empty\">아직 계약이 없습니다. 우측 상단 <a href=\"/contracts/new\">신규</a>로 추가하세요.</div>"
+           (str "<table><thead><tr>"
+                "<th>번호</th><th>종류</th><th>갑(고객)</th>"
+                "<th class=\"right\">총액</th><th>상태</th><th>생성일</th>"
+                "</tr></thead><tbody>"
+                (list-rows cts)
+                "</tbody></table>")))))

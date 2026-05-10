@@ -1,0 +1,49 @@
+;; utils.fl — view/route 공통 헬퍼
+
+;; 안전 getter — nil이면 빈 문자열
+(defn sg [obj k]
+  (do
+    (define v (get obj k))
+    (if (nil? v) "" v)))
+
+;; 안전 숫자 getter — nil이면 0
+(defn sn [obj k]
+  (do
+    (define v (get obj k))
+    (if (nil? v) 0 v)))
+
+;; 종류 라벨
+(defn type-label [t]
+  (cond
+    [(= t "supply") "장비공급"]
+    [(= t "install") "시공"]
+    [(= t "maintain") "유지보수"]
+    [(= t "etc") "기타"]
+    [true (if (nil? t) "—" (str t))]))
+
+;; 상태 라벨
+(defn status-label [s]
+  (cond
+    [(= s "draft") "작성중"]
+    [(= s "sent") "발송"]
+    [(= s "signed") "서명"]
+    [(= s "done") "완료"]
+    [(= s "cancelled") "취소"]
+    [true (if (nil? s) "—" (str s))]))
+
+;; ISO → YYYY-MM-DD
+(defn fmt-date [iso]
+  (if (nil? iso) ""
+    (regex_replace (str iso) "T.*" "")))
+
+;; 숫자 그대로 (천단위 X — 미관보다 동작 우선)
+(defn fmt-num [n]
+  (str (if (nil? n) 0 n)))
+
+;; 문자열 배열 단순 연결 (재귀, 5~수십건 가정)
+(defn cat-strs-rec [arr i n acc]
+  (if (>= i n) acc
+    (cat-strs-rec arr (+ i 1) n (str acc (get arr i)))))
+
+(defn cat-strs [arr]
+  (cat-strs-rec arr 0 (length arr) ""))

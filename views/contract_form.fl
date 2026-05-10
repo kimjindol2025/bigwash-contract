@@ -1,0 +1,96 @@
+;; views/contract_form.fl — 신규/수정 폼
+;; (form-view ct) — ct=nil이면 빈 폼
+
+;; 빈 계약 (json_parse로 안전 생성)
+(defn make-empty-ct []
+  (do
+    (define ct (json_parse "{\"id\":\"\",\"no\":\"(저장 시 자동 발급)\",\"type\":\"supply\",\"client\":{\"company\":\"\",\"biz_no\":\"\",\"rep\":\"\",\"addr\":\"\",\"phone\":\"\"},\"items\":[{\"name\":\"\",\"spec\":\"\",\"qty\":0,\"price\":0,\"amount\":0},{\"name\":\"\",\"spec\":\"\",\"qty\":0,\"price\":0,\"amount\":0},{\"name\":\"\",\"spec\":\"\",\"qty\":0,\"price\":0,\"amount\":0},{\"name\":\"\",\"spec\":\"\",\"qty\":0,\"price\":0,\"amount\":0},{\"name\":\"\",\"spec\":\"\",\"qty\":0,\"price\":0,\"amount\":0}],\"payment\":\"\",\"warranty\":\"\",\"notes\":\"\",\"status\":\"draft\"}"))
+    (map-set ct "supplier" (load-supplier))))
+
+;; sg/sn 은 lib/utils.fl 사용
+
+;; 한 줄 입력
+(defn input-row [lbl name val]
+  (str "<div class=\"row\"><label>" (esc lbl) "</label>"
+       "<input name=\"" name "\" value=\"" (esc val) "\"></div>"))
+
+;; 갑/을 카드
+(defn party-card [title prefix p]
+  (str "<div class=\"card\"><h2>" title "</h2>"
+       (input-row "회사명"     (str prefix ".company") (sg p "company"))
+       (input-row "사업자번호" (str prefix ".biz_no")  (sg p "biz_no"))
+       (input-row "대표자"     (str prefix ".rep")     (sg p "rep"))
+       (input-row "주소"       (str prefix ".addr")    (sg p "addr"))
+       (input-row "전화"       (str prefix ".phone")   (sg p "phone"))
+       "</div>"))
+
+;; type 라디오
+(defn type-radio [val lbl current]
+  (str "<label><input type=\"radio\" name=\"type\" value=\"" val "\""
+       (if (= current val) " checked" "")
+       ">" (esc lbl) "</label>"))
+
+(defn type-row [current]
+  (str "<div class=\"row\"><label>종류</label><div class=\"types\">"
+       (type-radio "supply"   "장비공급" current)
+       (type-radio "install"  "시공"     current)
+       (type-radio "maintain" "유지보수" current)
+       (type-radio "etc"      "기타"     current)
+       "</div></div>"))
+
+;; 품목 행
+(defn item-row-html [i item]
+  (do
+    (define qty (sn item "qty"))
+    (define price (sn item "price"))
+    (define amount (* qty price))
+    (str "<tr>"
+         "<td><input name=\"items." i ".name\" value=\"" (esc (sg item "name")) "\"></td>"
+         "<td><input name=\"items." i ".spec\" value=\"" (esc (sg item "spec")) "\"></td>"
+         "<td><input class=\"qty\" type=\"number\" min=\"0\" name=\"items." i ".qty\" value=\"" qty "\"></td>"
+         "<td><input class=\"price\" type=\"number\" min=\"0\" name=\"items." i ".price\" value=\"" price "\"></td>"
+         "<td class=\"amount\" data-amount=\"" i "\">" amount "</td>"
+         "</tr>")))
+
+(defn items-table [items]
+  (str "<h2>품목</h2>"
+       "<table><thead><tr>"
+       "<th>품명</th><th>규격</th><th class=\"right\">수량</th><th class=\"right\">단가</th><th class=\"right\">금액</th>"
+       "</tr></thead><tbody>"
+       (item-row-html 0 (get items 0))
+       (item-row-html 1 (get items 1))
+       (item-row-html 2 (get items 2))
+       (item-row-html 3 (get items 3))
+       (item-row-html 4 (get items 4))
+       "</tbody></table>"))
+
+;; textarea 행
+(defn ta-row [lbl name val]
+  (str "<div class=\"row\"><label>" (esc lbl) "</label>"
+       "<textarea name=\"" name "\">" (esc val) "</textarea></div>"))
+
+;; 메인
+(defn form-view [ct-in]
+  (do
+    (define is-new (nil? ct-in))
+    (define ct (if is-new (make-empty-ct) ct-in))
+    (define action (if is-new "/contracts" (str "/contracts/" (sg ct "id"))))
+    (define title (if is-new "신규 계약" (str "계약 수정 " (sg ct "no"))))
+    (page title
+      (str "<h1>" (esc title) "</h1>"
+           "<form method=\"POST\" action=\"" action "\" data-json>"
+           (type-row (sg ct "type"))
+           "<div class=\"row\"><label>계약번호</label><input value=\"" (esc (sg ct "no")) "\" disabled></div>"
+           "<div class=\"cards\">"
+           (party-card "갑 (고객)"   "client"   (sg ct "client"))
+           (party-card "을 (빅워시)" "supplier" (sg ct "supplier"))
+           "</div>"
+           (items-table (get ct "items"))
+           (ta-row "결제조건" "payment"  (sg ct "payment"))
+           (ta-row "보증조건" "warranty" (sg ct "warranty"))
+           (ta-row "특약사항" "notes"    (sg ct "notes"))
+           "<div class=\"actions\">"
+           "<button type=\"submit\" class=\"btn\">저장</button>"
+           "<a class=\"btn btn-2\" href=\"" (if is-new "/contracts" (str "/contracts/" (sg ct "id"))) "\">취소</a>"
+           "</div>"
+           "</form>"))))

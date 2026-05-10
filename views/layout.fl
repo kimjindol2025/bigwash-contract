@@ -1,0 +1,86 @@
+;; views/layout.fl — 공통 HTML 셸
+;; (page title body-html) → 전체 HTML 문자열
+;; D1: 인라인 style. D2: form[data-json] submit 가로채기 → JSON fetch.
+
+(define COMMON_STYLE "<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;max-width:960px;margin:0 auto;padding:16px;color:#222}
+h1{font-size:18px;margin:0 0 12px}
+h2{font-size:14px;margin:16px 0 8px;color:#555}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top}
+th{background:#f5f5f5}
+tr:hover{background:#fafafa}
+a{color:#0a66c2;text-decoration:none}
+a:hover{text-decoration:underline}
+nav{padding:8px 0;border-bottom:1px solid #eee;margin-bottom:16px}
+nav a{margin-right:12px}
+.btn{display:inline-block;padding:6px 14px;border:1px solid #0a66c2;background:#0a66c2;color:#fff;border-radius:4px;cursor:pointer;font-size:13px;text-decoration:none}
+.btn-2{background:#fff;color:#0a66c2}
+input,textarea,select{font:inherit;padding:4px 6px;border:1px solid #bbb;border-radius:3px;width:100%;background:#fff}
+textarea{min-height:60px;resize:vertical}
+.row{display:flex;gap:12px;margin-bottom:6px;align-items:center}
+.row label{min-width:90px;font-size:13px;color:#555}
+.card{border:1px solid #ddd;border-radius:4px;padding:12px;margin-bottom:12px;background:#fafafa}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.right{text-align:right}
+.muted{color:#888}
+.empty{padding:40px;text-align:center;color:#888;border:1px dashed #ccc;border-radius:4px}
+.totals{margin-top:8px;font-size:14px;text-align:right}
+.totals .t{font-weight:bold;font-size:16px}
+.s{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:#eee}
+.s-draft{background:#ffe8c4}
+.s-sent{background:#cfe2ff}
+.s-signed{background:#d1f7c4}
+.s-done{background:#c4f0d6}
+.s-cancelled{background:#f0c4c4}
+.types label{margin-right:14px;font-weight:normal}
+.types input{width:auto;margin-right:4px}
+.qty,.price,.amount{text-align:right}
+.actions{margin-top:16px;display:flex;gap:8px}
+</style>")
+
+;; D2: form[data-json] 자동 처리. items.{i}.{field} 평탄 키 그대로 전송.
+(define COMMON_SCRIPT "<script>
+document.addEventListener('submit', async function(e){
+  var f = e.target;
+  if (!f.matches || !f.matches('form[data-json]')) return;
+  e.preventDefault();
+  var fd = new FormData(f);
+  var obj = {};
+  for (var pair of fd.entries()) obj[pair[0]] = pair[1];
+  try {
+    var r = await fetch(f.action, {
+      method: (f.method || 'POST').toUpperCase(),
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(obj),
+      redirect: 'follow'
+    });
+    if (r.redirected) { location.href = r.url; return; }
+    if (r.ok) { var t = await r.text(); document.open(); document.write(t); document.close(); }
+    else { alert('저장 실패: ' + r.status + ' ' + (await r.text())); }
+  } catch (err) { alert('네트워크 오류: ' + err.message); }
+});
+// items 행 합계 자동
+document.addEventListener('input', function(e){
+  var n = e.target.name || '';
+  var m = n.match(/^items\\.(\\d+)\\.(qty|price)$/);
+  if (!m) return;
+  var i = m[1];
+  var q = +(document.querySelector('[name=\"items.'+i+'.qty\"]').value || 0);
+  var p = +(document.querySelector('[name=\"items.'+i+'.price\"]').value || 0);
+  var a = document.querySelector('[data-amount=\"'+i+'\"]');
+  if (a) a.textContent = (q*p).toLocaleString();
+});
+</script>")
+
+(defn page [title body]
+  (str "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">"
+       "<title>" title " · 빅워시 계약</title>"
+       "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+       COMMON_STYLE
+       "</head><body>"
+       "<nav><a href=\"/contracts\">목록</a><a href=\"/contracts/new\">신규</a></nav>"
+       body
+       COMMON_SCRIPT
+       "</body></html>"))

@@ -5,7 +5,7 @@
 
 ;; 새 계약 ID 생성: ct-<ms>-<rand4>
 (defn new-contract-id []
-  (str "ct-" (now_ms) "-" (wcrypto_random_hex 2)))
+  (str "ct-" (now_ms) "-" (random_bytes 2)))
 
 ;; 1건 로드 (없으면 nil)
 (defn load-contract [id]
@@ -30,7 +30,7 @@
   (do
     (dir_create DATA_DIR)
     (define files (dir_list DATA_DIR))
-    (define jsons (filter (fn [f] (regex_test f "\\.json$")) files))
+    (define jsons (filter (fn [f] (regex_match f "\\.json$")) files))
     (define cts (map (fn [f]
                        (json_parse (file_read (str DATA_DIR "/" f))))
                      jsons))

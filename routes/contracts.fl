@@ -1,0 +1,152 @@
+;; routes/contracts.fl — 계약 CRUD 핸들러
+
+;; ── 폼 → 도메인 변환 ─────────────────────────────────
+
+;; 정수 안전 변환 ("10" → 10, ""/nil/이상치 → 0)
+(defn to-int [v]
+  (cond
+    [(nil? v) 0]
+    [(= v "") 0]
+    [true (do
+            (define s (str v))
+            (if (regex_match s "^[0-9]+$")
+              (json_parse s)
+              0))]))
+
+;; 평탄 키(items.{i}.{field})에서 i번째 item 추출
+(defn item-from-body [body i]
+  (do
+    (define p (str "items." i "."))
+    (define qty (to-int (get body (str p "qty"))))
+    (define price (to-int (get body (str p "price"))))
+    (define amount (* qty price))
+    (define name-j (json_stringify (sg body (str p "name"))))
+    (define spec-j (json_stringify (sg body (str p "spec"))))
+    (json_parse
+      (str "{\"name\":" name-j
+           ",\"spec\":" spec-j
+           ",\"qty\":" qty
+           ",\"price\":" price
+           ",\"amount\":" amount "}"))))
+
+(defn items-from-flat [body]
+  [(item-from-body body 0)
+   (item-from-body body 1)
+   (item-from-body body 2)
+   (item-from-body body 3)
+   (item-from-body body 4)])
+
+(defn party-from-body [body prefix]
+  (json_parse
+    (str "{\"company\":" (json_stringify (sg body (str prefix ".company")))
+         ",\"biz_no\":" (json_stringify (sg body (str prefix ".biz_no")))
+         ",\"rep\":"     (json_stringify (sg body (str prefix ".rep")))
+         ",\"addr\":"    (json_stringify (sg body (str prefix ".addr")))
+         ",\"phone\":"   (json_stringify (sg body (str prefix ".phone")))
+         "}")))
+
+;; 합계 계산 (서버 신뢰)
+(defn item-amount [item]
+  (* (sn item "qty") (sn item "price")))
+
+(defn sum-rec [arr i n acc]
+  (if (>= i n) acc
+    (sum-rec arr (+ i 1) n (+ acc (item-amount (get arr i))))))
+
+(defn calc-totals [items]
+  (do
+    (define subtotal (sum-rec items 0 (length items) 0))
+    (define vat (/ subtotal 10))
+    (define total (+ subtotal vat))
+    (define t0 (json_parse "{}"))
+    (define t1 (map-set t0 "subtotal" subtotal))
+    (define t2 (map-set t1 "vat" vat))
+    (define t3 (map-set t2 "total" total))
+    t3))
+
+;; ── 빌더 ─────────────────────────────────────────────
+
+(defn build-ct-create [id no body items totals]
+  (do
+    (define c00 (json_parse "{}"))
+    (define c01 (map-set c00 "id" id))
+    (define c02 (map-set c01 "no" no))
+    (define c03 (map-set c02 "type" (sg body "type")))
+    (define c04 (map-set c03 "status" "draft"))
+    (define c05 (map-set c04 "supplier" (load-supplier)))
+    (define c06 (map-set c05 "client" (party-from-body body "client")))
+    (define c07 (map-set c06 "items" items))
+    (define c08 (map-set c07 "subtotal" (get totals "subtotal")))
+    (define c09 (map-set c08 "vat" (get totals "vat")))
+    (define c10 (map-set c09 "total" (get totals "total")))
+    (define c11 (map-set c10 "payment" (sg body "payment")))
+    (define c12 (map-set c11 "warranty" (sg body "warranty")))
+    (define c13 (map-set c12 "notes" (sg body "notes")))
+    (define c14 (map-set c13 "sign_token" nil))
+    (define c15 (map-set c14 "signed_at" nil))
+    (define c16 (map-set c15 "signed_by" nil))
+    (define c17 (map-set c16 "created_at" (now_iso)))
+    c17))
+
+;; 수정: no/created_at/sign_* 보존, 갱신 가능 필드만
+(defn build-ct-update [old body items totals]
+  (do
+    (define u01 (map-set old "type" (sg body "type")))
+    (define u02 (map-set u01 "client" (party-from-body body "client")))
+    (define u03 (map-set u02 "items" items))
+    (define u04 (map-set u03 "subtotal" (get totals "subtotal")))
+    (define u05 (map-set u04 "vat" (get totals "vat")))
+    (define u06 (map-set u05 "total" (get totals "total")))
+    (define u07 (map-set u06 "payment" (sg body "payment")))
+    (define u08 (map-set u07 "warranty" (sg body "warranty")))
+    (define u09 (map-set u08 "notes" (sg body "notes")))
+    u09))
+
+;; ── 핸들러 ───────────────────────────────────────────
+
+(defn handle-list [req]
+  (server_html (list-view (list-contracts))))
+
+(defn handle-new [req]
+  (server_html (form-view nil)))
+
+(defn handle-show [req]
+  (do
+    (define id (server_req_param req "id"))
+    (define ct (load-contract id))
+    (if (nil? ct)
+      (server_html (page "없음" "<h1>계약을 찾을 수 없습니다.</h1>"))
+      (server_html (show-view ct)))))
+
+(defn handle-edit [req]
+  (do
+    (define id (server_req_param req "id"))
+    (define ct (load-contract id))
+    (if (nil? ct)
+      (server_html (page "없음" "<h1>계약을 찾을 수 없습니다.</h1>"))
+      (server_html (form-view ct)))))
+
+(defn handle-create [req]
+  (do
+    (define body (server_req_json req))
+    (define id (new-contract-id))
+    (define no (next-contract-no))
+    (define items (items-from-flat body))
+    (define totals (calc-totals items))
+    (define ct (build-ct-create id no body items totals))
+    (save-contract ct)
+    (server_redirect (str "/contracts/" id))))
+
+(defn handle-update [req]
+  (do
+    (define id (server_req_param req "id"))
+    (define old (load-contract id))
+    (if (nil? old)
+      (server_html (page "없음" "<h1>계약을 찾을 수 없습니다.</h1>"))
+      (do
+        (define body (server_req_json req))
+        (define items (items-from-flat body))
+        (define totals (calc-totals items))
+        (define ct (build-ct-update old body items totals))
+        (save-contract ct)
+        (server_redirect (str "/contracts/" id))))))

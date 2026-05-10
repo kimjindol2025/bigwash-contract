@@ -1,10 +1,21 @@
 ;; bigwash-contract — FreeLang v11 단독 스택
-;; 진입점. 라우트 등록 후 server_start.
+;; 진입점. 라이브러리 → 뷰 → 라우트 등록 후 server_start.
 
+;; ── 라이브러리 ──────────────────────────────────────
 (load "/home/kim/contract-app/lib/escape.fl")
+(load "/home/kim/contract-app/lib/utils.fl")
 (load "/home/kim/contract-app/lib/storage.fl")
 (load "/home/kim/contract-app/lib/contract_no.fl")
 (load "/home/kim/contract-app/lib/supplier.fl")
+
+;; ── 뷰 (HTML 렌더러) ────────────────────────────────
+(load "/home/kim/contract-app/views/layout.fl")
+(load "/home/kim/contract-app/views/contract_form.fl")
+(load "/home/kim/contract-app/views/contract_list.fl")
+(load "/home/kim/contract-app/views/contract_show.fl")
+
+;; ── 라우트 핸들러 ──────────────────────────────────
+(load "/home/kim/contract-app/routes/contracts.fl")
 
 ;; ── 헬스체크 ────────────────────────────────────────
 (defn handle-health [req]
@@ -13,6 +24,19 @@
                 :ts (now_iso)}))
 
 (server_get "/health" "handle-health")
+
+;; ── 계약 라우트 ─────────────────────────────────────
+(server_get  "/contracts"          "handle-list")
+(server_get  "/contracts/new"      "handle-new")
+(server_post "/contracts"          "handle-create")
+(server_get  "/contracts/:id"      "handle-show")
+(server_get  "/contracts/:id/edit" "handle-edit")
+(server_post "/contracts/:id"      "handle-update")
+
+;; 루트 → 목록 리다이렉트
+(defn handle-root [req]
+  (server_redirect "/contracts"))
+(server_get "/" "handle-root")
 
 ;; ── 시작 ────────────────────────────────────────────
 (println "[bigwash-contract] starting on port 40310...")
