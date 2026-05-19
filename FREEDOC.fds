@@ -1,0 +1,37 @@
+FREEDOC {
+  version: 2
+  entry: src/server.fl
+}
+
+IDENTITY {
+  what: bigwash_contract
+  domain: business
+  lang: freelang_v11
+  purpose: contract_management_system
+}
+
+POSITION {
+  status: in_progress
+  stage: "1/2"
+  current: contract_api
+  next: [esign, pdf_export]
+  note: "BigWash 계약 관리 시스템. 계약서 생성·서명·조회 API"
+}
+
+MAP {
+  entry: src/server.fl
+  api: src/api.fl
+  contract: src/contract.fl
+  db: src/db.fl
+  pages: src/pages.fl
+  data: data
+  docs: docs
+  tests: tests
+}
+
+FIXED {
+  type: saas
+  domain: bigwash
+  features: [contract_create, contract_sign, contract_view, pdf_export]
+  db: sqlite
+}
