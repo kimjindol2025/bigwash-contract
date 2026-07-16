@@ -42,7 +42,7 @@ JSONL 이벤트 로그를 참조"하는 것 같은, 세 시스템 중 어느 쪽
 | 계약(contract) 상태 전이 | 이미 BigWash `Contract.status`(DRAFT/PENDING/APPROVED/COMPLETED/CANCELLED)로 존재 — 그대로 유지, 확장 안 함 |
 | 청구서(invoice)·미수금 추적 | Phase 3에서 `PaymentOrder`/`PaymentEvent`로 재구현 (4장 참조). `CarePlan.payment_status`는 그 결과를 보여주는 요약값일 뿐 원장이 아니다. SoloFlow의 JSONL 이벤트 로그 방식은 가져오지 않고, BigWash 기존 SQLite 테이블 방식을 그대로 쓴다 |
 | 일정(schedule) 관리 | `ServiceTicket.scheduled_at`, `ServiceVisit.visited_at`로 재구현 — SoloFlow의 독립 캘린더 개념이 아니라 A/S 티켓에 종속된 날짜 필드로 단순화 |
-| 발송 이력(템플릿 발송) | Phase 1에서는 가져오지 않는다. "보냈는가"(발송)와 "열어봤는가"(접근)는 서로 다른 개념이라 하나로 뭉치지 않는다 — 필요해지면 5장의 `NotificationDelivery`/`LinkAccessLog`로 분리해서 다룬다 |
+| 발송 이력(템플릿 발송) | Phase 1에서는 가져오지 않는다. "보냈는가"(발송)와 "열어봤는가"(접근)는 서로 다른 개념이라 하나로 뭉치지 않는다. 알림 발송이 필요해지면 `NotificationDelivery`를 별도로 추가한다. 고객용 상태 링크의 보안 접근 로그는 5장의 `LinkAccessLog`로 분리한다 |
 
 ### People CRM → 고객·타임라인 개념
 
@@ -70,41 +70,46 @@ JSONL 이벤트 로그를 참조"하는 것 같은, 세 시스템 중 어느 쪽
 컬럼이다. `Customer` 테이블을 그냥 추가하면 고객 식별자가 두 곳(`client_id`와 신규
 `Customer.id`)으로 이중화된다. Phase 1 스키마 작업을 시작하기 전에 아래를 먼저 정한다.
 
-1. **전환 여부**: 기존 `client_id`를 신규 `Customer.id`를 가리키는 FK로 바꾼다 (새 컬럼을
-   추가해 병행 운영하지 않는다 — 두 식별자를 오래 유지하면 어느 쪽이 진짜인지 헷갈린다).
-2. **매핑 규칙**: 마이그레이션 시점에 `contracts` 테이블에 남아있는 distinct `client_id`
-   값 각각에 대해 `Customer` 레코드를 1개씩 생성하고 그 값을 그대로 새 PK로 잇는다.
-   (실행 전 실제 distinct 값 개수와 내용을 먼저 조회해서 확인 — 지금은 검증되지 않은
-   테스트 데이터일 가능성이 있다.)
-3. **매핑 불가능한 계약**: 이름·연락처 등 고객 정보가 비어 있어 매핑할 수 없는 계약은
-   삭제하지 않고 "미분류(레거시)" 고정 `Customer` 1건에 묶는다.
-4. **마이그레이션·롤백**: SQLite `ALTER TABLE`로 `customer_id` 컬럼을 추가하고 백필한 뒤,
-   운영 확인이 끝나기 전까지 기존 `client_id` 컬럼은 지우지 않고 남겨 둔다 (문제 발생 시
-   `customer_id` 없이 되돌릴 수 있게). 배포 전 `db/contracts.sqlite`를 복사해 백업한다.
+1. **전환 방식**: `contracts.customer_id` nullable FK를 새로 추가한다. 제한된 마이그레이션
+   기간에는 기존 `client_id`와 병행하되, 신규 코드의 읽기·쓰기를 `customer_id`로 전환하고
+   검증이 끝난 뒤 후속 마이그레이션에서 `client_id`를 제거한다. 두 식별자를 영구 병행하지
+   않는다.
+2. **매핑 규칙**: 실행 전 `contracts`의 distinct `client_id` 개수와 값을 조회한다. 각 값마다
+   `Customer` 레코드를 하나씩 만들고 `legacy_client_id`에 원래 값을 보존한 뒤, 해당 계약들의
+   `customer_id`를 새 `Customer.id`로 백필한다.
+3. **매핑 불가능한 계약**: 현재 계약 테이블에는 이름·연락처가 없으므로 여러 `client_id`를
+   고객 한 건으로 합치지 않는다. 고객 정보를 확인할 수 없는 경우에도 distinct `client_id`
+   마다 `레거시 고객-{id}`를 만들고 `migration_status=NEEDS_REVIEW`로 표시해 기존 계약 묶음을
+   보존한다. 실제 고객을 확인하면 해당 Customer를 보완하거나 안전하게 병합한다.
+4. **마이그레이션·롤백**: 배포 전 `db/contracts.sqlite`를 복사해 백업한다. `customer_id` 추가,
+   Customer 생성, 백필, FK 무결성 검사, 애플리케이션 읽기·쓰기 전환을 순서대로 수행한다.
+   운영 확인 전까지 `client_id`를 남겨 즉시 이전 코드로 되돌릴 수 있게 하고, 제거는 별도
+   배포에서만 수행한다.
 
 ### Phase 1 — 게이트 통과 직후 (13.3의 1주차)
 
-기존 `docs/DESIGN.md`의 `Contract`/`ContractItem`은 그대로 두고, 위 마이그레이션과 아래만
-추가한다. 한 번에 8장 전체를 만들지 않고 A/S 흐름이 실제로 도는 데 필요한 최소 집합부터
-만든다.
+기존 `docs/DESIGN.md`의 계약 상태 전이와 계약항목 규칙은 유지하되, 위 마이그레이션으로
+`Contract`의 고객 참조 스키마를 전환하고 아래 최소 집합만 추가한다. 한 번에 8장 전체를
+만들지 않고 A/S 흐름이 실제로 도는 데 필요한 범위부터 만든다.
 
 ```text
-Customer          (신규, 위 마이그레이션으로 기존 client_id에서 생성)
+Customer          (신규, legacy_client_id·migration_status 포함)
 Site              (신규, Customer에 종속)
-Equipment         (신규, Site·기존 Contract에 연결 — contract_id FK만 추가, Contract 자체는 무변경)
+Equipment         (신규, Site·기존 Contract에 연결 — contract_id FK)
 ServiceTicket     (신규)
 ServiceVisit      (신규)
+LinkAccessLog     (신규, 고객용 상태 링크 접근 시각·IP·토큰 식별자, 90일 보관)
 ```
 
-`CarePlan`(연간 상품·결제 상태)과 결제 상태 컬럼 전부 Phase 1에 넣지 않는다 — 13.1에서
-이미 스프레드시트로 수동 결제를 확인했으니, 이 단계의 결제 기록도 계속 스프레드시트에
-남긴다. 사업장의 운영 상태(`Site.status`: 정상/휴업 등)와 결제 상태는 서로 다른 개념이라
-하나의 컬럼에 섞지 않는다. 결제 상태를 위한 컬럼·테이블은 Phase 2의 `CarePlan`에서 처음
-생긴다.
+`CarePlan`과 결제 상태 컬럼은 전부 Phase 1에 넣지 않는다. 13.1에서 스프레드시트로 수동
+결제를 확인했으니 이 단계의 결제 기록도 계속 스프레드시트에 남긴다. 사업장의 운영 상태
+(`Site.status`: 정상/휴업 등)와 결제 상태는 서로 다른 개념이라 하나의 컬럼에 섞지 않는다.
+Phase 2의 `CarePlan`에는 상품 유형·기간·포함 방문 횟수만 기록하고 결제 상태는 넣지 않는다.
 
 ### Phase 2 — 확장 판매 단계 (13.3의 3~4주차 이후)
 
-- `CarePlan` 추가 — 연 36만/79만 원 상품과 자동 갱신 추적이 실제로 필요해지는 시점
+- `CarePlan` 추가 — 연 36만/79만 원 상품의 유형·기간·포함 방문 횟수와 갱신 예정일을
+  추적한다. 결제 상태 컬럼은 `PaymentOrder`가 생기는 Phase 3에서 함께 추가한다
 - 운영 대시보드(6장 항목 6) — 고객이 5곳을 넘어가 수기 확인이 버거워지는 시점
 - 주간 운영 보고(6장 항목 8) — 담당자가 매일 대시보드를 보고도 놓치는 사례가 나오는 시점
 
@@ -116,17 +121,19 @@ ServiceVisit      (신규)
 ```text
 PaymentOrder
   id, care_plan_id, billing_period, amount, status,
-  idempotency_key(= care_plan_id + billing_period)
+  idempotency_key(= care_plan_id + ":" + billing_period, UNIQUE)
 
 PaymentEvent
   id, payment_order_id, pg_event_id, event_type,
-  raw_payload, received_at
+  raw_payload, received_at,
+  UNIQUE(pg_event_id)
 ```
 
-- `PaymentOrder`: 결제 주문과 청구 기간(`billing_period`) 단위 기록. `CarePlan.payment_status`는
-  이 테이블의 최신 상태를 보여주는 캐시일 뿐이다.
+- `PaymentOrder`: 결제 주문과 청구 기간(`billing_period`) 단위 기록. `idempotency_key`와
+  `(care_plan_id, billing_period)`에 UNIQUE 제약을 둔다. `CarePlan.payment_status`는 이
+  테이블의 최신 상태를 보여주는 캐시일 뿐이다.
 - `PaymentEvent`: PG가 보내는 웹훅 원문과 이벤트 ID를 그대로 저장해 중복·순서바뀜 수신을
-  가려낸다.
+  가려낸다. `pg_event_id`에는 UNIQUE 제약을 둔다.
 - 10장에 이미 정리된 멱등키·웹훅 안전성·부분환불 규칙을 위 두 테이블에 그대로 적용한다.
 
 ## 5. 외부 공유 링크
@@ -147,11 +154,11 @@ PaymentEvent
   남지 않게 한다.
 - **요청 횟수 제한**: 토큰당·IP당 요청 빈도를 제한해 무차별 대입으로 다른 토큰을 추측하지
   못하게 한다.
-- **접근 로그 보관기간**: `LinkAccessLog`(요청 시각·IP 정도만)를 남기되 보관기간을 정해두고
-  (예: 90일) 그 이후 자동 삭제한다 — 개인정보 최소 수집 원칙에 맞춘다.
+- **접근 로그 보관기간**: `LinkAccessLog`(요청 시각·IP·토큰 식별자)를 Phase 1부터 남기고
+  90일 이후 자동 삭제한다. 토큰 원문과 불필요한 요청 본문은 기록하지 않는다.
 
 ## 6. 이 문서가 다루지 않는 것
 
 - People CRM/SoloFlow 자체의 향후 개발 방향 — 이 문서는 BigWash 쪽에서 무엇을 가져올지만
   다룬다. 두 저장소를 어떻게 바꿀지는 각자의 문서에서 별도로 다룬다.
-- design.md(시각 디자인) — `03-design-system.md`(가칭)에서 별도로 다룬다.
+- design.md(시각 디자인) — 현재 저장소 루트의 `design.md`에서 별도로 다룬다.

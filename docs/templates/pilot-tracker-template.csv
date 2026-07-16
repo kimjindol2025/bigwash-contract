@@ -1,0 +1,2 @@
+pilot_id,customer_alias,offered_at,accepted_at,paid_at,amount_krw,payment_evidence_ref,starts_at,ends_at,service_scope,exclusions,as_cases_handled,status_check_contacts,operator_minutes,field_cost_krw,refund_krw,status,notes
+PILOT-EXAMPLE,C-EXAMPLE,2026-07-01,,,99000,,,,"장비등록,A/S상태공유,점검일정","출장비,부품비",0,0,0,0,0,offered,예시 행은 복사 후 삭제

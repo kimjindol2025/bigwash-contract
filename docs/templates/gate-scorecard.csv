@@ -1,0 +1,7 @@
+condition,target,actual,evidence_ref,status,owner,due_date,decision_note
+같은 핵심 문제를 인정한 고객,5명 중 3명 이상,,,pending,기존 고객 영업담당,T+5,
+실제 유료 파일럿,1건 이상 실제 결제,,,pending,영업담당,T+10,
+매일 기록할 최소 필드,필드와 입력 책임자 확정,,,pending,제품책임자,T+3,
+90일 파일럿 공헌이익,0원 초과,,,pending,대표·정산담당,T+6,
+연 36만원 상품 공헌이익,0원 초과,,,pending,대표·정산담당,T+6,
+연 79만원 상품 공헌이익,0원 초과,,,pending,대표·정산담당,T+6,

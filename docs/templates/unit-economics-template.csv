@@ -1,0 +1,4 @@
+offer,price_krw,contact_minutes,admin_minutes,remote_support_minutes,field_visits,travel_cost_krw,technician_hours,hourly_cost_krw,parts_allowance_krw,payment_fee_krw,total_variable_cost_krw,contribution_margin_krw,contribution_margin_rate,assumptions,owner,verified_at
+90일 파일럿,99000,0,0,0,0,0,0,0,0,0,0,0,0,실제 원가 입력,대표·정산담당,
+안심관리 연간,360000,0,0,0,0,0,0,0,0,0,0,0,0,실제 원가 입력,대표·정산담당,
+안심관리 현장형,790000,0,0,0,2,0,0,0,0,0,0,0,0,연 2회 점검 포함,대표·정산담당,

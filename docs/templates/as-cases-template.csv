@@ -1,0 +1,2 @@
+case_id,received_at,channel,site_alias,equipment_identified_first_contact,model_or_serial_available,first_response_minutes,resolution_hours,status_check_contacts,missing_fields,missed_or_delayed,delay_reason,outcome,evidence_ref,notes
+AS-EXAMPLE,2026-07-01,kakao,SITE-EXAMPLE,no,no,120,48,2,"model,serial",yes,장비 식별 지연,completed,INTERNAL-REF-001,예시 행은 복사 후 삭제

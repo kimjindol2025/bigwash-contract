@@ -1,0 +1,2 @@
+interview_id,interview_date,customer_segment,customer_alias,interviewer_role,current_process,most_costly_problem,status_visibility_pain,repair_history_pain,inspection_reminder_pain,preferred_result,problem_acknowledged,willing_to_pay_99000,commitment_type,objection,evidence_ref,follow_up
+INT-EXAMPLE,2026-07-01,최근 설치 고객,C-EXAMPLE,기존 고객 영업담당,전화와 카카오톡,A/S 일정 확인,high,medium,low,방문일 확정,yes,conditional,none,출장 포함 여부,INTERNAL-REF-002,예시 행은 복사 후 삭제
