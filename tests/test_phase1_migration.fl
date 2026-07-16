@@ -1,0 +1,47 @@
+(load "/root/apps/bigwash-contract/src/db.fl")
+
+;; OR IGNORE: number이 UNIQUE라 이 테스트를 같은 DB에 대해 두 번 실행해도 실패하지
+;; 않게 한다 (이미 있으면 건너뜀 — 이후 조회는 number로 지목하므로 안전하다).
+(db_exec DB "INSERT OR IGNORE INTO contracts (number, status, client_id, amount) VALUES (?, 'DRAFT', ?, ?)"
+  ["MIGRATION-101-A" 101 1000])
+(db_exec DB "INSERT OR IGNORE INTO contracts (number, status, client_id, amount) VALUES (?, 'DRAFT', ?, ?)"
+  ["MIGRATION-101-B" 101 2000])
+(db_exec DB "INSERT OR IGNORE INTO contracts (number, status, client_id, amount) VALUES (?, 'DRAFT', ?, ?)"
+  ["MIGRATION-202" 202 3000])
+
+(load "/root/apps/bigwash-contract/src/phase1-db.fl")
+
+;; db/contracts.sqlite는 테스트 간 리셋되지 않는 공유 파일이라, 이전 실행에서 남은
+;; client_id=101/202 계약이 섞여 있을 수 있다. 배열 위치(ORDER BY id의 0/1/2번째)로
+;; 비교하면 낀 행 때문에 엉뚱한 계약끼리 비교하게 되므로, 이 테스트가 방금 만든 계약을
+;; number로 직접 지목해서 비교한다.
+(let [customers (db_query DB
+                  "SELECT id, name, legacy_client_id, migration_status
+                   FROM customers WHERE legacy_client_id IN (101, 202)
+                   ORDER BY legacy_client_id"
+                  [])
+      contract-101a (first (db_query DB
+                     "SELECT client_id, customer_id FROM contracts WHERE number = 'MIGRATION-101-A'" []))
+      contract-101b (first (db_query DB
+                     "SELECT client_id, customer_id FROM contracts WHERE number = 'MIGRATION-101-B'" []))
+      contract-202 (first (db_query DB
+                     "SELECT client_id, customer_id FROM contracts WHERE number = 'MIGRATION-202'" []))
+      fk-errors (db_query DB "PRAGMA foreign_key_check" [])]
+  (assert (= (length customers) 2) "distinct client_id마다 Customer가 하나씩 생성되어야 한다")
+  (assert (= (get (get customers 0) :name) "레거시 고객-101") "고객 101 별칭을 보존해야 한다")
+  (assert (= (get (get customers 1) :name) "레거시 고객-202") "고객 202 별칭을 보존해야 한다")
+  (assert (= (get (get customers 0) :migration_status) "NEEDS_REVIEW") "미확인 고객은 검토 상태여야 한다")
+  (assert (= (get contract-101a :customer_id) (get contract-101b :customer_id))
+    "같은 legacy client_id 계약은 같은 Customer에 연결되어야 한다")
+  (assert (not (= (get contract-101a :customer_id) (get contract-202 :customer_id)))
+    "서로 다른 legacy client_id를 합치면 안 된다")
+  (assert (= (length fk-errors) 0) "Phase 1 마이그레이션 후 FK 오류가 없어야 한다"))
+
+;; 재실행해도 고객 중복이 생기지 않아야 한다 (전체 카운트가 아니라 이 테스트가 만든
+;; legacy_client_id 101/202로만 한정 — 다른 테스트가 만든 고객과 섞이지 않게).
+(init-phase1-db)
+(let [count-row (first (db_query DB
+                  "SELECT COUNT(*) AS count FROM customers WHERE legacy_client_id IN (101, 202)" []))]
+  (assert (= (get count-row :count) 2) "Phase 1 마이그레이션은 멱등적이어야 한다"))
+
+(println "✓ Phase 1 migration tests passed")

@@ -1,0 +1,192 @@
+;;; BigWash Care Phase 1 schema and bounded legacy migration
+
+(load "/root/apps/bigwash-contract/src/db.fl")
+
+(defn phase1-contract-customer-column? []
+  (let [rows (db_query DB
+               "SELECT COUNT(*) AS count FROM pragma_table_info('contracts') WHERE name = 'customer_id'"
+               [])]
+    (> (get (first rows) :count) 0)))
+
+(defn phase1-create-schema []
+  (do
+    (db_exec DB "PRAGMA foreign_keys = ON" [])
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS customers (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        phone TEXT,
+        email TEXT,
+        memo TEXT,
+        legacy_client_id INTEGER UNIQUE,
+        migration_status TEXT NOT NULL DEFAULT 'VERIFIED'
+          CHECK (migration_status IN ('VERIFIED', 'NEEDS_REVIEW')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )" [])
+
+    (if (not (phase1-contract-customer-column?))
+      (do
+        (db_exec DB
+          "ALTER TABLE contracts ADD COLUMN customer_id INTEGER REFERENCES customers(id)"
+          [])
+        true)
+      true)
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS sites (
+        id INTEGER PRIMARY KEY,
+        customer_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        address TEXT,
+        contact_phone TEXT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE'
+          CHECK (status IN ('ACTIVE', 'PAUSED', 'CLOSED')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(customer_id) REFERENCES customers(id)
+      )" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS equipment (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        contract_id INTEGER,
+        category TEXT NOT NULL,
+        model TEXT,
+        serial_number TEXT UNIQUE,
+        installed_at TEXT,
+        warranty_ends_at TEXT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE'
+          CHECK (status IN ('ACTIVE', 'REPAIR', 'RETIRED')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id),
+        FOREIGN KEY(contract_id) REFERENCES contracts(id)
+      )" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS service_tickets (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        equipment_id INTEGER,
+        symptom TEXT NOT NULL,
+        priority TEXT NOT NULL DEFAULT 'NORMAL'
+          CHECK (priority IN ('LOW', 'NORMAL', 'HIGH', 'URGENT')),
+        source TEXT NOT NULL DEFAULT 'PHONE'
+          CHECK (source IN ('PHONE', 'MESSAGE', 'WEB', 'INTERNAL')),
+        status TEXT NOT NULL DEFAULT 'RECEIVED'
+          CHECK (status IN ('RECEIVED', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+        scheduled_at TEXT,
+        closed_at TEXT,
+        public_token_hash TEXT UNIQUE,
+        public_token_revoked_at TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id),
+        FOREIGN KEY(equipment_id) REFERENCES equipment(id)
+      )" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS service_visits (
+        id INTEGER PRIMARY KEY,
+        ticket_id INTEGER NOT NULL,
+        technician TEXT NOT NULL,
+        visited_at TEXT NOT NULL,
+        diagnosis TEXT,
+        action_taken TEXT,
+        parts_used TEXT,
+        labor_cost REAL NOT NULL DEFAULT 0,
+        parts_cost REAL NOT NULL DEFAULT 0,
+        next_inspection_at TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(ticket_id) REFERENCES service_tickets(id)
+      )" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS service_ticket_history (
+        id INTEGER PRIMARY KEY,
+        ticket_id INTEGER NOT NULL,
+        old_status TEXT,
+        new_status TEXT NOT NULL,
+        changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(ticket_id) REFERENCES service_tickets(id)
+      )" [])
+
+    (db_exec DB
+      "CREATE TRIGGER IF NOT EXISTS trg_service_ticket_status_history
+       AFTER UPDATE OF status ON service_tickets
+       WHEN OLD.status <> NEW.status
+       BEGIN
+         INSERT INTO service_ticket_history (ticket_id, old_status, new_status)
+         VALUES (NEW.id, OLD.status, NEW.status);
+       END" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS link_access_logs (
+        id INTEGER PRIMARY KEY,
+        ticket_id INTEGER,
+        token_identifier TEXT NOT NULL,
+        ip_address TEXT NOT NULL,
+        access_outcome TEXT NOT NULL,
+        accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(ticket_id) REFERENCES service_tickets(id)
+      )" [])
+
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_contracts_customer_id ON contracts(customer_id)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_sites_customer_id ON sites(customer_id)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_equipment_site_id ON equipment(site_id)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_tickets_site_status ON service_tickets(site_id, status)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_visits_ticket_id ON service_visits(ticket_id)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_link_logs_token_time ON link_access_logs(token_identifier, accessed_at)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_link_logs_ip_time ON link_access_logs(ip_address, accessed_at)" [])))
+
+(defn phase1-backfill-legacy-customers []
+  (do
+    (db_exec DB
+      "INSERT OR IGNORE INTO customers (name, legacy_client_id, migration_status)
+       SELECT '레거시 고객-' || client_id, client_id, 'NEEDS_REVIEW'
+       FROM contracts
+       WHERE client_id IS NOT NULL
+       GROUP BY client_id"
+      [])
+    (db_exec DB
+      "UPDATE contracts
+       SET customer_id = (
+         SELECT customers.id FROM customers
+         WHERE customers.legacy_client_id = contracts.client_id
+       )
+       WHERE customer_id IS NULL"
+      [])))
+
+(defn phase1-assert-migration []
+  (let [unmapped (db_query DB
+                   "SELECT COUNT(*) AS count FROM contracts WHERE customer_id IS NULL"
+                   [])
+        orphaned (db_query DB
+                   "SELECT COUNT(*) AS count
+                    FROM contracts c
+                    LEFT JOIN customers u ON u.id = c.customer_id
+                    WHERE c.customer_id IS NOT NULL AND u.id IS NULL"
+                   [])]
+    (if (> (get (first unmapped) :count) 0)
+      (error "Phase 1 migration failed: unmapped contracts remain"))
+    (if (> (get (first orphaned) :count) 0)
+      (error "Phase 1 migration failed: orphaned customer references remain"))
+    true))
+
+(defn init-phase1-db []
+  (do
+    (db_exec DB "BEGIN TRANSACTION" [])
+    (try
+      (do
+        (phase1-create-schema)
+        (phase1-backfill-legacy-customers)
+        (phase1-assert-migration)
+        (db_exec DB "COMMIT" [])
+        true)
+      (catch [e]
+        (db_exec DB "ROLLBACK" [])
+        (error (str "Phase 1 database initialization failed: " e))))))
+
+(init-phase1-db)

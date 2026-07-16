@@ -1,0 +1,74 @@
+(load "/root/apps/bigwash-contract/src/washcare.fl")
+
+(defn hit-public-link [token ip remaining]
+  (if (<= remaining 0)
+    true
+    (do
+      (get-public-ticket token ip)
+      (hit-public-link token ip (- remaining 1)))))
+
+(let [customer (create-customer "테스트 점주" "010-1111-2222" "owner@example.com" "")
+      customer-id (get customer :id)
+      site (create-site customer-id "테스트 세차장" "서울시 테스트구" "02-1234-5678")
+      site-id (get site :id)
+      equipment (create-equipment site-id nil "세차기" "BW-100" "SERIAL-001" "2026-07-01" "2027-07-01")
+      equipment-id (get equipment :id)
+      ticket (create-service-ticket site-id equipment-id "급수 압력 저하" "HIGH" "PHONE" "2026-07-17T09:00:00Z")
+      ticket-id (get ticket :id)
+      raw-token (get ticket :public_token)
+      stored (first (db_query DB
+                      "SELECT public_token_hash FROM service_tickets WHERE id = ?"
+                      [ticket-id]))]
+
+  (assert (= (length raw-token) 64) "공개 링크 토큰은 32바이트 hex여야 한다")
+  (assert (= (get stored :public_token_hash) (sha256 raw-token)) "DB에는 SHA-256 해시만 저장해야 한다")
+  (assert (not (= (get stored :public_token_hash) raw-token)) "토큰 원문을 DB에 저장하면 안 된다")
+
+  (let [public-view (get-public-ticket raw-token "203.0.113.10")]
+    (assert (= (get public-view :status) "RECEIVED") "유효 링크는 티켓 상태를 보여줘야 한다")
+    (assert (= (get public-view :site_name) "테스트 세차장") "유효 링크는 고객 사업장명을 보여줘야 한다")
+    (assert (nil? (get public-view :symptom)) "공개 응답에 내부 상세 증상을 노출하면 안 된다")
+    (assert (nil? (get public-view :labor_cost)) "공개 응답에 원가를 노출하면 안 된다"))
+
+  (let [visit (add-service-visit ticket-id "김기사" "2026-07-17T09:30:00Z"
+                "필터 막힘" "필터 청소" "필터 1개" 50000 10000 "2026-10-17")]
+    (assert (= (get visit :ticket_id) ticket-id) "방문 이력은 티켓에 연결되어야 한다"))
+
+  (update-ticket-status ticket-id "IN_PROGRESS")
+  (assert (= (get (get-public-ticket raw-token "203.0.113.11") :status) "IN_PROGRESS")
+    "진행 상태가 고객 링크에 반영되어야 한다")
+
+  (revoke-public-link ticket-id)
+  (assert (nil? (get-public-ticket raw-token "203.0.113.12")) "폐기된 링크는 404용 nil이어야 한다")
+
+  (let [reissued (reissue-public-link ticket-id)
+        new-token (get reissued :public_token)]
+    (assert (not (= raw-token new-token)) "재발급 토큰은 이전 토큰과 달라야 한다")
+    (assert (nil? (get-public-ticket raw-token "203.0.113.13")) "이전 토큰은 재발급 후 무효여야 한다")
+    (assert (= (get (get-public-ticket new-token "203.0.113.13") :status) "IN_PROGRESS")
+      "재발급 토큰은 즉시 동작해야 한다")
+
+    (hit-public-link new-token "203.0.113.20" 20)
+    (assert (= (get (get-public-ticket new-token "203.0.113.20") :result) "RATE_LIMITED")
+      "토큰 단위 분당 제한을 적용해야 한다")
+
+    (db_exec DB
+      "INSERT INTO link_access_logs
+       (ticket_id, token_identifier, ip_address, access_outcome, accessed_at)
+       VALUES (?, 'old-log', '203.0.113.30', 'OK', datetime('now', '-91 days'))"
+      [ticket-id])
+    (prune-link-access-logs)
+    (let [old-count (first (db_query DB
+                      "SELECT COUNT(*) AS count FROM link_access_logs WHERE token_identifier = 'old-log'"
+                      []))]
+      (assert (= (get old-count :count) 0) "90일이 지난 접근 로그는 삭제해야 한다"))
+
+    (update-ticket-status ticket-id "COMPLETED")
+    (assert (nil? (get-public-ticket new-token "203.0.113.31")) "완료 티켓 링크는 자동 폐기되어야 한다"))
+
+  (let [history (db_query DB
+                  "SELECT old_status, new_status FROM service_ticket_history WHERE ticket_id = ? ORDER BY id"
+                  [ticket-id])]
+    (assert (= (length history) 2) "상태 변경 이력을 모두 남겨야 한다")))
+
+(println "✓ WashCare domain and secure link tests passed")

@@ -1,6 +1,6 @@
 ;;; Contract Management Logic
 
-(load "/root/bigwash-contract/src/db.fl")
+(load "/root/apps/bigwash-contract/src/phase1-db.fl")
 
 ;;; Status constants
 (define STATUS-DRAFT "DRAFT")
@@ -40,15 +40,26 @@
          (* (get item :quantity) (get item :unit_price))])
       (insert-items-rec db-conn contract-id items (+ idx 1)))))
 
+;;; Temporary rollback shadow for the legacy NOT NULL client_id column.
+;;; Verified legacy IDs are preserved; new customers use a negative Customer.id.
+(defn legacy-shadow-client-id [customer-id]
+  (let [rows (db_query (get-db)
+               "SELECT legacy_client_id FROM customers WHERE id = ?"
+               [customer-id])]
+    (if (= (length rows) 0) (error "Customer not found"))
+    (let [legacy-id (get (first rows) :legacy_client_id)]
+      (if (nil? legacy-id) (- 0 customer-id) legacy-id))))
+
 ;;; Create new contract (no try-catch inside, let caller handle errors)
-(defn create-contract-impl [client-id amount items]
+(defn create-contract-impl [customer-id amount items]
   (let [[db-conn (get-db)]
-        [contract-num (generate-contract-number)]]
+        [contract-num (generate-contract-number)]
+        [shadow-client-id (legacy-shadow-client-id customer-id)]]
     (db_exec db-conn "BEGIN TRANSACTION" [])
     ;; Insert contract
     (db_exec db-conn
-      "INSERT INTO contracts (number, status, client_id, amount) VALUES (?, ?, ?, ?)"
-      [contract-num STATUS-DRAFT client-id amount])
+      "INSERT INTO contracts (number, status, client_id, customer_id, amount) VALUES (?, ?, ?, ?, ?)"
+      [contract-num STATUS-DRAFT shadow-client-id customer-id amount])
 
     ;; Get contract ID
     (let [[rows (db_query db-conn "SELECT id FROM contracts WHERE number = ?" [contract-num])]]
@@ -60,13 +71,19 @@
         (db_exec db-conn "COMMIT" [])
         {:id contract-id :number contract-num :status STATUS-DRAFT}))))
 
-;;; Create new contract (with try-catch wrapper)
-(defn create-contract [client-id amount items]
+;;; Best-effort rollback that preserves the original domain error.
+(defn rollback-if-active [db-conn]
   (try
-    (create-contract-impl client-id amount items)
+    (do (db_exec db-conn "ROLLBACK" []) true)
+    (catch [rollback-error] false)))
+
+;;; Create new contract (with try-catch wrapper)
+(defn create-contract [customer-id amount items]
+  (try
+    (create-contract-impl customer-id amount items)
     (catch [e]
       (let [[db-conn (get-db)]]
-        (db_exec db-conn "ROLLBACK" [])
+        (rollback-if-active db-conn)
         (error (str "Contract creation failed: " e))))))
 
 ;;; Update contract status

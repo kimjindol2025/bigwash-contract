@@ -1,13 +1,15 @@
-(load "/root/bigwash-contract/src/contract.fl")
+(load "/root/apps/bigwash-contract/src/contract.fl")
 
 (println "--- Contract Test Start ---")
 
 ;; 1. Create Contract
 (let [[items [{:description "Washing Service" :quantity 10 :unit_price 50.0}
               {:description "Detergent" :quantity 5 :unit_price 10.0}]]
-      [client-id 101]
+      [customer-write (db_exec DB "INSERT INTO customers (name, migration_status) VALUES ('계약 테스트 고객', 'VERIFIED')" [])]
+      [customer-row (first (db_query DB "SELECT id FROM customers WHERE name = '계약 테스트 고객'" []))]
+      [customer-id (get customer-row :id)]
       [amount 550.0]]
-  (let [[result (create-contract client-id amount items)]]
+  (let [[result (create-contract customer-id amount items)]]
     (println "Contract created: " result)
     (let [[contract-id (get result :id)]]
 

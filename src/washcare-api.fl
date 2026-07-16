@@ -1,0 +1,141 @@
+;;; BigWash Care Phase 1 HTTP API
+
+(load "/root/apps/bigwash-contract/src/washcare.fl")
+
+(define CARE-PORT
+  (let [override (env-get "BIGWASH_CARE_PORT")]
+    (if (or (nil? override) (str-blank? override)) 40101 (int override))))
+
+(defn internal-authorized? [req]
+  (let [expected (env-get "BIGWASH_INTERNAL_API_KEY")
+        supplied (server_req_header req "x-api-key")]
+    (and (not (nil? expected))
+         (not (str-blank? expected))
+         (= expected supplied))))
+
+(defn unauthorized []
+  (server_status 401 {:ok false :error "Unauthorized"}))
+
+(defn no-store [response]
+  (server_header response "Cache-Control" "no-store"))
+
+(defn request-ip [req]
+  (let [real-ip (server_req_header req "x-real-ip")]
+    (if (or (nil? real-ip) (str-blank? real-ip)) "unknown" real-ip)))
+
+(defn handle-create-customer [req]
+  (if (internal-authorized? req)
+    (do
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-customer
+                              (get body :name)
+                              (get body :phone)
+                              (get body :email)
+                              (get body :memo))})))
+    (unauthorized)))
+
+(defn handle-create-site [req]
+  (if (internal-authorized? req)
+    (do
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-site
+                              (get body :customer_id)
+                              (get body :name)
+                              (get body :address)
+                              (get body :contact_phone))})))
+    (unauthorized)))
+
+(defn handle-create-equipment [req]
+  (if (internal-authorized? req)
+    (do
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-equipment
+                              (get body :site_id)
+                              (get body :contract_id)
+                              (get body :category)
+                              (get body :model)
+                              (get body :serial_number)
+                              (get body :installed_at)
+                              (get body :warranty_ends_at))})))
+    (unauthorized)))
+
+(defn handle-create-ticket [req]
+  (if (internal-authorized? req)
+    (do
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-service-ticket
+                              (get body :site_id)
+                              (get body :equipment_id)
+                              (get body :symptom)
+                              (get body :priority)
+                              (get body :source)
+                              (get body :scheduled_at))})))
+    (unauthorized)))
+
+(defn handle-update-ticket-status [req]
+  (if (internal-authorized? req)
+    (do
+      (let [ticket-id (server_req_param req "id")
+            body (server_req_json req)]
+        (server_json {:ok true
+                      :data (update-ticket-status ticket-id (get body :status))})))
+    (unauthorized)))
+
+(defn handle-add-visit [req]
+  (if (internal-authorized? req)
+    (do
+      (let [ticket-id (server_req_param req "id")
+            body (server_req_json req)]
+        (server_json {:ok true
+                      :data (add-service-visit
+                              ticket-id
+                              (get body :technician)
+                              (get body :visited_at)
+                              (get body :diagnosis)
+                              (get body :action_taken)
+                              (get body :parts_used)
+                              (get body :labor_cost)
+                              (get body :parts_cost)
+                              (get body :next_inspection_at))})))
+    (unauthorized)))
+
+(defn handle-revoke-link [req]
+  (if (internal-authorized? req)
+    (do
+      (server_json {:ok (revoke-public-link (server_req_param req "id"))}))
+    (unauthorized)))
+
+(defn handle-reissue-link [req]
+  (if (internal-authorized? req)
+    (do
+      (server_json {:ok true
+                    :data (reissue-public-link (server_req_param req "id"))}))
+    (unauthorized)))
+
+(defn handle-public-ticket [req]
+  (let [token (server_req_param req "token")
+        result (get-public-ticket token (request-ip req))]
+    (cond
+      [(nil? result)
+       (no-store (server_status 404 {:ok false :error "Not found"}))]
+      [(= (get result :result) "RATE_LIMITED")
+       (no-store (server_status 429 {:ok false :error "Too many requests"}))]
+      [true
+       (no-store (server_json {:ok true :data result}))])))
+
+(server_post "/care/customers" "handle-create-customer")
+(server_post "/care/sites" "handle-create-site")
+(server_post "/care/equipment" "handle-create-equipment")
+(server_post "/care/tickets" "handle-create-ticket")
+(server_put  "/care/tickets/:id/status" "handle-update-ticket-status")
+(server_post "/care/tickets/:id/visits" "handle-add-visit")
+(server_post "/care/tickets/:id/link/revoke" "handle-revoke-link")
+(server_post "/care/tickets/:id/link/reissue" "handle-reissue-link")
+(server_get  "/care/status/:token" "handle-public-ticket")
+
+(println (str "BigWash Care Phase 1 API starting on port " CARE-PORT))
+(server_start CARE-PORT)

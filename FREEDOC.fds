@@ -4,25 +4,28 @@ FREEDOC {
 }
 
 IDENTITY {
-  what: bigwash_contract
+  what: bigwash_care
   domain: business
   lang: freelang_v11
-  purpose: contract_management_system
+  purpose: contract_equipment_service_management
 }
 
 POSITION {
   status: in_progress
-  stage: "1/2"
-  current: contract_api
-  next: [esign, pdf_export]
-  note: "BigWash 계약 관리 시스템. 계약서 생성·서명·조회 API"
+  stage: "phase_1"
+  current: care_operations
+  next: [phase_1_pilot, legacy_client_id_removal, care_plan]
+  note: "계약 고객 전환, 사업장·설치장비·A/S 티켓·방문이력·보안 상태 링크"
 }
 
 MAP {
   entry: src/server.fl
-  api: src/api.fl
+  contract_api: src/api.fl
+  care_api: src/washcare-api.fl
   contract: src/contract.fl
+  care: src/washcare.fl
   db: src/db.fl
+  phase1_db: src/phase1-db.fl
   pages: src/pages.fl
   data: data
   docs: docs
@@ -32,6 +35,6 @@ MAP {
 FIXED {
   type: saas
   domain: bigwash
-  features: [contract_create, contract_sign, contract_view, pdf_export]
+  features: [contract_create, customer, site, equipment, service_ticket, service_visit, secure_status_link]
   db: sqlite
 }

@@ -1,8 +1,8 @@
 ;;; BigWash Contract Server
 
-(load "/root/bigwash-contract/src/db.fl")
-(load "/root/bigwash-contract/src/contract.fl")
-(load "/root/bigwash-contract/src/pages.fl")
+(load "/root/apps/bigwash-contract/src/db.fl")
+(load "/root/apps/bigwash-contract/src/contract.fl")
+(load "/root/apps/bigwash-contract/src/pages.fl")
 
 ;;; 테스트 데이터
 (define sample-contracts [
@@ -26,9 +26,9 @@
 (defn handle-post-contract [$req]
   (try
     (do
-      (let [[body (server_req_body $req)]]
+      (let [[body (server_req_json $req)]]
         (let [[result (create-contract
-                        (get body :clientId 0)
+                        (get body :customerId 0)
                         (get body :amount 0)
                         (get body :items []))]]
           (server_json {:ok true :data result}))))

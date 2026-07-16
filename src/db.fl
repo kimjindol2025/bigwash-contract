@@ -1,6 +1,10 @@
 ;;; Database Schema for BigWash Contract System
 
-(define DB "/root/bigwash-contract/db/contracts.sqlite")
+(define DB
+  (let [override (env-get "BIGWASH_DB_PATH")]
+    (if (or (nil? override) (str-blank? override))
+      "/root/apps/bigwash-contract/db/contracts.sqlite"
+      override)))
 
 ;;; Initialize database
 (defn init-db []

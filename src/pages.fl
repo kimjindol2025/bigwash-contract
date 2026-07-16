@@ -1,6 +1,6 @@
 ;;; 페이지 렌더링 시스템
 
-(load "/root/bigwash-contract/src/ui.fl")
+(load "/root/apps/bigwash-contract/src/ui.fl")
 
 ;;; 공통 헤더
 (defn render-header []

@@ -1,8 +1,8 @@
 ;;; Contract API Server
 
 ;; 1. 스코프 오염 방지: load 대신 import 사용
-(import contract :from "/root/bigwash-contract/src/contract.fl")
-(import db :from "/root/bigwash-contract/src/db.fl")
+(import contract :from "/root/apps/bigwash-contract/src/contract.fl")
+(import db :from "/root/apps/bigwash-contract/src/db.fl")
 
 ;; 4. 부작용(Side effect) 통제: 메인 실행부에서 명시적으로 DB 초기화
 (db:init-db)
@@ -37,19 +37,19 @@
         (server_status 404 {:ok false :error (get e "message")}))))))
 
 (defn handle-create-contract [req]
-  (let [[body (server_req_body req)]
-        [client-id (get body "client_id")]
+  (let [[body (server_req_json req)]
+        [customer-id (get body "customer_id")]
         [amount (get body "amount")]
         [items (get body "items")]]
     (try
       (do
         ;; 2. 방어 로직: 런타임 타입 검증 (assert-type)
-        (assert-type client-id "number")
+        (assert-type customer-id "number")
         (assert-type amount "number")
         (assert-type items "array")
         (if (= (length items) 0) (error "items array cannot be empty"))
 
-        (let [[result (contract:create-contract client-id amount items)]]
+        (let [[result (contract:create-contract customer-id amount items)]]
           (server_json {:ok true :data result})))
       (catch e
         ;; 에러 은닉 현상 방지
@@ -58,7 +58,7 @@
 (defn handle-update-status [req]
   (let [[params (server_req_params req)]
         [id (get params "id")]
-        [body (server_req_body req)]
+        [body (server_req_json req)]
         [new-status (get body "status")]]
     (try
       (do

@@ -1,0 +1,198 @@
+;;; BigWash Care Phase 1 domain operations
+
+(load "/root/apps/bigwash-contract/src/phase1-db.fl")
+
+(define TICKET-RECEIVED "RECEIVED")
+(define TICKET-SCHEDULED "SCHEDULED")
+(define TICKET-IN-PROGRESS "IN_PROGRESS")
+(define TICKET-COMPLETED "COMPLETED")
+(define TICKET-CANCELLED "CANCELLED")
+
+(defn inserted-id [table-name]
+  (let [rows (db_query DB (str "SELECT id FROM " table-name " ORDER BY id DESC LIMIT 1") [])]
+    (get (first rows) :id)))
+
+(defn create-customer [name phone email memo]
+  (do
+    (db_exec DB
+      "INSERT INTO customers (name, phone, email, memo, migration_status) VALUES (?, ?, ?, ?, 'VERIFIED')"
+      [name phone email memo])
+    (let [id (inserted-id "customers")]
+      (first (db_query DB "SELECT * FROM customers WHERE id = ?" [id])))))
+
+(defn create-site [customer-id name address contact-phone]
+  (do
+    (db_exec DB
+      "INSERT INTO sites (customer_id, name, address, contact_phone) VALUES (?, ?, ?, ?)"
+      [customer-id name address contact-phone])
+    (let [id (inserted-id "sites")]
+      (first (db_query DB "SELECT * FROM sites WHERE id = ?" [id])))))
+
+(defn create-equipment [site-id contract-id category model serial-number installed-at warranty-ends-at]
+  (do
+    (db_exec DB
+      "INSERT INTO equipment
+       (site_id, contract_id, category, model, serial_number, installed_at, warranty_ends_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)"
+      [site-id contract-id category model serial-number installed-at warranty-ends-at])
+    (let [id (inserted-id "equipment")]
+      (first (db_query DB "SELECT * FROM equipment WHERE id = ?" [id])))))
+
+(defn issue-ticket-token []
+  (let [raw-token (random_bytes 32)]
+    {:raw_token raw-token
+     :token_hash (sha256 raw-token)
+     :token_identifier (sha256_short raw-token)}))
+
+(defn create-service-ticket [site-id equipment-id symptom priority source scheduled-at]
+  (let [token (issue-ticket-token)]
+    (db_exec DB
+      "INSERT INTO service_tickets
+       (site_id, equipment_id, symptom, priority, source, status, scheduled_at, public_token_hash)
+       VALUES (?, ?, ?, ?, ?, 'RECEIVED', ?, ?)"
+      [site-id equipment-id symptom priority source scheduled-at (get token :token_hash)])
+    (let [id (inserted-id "service_tickets")]
+      {:id id
+       :status TICKET-RECEIVED
+       :public_token (get token :raw_token)})))
+
+(defn valid-ticket-transition? [from to]
+  (cond
+    [(= from TICKET-RECEIVED)
+     (or (= to TICKET-SCHEDULED) (= to TICKET-IN-PROGRESS) (= to TICKET-CANCELLED))]
+    [(= from TICKET-SCHEDULED)
+     (or (= to TICKET-IN-PROGRESS) (= to TICKET-CANCELLED))]
+    [(= from TICKET-IN-PROGRESS)
+     (or (= to TICKET-COMPLETED) (= to TICKET-CANCELLED))]
+    [true false]))
+
+(defn update-ticket-status [ticket-id new-status]
+  (let [rows (db_query DB "SELECT status FROM service_tickets WHERE id = ?" [ticket-id])]
+    (if (= (length rows) 0) (error "Service ticket not found"))
+    (let [old-status (get (first rows) :status)]
+      (if (not (valid-ticket-transition? old-status new-status))
+        (error "Invalid service ticket status transition"))
+      (if (or (= new-status TICKET-COMPLETED) (= new-status TICKET-CANCELLED))
+        (do
+          (db_exec DB
+            "UPDATE service_tickets
+             SET status = ?, closed_at = CURRENT_TIMESTAMP,
+                 public_token_revoked_at = CURRENT_TIMESTAMP,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?"
+            [new-status ticket-id])
+          true)
+        (do
+          (db_exec DB
+            "UPDATE service_tickets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            [new-status ticket-id])
+          true))
+      {:success true :old_status old-status :new_status new-status})))
+
+(defn add-service-visit [ticket-id technician visited-at diagnosis action-taken parts-used labor-cost parts-cost next-inspection-at]
+  (do
+    (db_exec DB
+      "INSERT INTO service_visits
+       (ticket_id, technician, visited_at, diagnosis, action_taken, parts_used,
+        labor_cost, parts_cost, next_inspection_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      [ticket-id technician visited-at diagnosis action-taken parts-used
+       labor-cost parts-cost next-inspection-at])
+    (let [id (inserted-id "service_visits")]
+      (first (db_query DB "SELECT * FROM service_visits WHERE id = ?" [id])))))
+
+(defn revoke-public-link [ticket-id]
+  (do
+    (db_exec DB
+      "UPDATE service_tickets SET public_token_revoked_at = CURRENT_TIMESTAMP,
+       updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      [ticket-id])
+    true))
+
+(defn reissue-public-link [ticket-id]
+  (let [rows (db_query DB "SELECT status FROM service_tickets WHERE id = ?" [ticket-id])]
+    (if (= (length rows) 0) (error "Service ticket not found"))
+    (if (or (= (get (first rows) :status) TICKET-COMPLETED)
+            (= (get (first rows) :status) TICKET-CANCELLED))
+      (error "Closed service ticket cannot receive a new public link"))
+    (let [token (issue-ticket-token)]
+      (db_exec DB
+        "UPDATE service_tickets
+         SET public_token_hash = ?, public_token_revoked_at = NULL,
+             updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        [(get token :token_hash) ticket-id])
+      {:ticket_id ticket-id :public_token (get token :raw_token)})))
+
+(defn prune-link-access-logs []
+  (do
+    (db_exec DB
+      "DELETE FROM link_access_logs WHERE accessed_at < datetime('now', '-90 days')"
+      [])
+    true))
+
+(defn public-ip-rate-limited? [ip-address]
+  (let [rows (db_query DB
+               "SELECT COUNT(*) AS count FROM link_access_logs
+                WHERE ip_address = ?
+                  AND accessed_at >= datetime('now', '-1 minute')"
+               [ip-address])]
+    (>= (get (first rows) :count) 60)))
+
+(defn public-token-rate-limited? [token-identifier]
+  (let [rows (db_query DB
+               "SELECT COUNT(*) AS count FROM link_access_logs
+                WHERE token_identifier = ?
+                  AND accessed_at >= datetime('now', '-1 minute')"
+               [token-identifier])]
+    (>= (get (first rows) :count) 20)))
+
+(defn log-public-link-access [ticket-id token-identifier ip-address outcome]
+  (db_exec DB
+    "INSERT INTO link_access_logs
+     (ticket_id, token_identifier, ip_address, access_outcome) VALUES (?, ?, ?, ?)"
+    [ticket-id token-identifier ip-address outcome]))
+
+(defn get-public-ticket [raw-token ip-address]
+  (do
+    (prune-link-access-logs)
+    (let [token-hash (sha256 raw-token)
+          token-identifier (sha256_short raw-token)]
+      (if (public-ip-rate-limited? ip-address)
+        (do
+          (log-public-link-access nil token-identifier ip-address "RATE_LIMITED")
+          {:result "RATE_LIMITED"})
+        (let [rows (db_query DB
+                     "SELECT t.id, t.status, t.scheduled_at,
+                             s.name AS site_name, s.contact_phone
+                      FROM service_tickets t
+                      JOIN sites s ON s.id = t.site_id
+                      WHERE t.public_token_hash = ?
+                        AND t.public_token_revoked_at IS NULL
+                      LIMIT 1"
+                     [token-hash])]
+          (if (= (length rows) 0)
+            (do
+              (log-public-link-access nil token-identifier ip-address "NOT_FOUND")
+              nil)
+            (if (public-token-rate-limited? token-identifier)
+              (do
+                (log-public-link-access (get (first rows) :id) token-identifier ip-address "RATE_LIMITED")
+                {:result "RATE_LIMITED"})
+              (let [ticket (first rows)]
+                (log-public-link-access (get ticket :id) token-identifier ip-address "OK")
+                {:status (get ticket :status)
+                 :scheduled_at (get ticket :scheduled_at)
+                 :site_name (get ticket :site_name)
+                 :contact_phone (get ticket :contact_phone)}))))))))
+
+(defn list-customer-sites [customer-id]
+  (db_query DB
+    "SELECT id, name, address, contact_phone, status FROM sites
+     WHERE customer_id = ? ORDER BY name"
+    [customer-id]))
+
+(defn list-site-tickets [site-id]
+  (db_query DB
+    "SELECT id, equipment_id, symptom, priority, source, status, scheduled_at, created_at
+     FROM service_tickets WHERE site_id = ? ORDER BY created_at DESC"
+    [site-id]))
