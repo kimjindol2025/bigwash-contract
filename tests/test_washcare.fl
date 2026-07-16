@@ -1,5 +1,27 @@
 (load "/root/apps/bigwash-contract/src/washcare.fl")
 
+;; db/contracts.sqlite는 테스트 간 리셋되지 않는 공유 파일이라, 이 테스트가 쓰는
+;; 고정 식별자(serial_number 등)가 이전 실행에서 남아있으면 UNIQUE 제약에 걸린다.
+;; 재실행 가능하도록 이 테스트의 픽스처만 먼저 지운다.
+(db_exec DB
+  "DELETE FROM service_visits WHERE ticket_id IN
+   (SELECT id FROM service_tickets WHERE site_id IN
+     (SELECT id FROM sites WHERE name = '테스트 세차장'))" [])
+(db_exec DB
+  "DELETE FROM service_ticket_history WHERE ticket_id IN
+   (SELECT id FROM service_tickets WHERE site_id IN
+     (SELECT id FROM sites WHERE name = '테스트 세차장'))" [])
+(db_exec DB
+  "DELETE FROM link_access_logs WHERE ticket_id IN
+   (SELECT id FROM service_tickets WHERE site_id IN
+     (SELECT id FROM sites WHERE name = '테스트 세차장'))" [])
+(db_exec DB
+  "DELETE FROM service_tickets WHERE site_id IN
+   (SELECT id FROM sites WHERE name = '테스트 세차장')" [])
+(db_exec DB "DELETE FROM equipment WHERE serial_number = 'SERIAL-001'" [])
+(db_exec DB "DELETE FROM sites WHERE name = '테스트 세차장'" [])
+(db_exec DB "DELETE FROM customers WHERE name = '테스트 점주'" [])
+
 (defn hit-public-link [token ip remaining]
   (if (<= remaining 0)
     true
@@ -52,6 +74,10 @@
     (assert (= (get (get-public-ticket new-token "203.0.113.20") :result) "RATE_LIMITED")
       "토큰 단위 분당 제한을 적용해야 한다")
 
+    ;; 위 요청 제한 테스트가 남긴 접근 로그를 지운다 — 안 지우면 아래 완료 상태 확인이
+    ;; 같은 1분 창 안에서 여전히 RATE_LIMITED로 막힌다.
+    (db_exec DB "DELETE FROM link_access_logs WHERE ticket_id = ?" [ticket-id])
+
     (db_exec DB
       "INSERT INTO link_access_logs
        (ticket_id, token_identifier, ip_address, access_outcome, accessed_at)
@@ -64,7 +90,15 @@
       (assert (= (get old-count :count) 0) "90일이 지난 접근 로그는 삭제해야 한다"))
 
     (update-ticket-status ticket-id "COMPLETED")
-    (assert (nil? (get-public-ticket new-token "203.0.113.31")) "완료 티켓 링크는 자동 폐기되어야 한다"))
+    (let [after-complete (get-public-ticket new-token "203.0.113.31")]
+      (assert (not (nil? after-complete)) "완료 직후에도 고객이 완료 상태를 확인할 수 있어야 한다")
+      (assert (= (get after-complete :status) "COMPLETED") "완료 상태가 공개 링크에 반영되어야 한다"))
+
+    (db_exec DB
+      "UPDATE service_tickets SET closed_at = datetime('now', '-8 days') WHERE id = ?"
+      [ticket-id])
+    (assert (nil? (get-public-ticket new-token "203.0.113.32"))
+      (str "완료 후 " TICKET-COMPLETED-VISIBILITY-DAYS "일이 지나면 링크가 만료되어야 한다")))
 
   (let [history (db_query DB
                   "SELECT old_status, new_status FROM service_ticket_history WHERE ticket_id = ? ORDER BY id"

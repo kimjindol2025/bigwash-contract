@@ -1,0 +1,265 @@
+openapi: 3.0.3
+info:
+  title: WashCare Phase 1 API
+  description: >
+    대한이엔지 장비 안심관리(WashCare) Phase 1 API. 실측 검증일 2026-07-16.
+    상세 설명은 04-washcare-api.md 참조.
+  version: "1.0.0-phase1"
+servers:
+  - url: http://127.0.0.1:40101
+    description: 로컬 개발 (BIGWASH_CARE_PORT로 변경 가능, 기본 40101)
+security:
+  - ApiKeyAuth: []
+paths:
+  /care/customers:
+    post:
+      summary: 고객 생성
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                phone: { type: string }
+                email: { type: string }
+                memo: { type: string }
+      responses:
+        "200":
+          description: 생성됨
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkCustomer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /care/sites:
+    post:
+      summary: 사업장 생성
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer_id, name]
+              properties:
+                customer_id: { type: integer }
+                name: { type: string }
+                address: { type: string }
+                contact_phone: { type: string }
+      responses:
+        "200": { description: 생성됨 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/equipment:
+    post:
+      summary: 장비 등록
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, category]
+              properties:
+                site_id: { type: integer }
+                contract_id: { type: integer, nullable: true }
+                category: { type: string }
+                model: { type: string }
+                serial_number: { type: string, description: "UNIQUE — 중복 시 500 (실측, 개선 후보)" }
+                installed_at: { type: string, format: date }
+                warranty_ends_at: { type: string, format: date }
+      responses:
+        "200": { description: 생성됨 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { description: "실측 확인됨 — serial_number 중복 등 도메인 에러가 500으로 내려옴 (개선 후보)" }
+
+  /care/tickets:
+    post:
+      summary: A/S 접수 (공개 토큰 발급)
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, symptom]
+              properties:
+                site_id: { type: integer }
+                equipment_id: { type: integer, nullable: true }
+                symptom: { type: string }
+                priority: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
+                source: { type: string, enum: [PHONE, MESSAGE, WEB, INTERNAL] }
+                scheduled_at: { type: string, format: date-time, nullable: true }
+      responses:
+        "200":
+          description: "생성됨. public_token은 이 응답에서만 원문으로 내려옴(재조회 불가)."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      status: { type: string, example: RECEIVED }
+                      public_token: { type: string, description: "64자 hex, 저장 시 SHA-256 해시로만 보관됨" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/tickets/{id}/status:
+    put:
+      summary: 티켓 상태 변경
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [RECEIVED, SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED]
+      responses:
+        "200":
+          description: >
+            상태 변경됨. COMPLETED는 공개 링크를 즉시 폐기하지 않고 7일간 유지(고객이
+            완료 상태를 확인할 수 있도록, 2026-07-16 수정). CANCELLED는 즉시 폐기.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { description: "실측 확인됨 — 잘못된 전이/존재하지 않는 티켓이 400이 아니라 500, 내부 에러 메시지 그대로 노출 (개선 후보)" }
+
+  /care/tickets/{id}/visits:
+    post:
+      summary: 방문·수리 이력 추가
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                technician: { type: string }
+                visited_at: { type: string, format: date-time }
+                diagnosis: { type: string }
+                action_taken: { type: string }
+                parts_used: { type: string }
+                labor_cost: { type: number }
+                parts_cost: { type: number }
+                next_inspection_at: { type: string, format: date, nullable: true }
+      responses:
+        "200": { description: 생성됨 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/tickets/{id}/link/revoke:
+    post:
+      summary: 공개 링크 폐기
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200": { description: "폐기됨" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/tickets/{id}/link/reissue:
+    post:
+      summary: "공개 링크 재발급 (이전 토큰은 즉시 무효화)"
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: "재발급됨. COMPLETED/CANCELLED 티켓은 재발급 불가(에러)."
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/status/{token}:
+    get:
+      summary: 공개 상태 조회 (인증 없음, 고객용)
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: "유효 토큰. 응답에 내부 상세(symptom, 원가 등)는 포함되지 않음(실측 확인)."
+          headers:
+            Cache-Control: { schema: { type: string, example: "no-store" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string }
+                      scheduled_at: { type: string, nullable: true }
+                      site_name: { type: string }
+                      contact_phone: { type: string }
+        "404":
+          description: "존재하지 않거나 폐기됨, 또는 완료 후 7일 경과. 셋을 구분하지 않음(의도적)."
+          headers:
+            Cache-Control: { schema: { type: string, example: "no-store" } }
+        "429":
+          description: "분당 요청 제한 초과 (토큰 20회 또는 IP 60회)"
+          headers:
+            Cache-Control: { schema: { type: string, example: "no-store" } }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: "BIGWASH_INTERNAL_API_KEY 환경변수 값. 미설정 시 전체 내부 엔드포인트가 401 (fail-closed, 실측 확인)."
+  parameters:
+    TicketId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+  responses:
+    Unauthorized:
+      description: "API 키 없음/불일치"
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean, example: false }
+              error: { type: string, example: Unauthorized }
+  schemas:
+    OkCustomer:
+      type: object
+      properties:
+        ok: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            phone: { type: string }
+            email: { type: string }
+            memo: { type: string }
+            legacy_client_id: { type: integer, nullable: true }
+            migration_status: { type: string, enum: [VERIFIED, NEEDS_REVIEW] }
+            created_at: { type: string }
+            updated_at: { type: string }
