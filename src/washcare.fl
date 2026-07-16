@@ -213,3 +213,49 @@
     "SELECT id, equipment_id, symptom, priority, source, status, scheduled_at, created_at
      FROM service_tickets WHERE site_id = ? ORDER BY created_at DESC"
     [site-id]))
+
+;; Admin UI용 목록/검색. 내부용이라 원가·증상 등 상세도 그대로 반환한다(공개 응답과는
+;; 다르게 최소노출 원칙을 적용하지 않음 — internal-authorized? 뒤에서만 호출되므로).
+(defn list-tickets-by-status [status today-only?]
+  (if today-only?
+    (db_query DB
+      "SELECT t.id, t.site_id, t.equipment_id, t.symptom, t.priority, t.source,
+              t.status, t.scheduled_at, t.created_at, s.name AS site_name, s.contact_phone
+       FROM service_tickets t JOIN sites s ON s.id = t.site_id
+       WHERE t.status = ? AND date(t.created_at) = date('now')
+       ORDER BY t.created_at DESC"
+      [status])
+    (db_query DB
+      "SELECT t.id, t.site_id, t.equipment_id, t.symptom, t.priority, t.source,
+              t.status, t.scheduled_at, t.created_at, s.name AS site_name, s.contact_phone
+       FROM service_tickets t JOIN sites s ON s.id = t.site_id
+       WHERE t.status = ?
+       ORDER BY t.created_at DESC"
+      [status])))
+
+(defn get-ticket-detail [ticket-id]
+  (let [ticket (first (db_query DB
+                 "SELECT t.*, s.name AS site_name, s.contact_phone, s.address,
+                         c.id AS customer_id, c.name AS customer_name
+                  FROM service_tickets t
+                  JOIN sites s ON s.id = t.site_id
+                  JOIN customers c ON c.id = s.customer_id
+                  WHERE t.id = ?"
+                 [ticket-id]))]
+    (if (nil? ticket)
+      nil
+      {:ticket ticket
+       :visits (db_query DB
+                 "SELECT * FROM service_visits WHERE ticket_id = ? ORDER BY visited_at"
+                 [ticket-id])
+       :history (db_query DB
+                  "SELECT old_status, new_status, changed_at FROM service_ticket_history
+                   WHERE ticket_id = ? ORDER BY changed_at"
+                  [ticket-id])})))
+
+(defn search-customers [query]
+  (db_query DB
+    "SELECT id, name, phone, email, migration_status FROM customers
+     WHERE name LIKE ? OR phone LIKE ?
+     ORDER BY name LIMIT 50"
+    [(str "%" query "%") (str "%" query "%")]))

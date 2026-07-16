@@ -24,6 +24,10 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | POST | `/care/tickets/:id/visits` | 방문·수리 이력 추가 | O |
 | POST | `/care/tickets/:id/link/revoke` | 공개 링크 폐기 | O |
 | POST | `/care/tickets/:id/link/reissue` | 공개 링크 재발급 | O |
+| GET | `/care/tickets?status=X&today=1` | 상태별 티켓 목록 (Admin UI용, 2026-07-16 추가) | O |
+| GET | `/care/tickets/:id` | 티켓 상세 + 방문이력 + 상태변경이력 (2026-07-16 추가) | O |
+| GET | `/care/customers?q=X` | 이름·전화번호로 고객 검색, 최대 50건 (2026-07-16 추가) | O |
+| GET | `/care/admin` | Admin UI 페이지 (HTML) — **이 경로 자체는 인증 없이 열람 가능**, 실제 데이터는 브라우저에서 API 키를 입력해야 조회됨 | X (셸만) |
 
 ### POST /care/customers
 
@@ -95,6 +99,37 @@ Admin UI에서 이 에러를 그대로 사용자에게 보여주면 안 되고, 
 
 `COMPLETED`/`CANCELLED` 티켓은 재발급 불가(에러). 응답 200: `{ok: true, data: {ticket_id, public_token}}`
 (이전 토큰은 즉시 무효화됨.)
+
+### GET /care/tickets
+
+쿼리: `status`(필수, RECEIVED 등), `today`(선택, `1`이면 오늘 생성된 것만).
+
+응답 200: `{ok: true, data: [{id, site_id, equipment_id, symptom, priority, source, status, scheduled_at, created_at, site_name, contact_phone}, ...]}`
+
+### GET /care/tickets/:id
+
+응답 200: `{ok: true, data: {ticket: {...전체 필드, customer_id, customer_name, site_name, address, contact_phone 포함}, visits: [...], history: [...]}}`
+
+응답 404: `{ok: false, error: "Not found"}` (실측 확인)
+
+### GET /care/customers?q=X
+
+`name`/`phone`에 대해 `LIKE %q%` 부분일치, 최대 50건. `q` 없으면 빈 문자열로 전체(최대
+50건) 반환.
+
+응답 200: `{ok: true, data: [{id, name, phone, email, migration_status}, ...]}`
+
+## Admin UI (MVP)
+
+`GET /care/admin` — 단일 정적 HTML(`src/washcare-admin.html`, 인라인 JS, 프레임워크 없음).
+
+- 메뉴: 오늘 접수 / 진행중 / 완료 / 고객검색 / + 접수 생성
+- 기능: 목록 조회, 상세 조회(방문·상태변경 이력 포함), 상태 변경(허용된 다음 상태만
+  버튼으로 노출), 공개 링크 재발급 + 토큰 복사, 신규 접수 생성 + 발급된 토큰 복사
+- API 키는 페이지 상단 입력창에 입력 → `localStorage`에 저장 → 모든 호출에
+  `x-api-key` 헤더로 사용. 페이지 자체(HTML/JS)는 인증 없이 열람 가능하지만, 데이터
+  호출은 전부 내부 인증을 거치므로 키를 모르면 아무 데이터도 못 본다.
+- 디자인은 최소한(design.md 팔레트 재사용)만 적용, 사용성 우선.
 
 ## 공개 엔드포인트
 

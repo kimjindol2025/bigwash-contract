@@ -36,6 +36,17 @@ paths:
                 $ref: "#/components/schemas/OkCustomer"
         "401":
           $ref: "#/components/responses/Unauthorized"
+    get:
+      summary: 고객 검색 (name/phone LIKE 부분일치, 최대 50건)
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { description: 목록 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/sites:
     post:
@@ -115,6 +126,22 @@ paths:
                       status: { type: string, example: RECEIVED }
                       public_token: { type: string, description: "64자 hex, 저장 시 SHA-256 해시로만 보관됨" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+    get:
+      summary: 상태별 티켓 목록 (Admin UI용)
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: status
+          in: query
+          required: true
+          schema: { type: string, enum: [RECEIVED, SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED] }
+        - name: today
+          in: query
+          required: false
+          schema: { type: string, enum: ["1"] }
+          description: "1이면 오늘 생성된 티켓만"
+      responses:
+        "200": { description: 목록 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/tickets/{id}/status:
     put:
@@ -165,6 +192,24 @@ paths:
       responses:
         "200": { description: 생성됨 }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/tickets/{id}:
+    get:
+      summary: 티켓 상세 (방문·상태변경 이력 포함)
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200": { description: "{ticket, visits, history}" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: "실측 확인됨 — 존재하지 않는 티켓" }
+
+  /care/admin:
+    get:
+      summary: "Admin UI (HTML, 인라인 JS). 페이지 셸은 인증 없이 열람 가능 — 데이터 호출은 전부 x-api-key 필요."
+      security: []
+      responses:
+        "200": { description: HTML }
 
   /care/tickets/{id}/link/revoke:
     post:

@@ -6,6 +6,8 @@
   (let [override (env-get "BIGWASH_CARE_PORT")]
     (if (or (nil? override) (str-blank? override)) 40101 (int override))))
 
+(define ADMIN-HTML (file_read "/root/apps/bigwash-contract/src/washcare-admin.html"))
+
 (defn internal-authorized? [req]
   (let [expected (env-get "BIGWASH_INTERNAL_API_KEY")
         supplied (server_req_header req "x-api-key")]
@@ -127,15 +129,44 @@
       [true
        (no-store (server_json {:ok true :data result}))])))
 
+;; Admin UI 목록/검색/상세 — 전부 내부 인증 필요.
+(defn handle-list-tickets [req]
+  (if (internal-authorized? req)
+    (let [status (server_req_query req "status")
+          today (server_req_query req "today")]
+      (server_json {:ok true
+                    :data (list-tickets-by-status status (= today "1"))}))
+    (unauthorized)))
+
+(defn handle-ticket-detail [req]
+  (if (internal-authorized? req)
+    (let [detail (get-ticket-detail (server_req_param req "id"))]
+      (if (nil? detail)
+        (server_status 404 {:ok false :error "Not found"})
+        (server_json {:ok true :data detail})))
+    (unauthorized)))
+
+(defn handle-search-customers [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true :data (search-customers (or (server_req_query req "q") ""))})
+    (unauthorized)))
+
+(defn handle-admin-page [req]
+  (server_html ADMIN-HTML))
+
 (server_post "/care/customers" "handle-create-customer")
+(server_get  "/care/customers" "handle-search-customers")
 (server_post "/care/sites" "handle-create-site")
 (server_post "/care/equipment" "handle-create-equipment")
 (server_post "/care/tickets" "handle-create-ticket")
+(server_get  "/care/tickets" "handle-list-tickets")
+(server_get  "/care/tickets/:id" "handle-ticket-detail")
 (server_put  "/care/tickets/:id/status" "handle-update-ticket-status")
 (server_post "/care/tickets/:id/visits" "handle-add-visit")
 (server_post "/care/tickets/:id/link/revoke" "handle-revoke-link")
 (server_post "/care/tickets/:id/link/reissue" "handle-reissue-link")
 (server_get  "/care/status/:token" "handle-public-ticket")
+(server_get  "/care/admin" "handle-admin-page")
 
 (println (str "BigWash Care Phase 1 API starting on port " CARE-PORT))
 (server_start CARE-PORT)
