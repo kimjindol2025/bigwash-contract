@@ -154,6 +154,9 @@
 (defn handle-admin-page [req]
   (server_html ADMIN-HTML))
 
+(defn handle-root [req]
+  (server_redirect "/care/admin"))
+
 ;; ---- 부품판매 ----
 (defn handle-create-part-sale [req]
   (if (internal-authorized? req)
@@ -273,6 +276,7 @@
 (server_post "/care/sites/:id/link/reissue" "handle-reissue-site-link")
 (server_get  "/care/warranty-expiring" "handle-warranty-expiring")
 (server_get  "/care/admin" "handle-admin-page")
+(server_get  "/" "handle-root")
 
 (println (str "BigWash Care Phase 1 API starting on port " CARE-PORT))
 (server_start CARE-PORT)
