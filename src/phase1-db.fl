@@ -8,6 +8,13 @@
                [])]
     (> (get (first rows) :count) 0)))
 
+(defn phase1-column-exists? [table-name column-name]
+  (let [rows (db_query DB
+               (str "SELECT COUNT(*) AS count FROM pragma_table_info('" table-name
+                    "') WHERE name = '" column-name "'")
+               [])]
+    (> (get (first rows) :count) 0)))
+
 (defn phase1-create-schema []
   (do
     (db_exec DB "PRAGMA foreign_keys = ON" [])
@@ -46,6 +53,15 @@
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(customer_id) REFERENCES customers(id)
       )" [])
+
+    ;; 2026-07-17 추가: "고객에게 장비관리 링크 전달"(9장 판매 흐름) — 티켓 단위가
+    ;; 아니라 사업장 단위로 지속되는 링크. 판매 등록 시 한 번 발급한다.
+    (if (not (phase1-column-exists? "sites" "public_token_hash"))
+      (db_exec DB "ALTER TABLE sites ADD COLUMN public_token_hash TEXT" [])
+      true)
+    (if (not (phase1-column-exists? "sites" "public_token_revoked_at"))
+      (db_exec DB "ALTER TABLE sites ADD COLUMN public_token_revoked_at TEXT" [])
+      true)
 
     (db_exec DB
       "CREATE TABLE IF NOT EXISTS equipment (
@@ -185,7 +201,10 @@
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_link_logs_ip_time ON link_access_logs(ip_address, accessed_at)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_part_sales_site_id ON part_sales(site_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_outreach_site_id ON outreach_touches(site_id)" [])
-    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_outreach_next_touch ON outreach_touches(next_touch_at)" [])))
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_outreach_next_touch ON outreach_touches(next_touch_at)" [])
+    (db_exec DB
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_sites_public_token_hash
+       ON sites(public_token_hash) WHERE public_token_hash IS NOT NULL" [])))
 
 (defn phase1-backfill-legacy-customers []
   (do

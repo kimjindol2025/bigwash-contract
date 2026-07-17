@@ -205,6 +205,51 @@
     (server_json {:ok true :data (list-due-outreach)})
     (unauthorized)))
 
+;; ---- 판매 관리 ----
+(defn handle-register-sale [req]
+  (if (internal-authorized? req)
+    (let [body (server_req_json req)]
+      (server_json {:ok true
+                    :data (register-sale
+                            (get body :customer_id)
+                            (get body :customer_name)
+                            (get body :customer_phone)
+                            (get body :customer_email)
+                            (get body :site_name)
+                            (get body :site_address)
+                            (get body :site_contact_phone)
+                            (get body :contract_id)
+                            (or (get body :equipment) [])
+                            (or (get body :first_outreach_days) 90))}))
+    (unauthorized)))
+
+(defn handle-site-public-status [req]
+  (let [token (server_req_param req "token")
+        result (get-site-public-view token (request-ip req))]
+    (cond
+      [(nil? result)
+       (no-store (server_status 404 {:ok false :error "Not found"}))]
+      [(= (get result :result) "RATE_LIMITED")
+       (no-store (server_status 429 {:ok false :error "Too many requests"}))]
+      [true
+       (no-store (server_json {:ok true :data result}))])))
+
+(defn handle-revoke-site-link [req]
+  (if (internal-authorized? req)
+    (server_json {:ok (revoke-site-link (server_req_param req "id"))})
+    (unauthorized)))
+
+(defn handle-reissue-site-link [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true :data (reissue-site-link (server_req_param req "id"))})
+    (unauthorized)))
+
+(defn handle-warranty-expiring [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-warranty-expiring (or (server_req_query req "days") "30"))})
+    (unauthorized)))
+
 (server_post "/care/customers" "handle-create-customer")
 (server_get  "/care/customers" "handle-search-customers")
 (server_post "/care/sites" "handle-create-site")
@@ -222,6 +267,11 @@
 (server_post "/care/outreach" "handle-create-outreach")
 (server_post "/care/outreach/:id/response" "handle-outreach-response")
 (server_get  "/care/outreach/due" "handle-outreach-due")
+(server_post "/care/sales" "handle-register-sale")
+(server_get  "/care/site-status/:token" "handle-site-public-status")
+(server_post "/care/sites/:id/link/revoke" "handle-revoke-site-link")
+(server_post "/care/sites/:id/link/reissue" "handle-reissue-site-link")
+(server_get  "/care/warranty-expiring" "handle-warranty-expiring")
 (server_get  "/care/admin" "handle-admin-page")
 
 (println (str "BigWash Care Phase 1 API starting on port " CARE-PORT))

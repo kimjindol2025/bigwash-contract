@@ -45,8 +45,10 @@
   <button data-view="done">완료</button>
   <button data-view="search">고객검색</button>
   <button data-view="outreach">홍보 대상</button>
+  <button data-view="warranty">보증 임박</button>
   <button data-view="new" class="ghost">+ 접수 생성</button>
   <button data-view="newpart" class="ghost">+ 부품판매</button>
+  <button data-view="newsale" class="ghost">+ 판매 등록</button>
 </nav>
 <main>
   <div class="msg" id="msg"></div>
@@ -264,6 +266,90 @@ async function createPartSale() {
   } catch (e) { msg.textContent = '오류: ' + e.message; }
 }
 
+async function loadWarranty() {
+  msg.textContent = '불러오는 중...';
+  try {
+    const res = await api('GET', '/care/warranty-expiring?days=30');
+    msg.textContent = '';
+    const rows = res.data.map(e => `<tr>
+      <td>${e.site_name}</td><td>${e.contact_phone || ''}</td>
+      <td>${e.model}</td><td>${e.category}</td><td>${e.warranty_ends_at}</td>
+      <td><button class="ghost" onclick="quickOutreach(${e.site_id}, ${e.id})">교체제안 접촉 예약</button></td>
+    </tr>`).join('');
+    content.innerHTML = `<p style="color:#94a3b8">30일 이내 보증 만료 — 재구매·교체판매 제안 대상</p>
+    <table><thead><tr>
+      <th>사업장</th><th>연락처</th><th>모델</th><th>종류</th><th>보증만료일</th><th></th>
+    </tr></thead><tbody>${rows || '<tr><td colspan="6">없음</td></tr>'}</tbody></table>`;
+  } catch (e) { msg.textContent = '오류: ' + e.message; }
+}
+
+async function quickOutreach(siteId, equipmentId) {
+  try {
+    const next = new Date(Date.now() + 3 * 86400000).toISOString();
+    await api('POST', '/care/outreach', { site_id: siteId, equipment_id: equipmentId, touch_type: 'REPLACEMENT_OFFER', channel: 'PHONE', next_touch_at: next });
+    msg.textContent = '교체제안 접촉이 3일 후로 예약됐습니다.';
+  } catch (e) { msg.textContent = '오류: ' + e.message; }
+}
+
+function loadNewSaleForm() {
+  content.innerHTML = `<div class="panel">
+    <h2>판매 등록 (견적·계약 → 고객/사업장 → 장비 → 관리링크 → 첫 접촉 예약)</h2>
+    <div class="row"><div><label>기존 고객 ID (있으면, 없으면 비워서 신규)</label><input id="s-customer-id"></div></div>
+    <div class="row">
+      <div><label>고객명(신규 시)</label><input id="s-customer-name"></div>
+      <div><label>연락처(신규 시)</label><input id="s-customer-phone"></div>
+      <div><label>이메일(신규 시)</label><input id="s-customer-email"></div>
+    </div>
+    <div class="row">
+      <div><label>사업장명</label><input id="s-site-name"></div>
+      <div><label>주소</label><input id="s-site-address"></div>
+      <div><label>연락처</label><input id="s-site-phone"></div>
+    </div>
+    <div class="row">
+      <div><label>장비 종류</label><input id="s-eq-category" value="세차기"></div>
+      <div><label>모델</label><input id="s-eq-model"></div>
+      <div><label>일련번호</label><input id="s-eq-serial"></div>
+      <div><label>설치일</label><input id="s-eq-installed" type="date"></div>
+      <div><label>보증만료일</label><input id="s-eq-warranty" type="date"></div>
+    </div>
+    <div class="row"><div><label>첫 접촉까지(일)</label><input id="s-first-days" type="number" value="90"></div></div>
+    <button class="primary" onclick="createSale()">판매 등록</button>
+    <div id="saleResult"></div>
+  </div>`;
+}
+
+async function createSale() {
+  try {
+    const customerId = document.querySelector('#s-customer-id').value;
+    const body = {
+      customer_id: customerId ? Number(customerId) : null,
+      customer_name: document.querySelector('#s-customer-name').value,
+      customer_phone: document.querySelector('#s-customer-phone').value,
+      customer_email: document.querySelector('#s-customer-email').value,
+      site_name: document.querySelector('#s-site-name').value,
+      site_address: document.querySelector('#s-site-address').value,
+      site_contact_phone: document.querySelector('#s-site-phone').value,
+      contract_id: null,
+      equipment: [{
+        category: document.querySelector('#s-eq-category').value,
+        model: document.querySelector('#s-eq-model').value,
+        serial_number: document.querySelector('#s-eq-serial').value,
+        installed_at: document.querySelector('#s-eq-installed').value || null,
+        warranty_ends_at: document.querySelector('#s-eq-warranty').value || null
+      }],
+      first_outreach_days: Number(document.querySelector('#s-first-days').value || 90)
+    };
+    const res = await api('POST', '/care/sales', body);
+    const token = res.data.site_public_token;
+    document.querySelector('#saleResult').innerHTML = `<p>등록됨 — 사업장 #${res.data.site_id}, 고객 #${res.data.customer_id}</p>
+      <p>장비관리 링크(고객에게 전달):</p>
+      <div class="token-box"><span id="tk3">${location.origin}/care/site-status/${token}</span>
+        <button class="ghost" onclick="navigator.clipboard.writeText(document.querySelector('#tk3').textContent)">복사</button>
+      </div>
+      <p style="color:#f59e0b">이 링크는 지금만 표시됩니다.</p>`;
+  } catch (e) { msg.textContent = '오류: ' + e.message; }
+}
+
 document.querySelectorAll('nav button[data-view]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('nav button[data-view]').forEach(b => b.classList.remove('active'));
@@ -274,8 +360,10 @@ document.querySelectorAll('nav button[data-view]').forEach(btn => {
     else if (view === 'done') loadTickets('COMPLETED', false);
     else if (view === 'search') loadSearch();
     else if (view === 'outreach') loadOutreach();
+    else if (view === 'warranty') loadWarranty();
     else if (view === 'new') loadNewTicketForm();
     else if (view === 'newpart') loadNewPartSaleForm();
+    else if (view === 'newsale') loadNewSaleForm();
   });
 });
 

@@ -33,6 +33,10 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | POST | `/care/outreach` | 홍보/휴면기 접촉 예정 생성 (2026-07-17 추가) | O |
 | POST | `/care/outreach/:id/response` | 접촉 응답·전환 결과 기록 (2026-07-17 추가) | O |
 | GET | `/care/outreach/due` | 접촉 예정일이 지난(또는 오늘인) 대상 목록 (2026-07-17 추가) | O |
+| POST | `/care/sales` | 판매 등록 — 고객/사업장/장비 생성 + 장비관리 링크 발급 + 첫 접촉 예약 (orchestrated, 2026-07-17 추가) | O |
+| POST | `/care/sites/:id/link/revoke` | 사업장 장비관리 링크 폐기 (2026-07-17 추가) | O |
+| POST | `/care/sites/:id/link/reissue` | 사업장 장비관리 링크 재발급 (2026-07-17 추가) | O |
+| GET | `/care/warranty-expiring?days=N` | 보증 만료 임박 장비 목록, 기본 30일 (2026-07-17 추가) | O |
 
 ### POST /care/customers
 
@@ -165,15 +169,45 @@ Admin UI에서 이 에러를 그대로 사용자에게 보여주면 안 되고, 
 
 응답 200: `{ok: true, data: [{id, site_id, equipment_id, touch_type, channel, next_touch_at, site_name, contact_phone}, ...]}`
 
+### POST /care/sales
+
+9장 "신규 장비 판매" 흐름(견적·계약 → 고객/사업장 생성 → 장비 등록 → 장비관리 링크 전달 →
+첫 접촉 예약)을 하나의 호출로 묶은 orchestration 엔드포인트.
+
+요청: `{customer_id, customer_name, customer_phone, customer_email, site_name,
+site_address, site_contact_phone, contract_id, equipment: [{category, model,
+serial_number, installed_at, warranty_ends_at}, ...], first_outreach_days}`
+
+- `customer_id`가 있으면 기존 고객을 재사용(이름 등 다른 필드는 무시), 없으면
+  `customer_name` 등으로 신규 고객을 생성한다.
+- `equipment`는 배열 — 한 번의 판매에 여러 장비를 함께 등록할 수 있다.
+- `first_outreach_days`(기본 90) 뒤로 `CHECKIN` 유형의 첫 홍보 접촉이 자동 예약된다.
+
+응답 200: `{ok: true, data: {customer_id, site_id, equipment: [...], site_public_token}}`
+
+**`site_public_token`은 이 응답에서만 원문으로 내려온다** (티켓 토큰과 동일한 원칙 —
+DB에는 해시만 저장). 고객에게 이 링크(`/care/site-status/:token`)를 전달한다.
+
+### POST /care/sites/:id/link/revoke, POST /care/sites/:id/link/reissue
+
+티켓 링크의 revoke/reissue와 동일한 패턴(해시 저장, 재발급 시 이전 토큰 즉시 무효화).
+
+### GET /care/warranty-expiring?days=N
+
+`days`(기본 30) 이내에 `warranty_ends_at`이 도래하는 장비 목록 — 재구매·교체판매 제안
+대상 후보. 응답 200: `{ok: true, data: [{id, model, category, warranty_ends_at, status, site_id, site_name, contact_phone}, ...]}`
+
 ## Admin UI (MVP)
 
 `GET /care/admin` — 단일 정적 HTML(`src/washcare-admin.html`, 인라인 JS, 프레임워크 없음).
 
-- 메뉴: 오늘 접수 / 진행중 / 완료 / 고객검색 / 홍보 대상 / + 접수 생성 / + 부품판매
+- 메뉴: 오늘 접수 / 진행중 / 완료 / 고객검색 / 홍보 대상 / 보증 임박 / + 접수 생성 /
+  + 부품판매 / + 판매 등록
 - 기능: 목록 조회, 상세 조회(방문·상태변경 이력 포함), 상태 변경(허용된 다음 상태만
   버튼으로 노출), 공개 링크 재발급 + 토큰 복사, 신규 접수 생성 + 발급된 토큰 복사,
   부품판매 등록, 홍보 대상 목록에서 긍정/부정/무응답 원클릭 기록(무응답=30일 후 재접촉,
-  긍정=90일 후, 부정=재접촉 안 함)
+  긍정=90일 후, 부정=재접촉 안 함), 판매 등록(고객·사업장·장비를 한 화면에서 등록하고
+  장비관리 링크를 바로 복사), 보증 임박 목록에서 "교체제안 접촉 예약" 원클릭(3일 후)
 - API 키는 페이지 상단 입력창에 입력 → `localStorage`에 저장 → 모든 호출에
   `x-api-key` 헤더로 사용. 페이지 자체(HTML/JS)는 인증 없이 열람 가능하지만, 데이터
   호출은 전부 내부 인증을 거치므로 키를 모르면 아무 데이터도 못 본다.
@@ -193,6 +227,18 @@ Admin UI에서 이 에러를 그대로 사용자에게 보여주면 안 되고, 
 | 분당 요청 제한 초과 (토큰 20회 또는 IP 60회) | 429 | `{ok: false, error: "Too many requests"}` |
 
 응답에 `symptom`, `labor_cost` 등 내부 상세·원가 정보는 포함되지 않는다 (실측 확인).
+
+### GET /care/site-status/:token
+
+인증 없음. 티켓 단위가 아니라 **사업장 단위로 지속되는 장비관리 링크** (판매 등록 시
+발급). 보안 모델은 `/care/status/:token`과 동일(해시 저장, IP·토큰 rate limit,
+`Cache-Control: no-store`, 404로 존재 여부 은닉) — 실측 확인.
+
+응답 200: `{ok: true, data: {site_name, contact_phone, equipment: [{category, model,
+installed_at, warranty_ends_at, status}, ...]}}`
+
+계약금액, 고객 개인정보(이메일 등), A/S 이력 상세는 포함하지 않는다 — 사업장에 설치된
+장비 현황만 보여준다.
 
 ## 알려진 개선 후보 (실측 확인됨, 미수정)
 

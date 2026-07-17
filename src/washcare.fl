@@ -313,3 +313,99 @@
        )
      ORDER BY o.next_touch_at"
     []))
+
+;; ---- 판매 관리 (활동 40%, 9장 "신규 장비 판매" 흐름을 단일 트랜잭션으로 orchestrate) ----
+;; 견적·계약 -> 고객/사업장 생성 -> 장비 등록 -> 장비관리 링크 발급 -> 첫 접촉 예약
+;; 을 하나의 호출로 묶는다. customer-id가 있으면 기존 고객 재사용, 없으면 새로 만든다.
+(defn register-sale [customer-id customer-name customer-phone customer-email
+                      site-name site-address site-contact-phone
+                      contract-id equipment-list first-outreach-days]
+  (let [resolved-customer-id
+          (if (not (nil? customer-id))
+            customer-id
+            (get (create-customer customer-name customer-phone customer-email "") :id))
+        site-token (random_bytes 32)
+        site-token-hash (sha256 site-token)]
+    (db_exec DB
+      "INSERT INTO sites (customer_id, name, address, contact_phone, public_token_hash)
+       VALUES (?, ?, ?, ?, ?)"
+      [resolved-customer-id site-name site-address site-contact-phone site-token-hash])
+    (let [site-id (inserted-id "sites")
+          created-equipment
+            (map
+              (fn [item]
+                (create-equipment site-id contract-id
+                  (get item :category) (get item :model) (get item :serial_number)
+                  (get item :installed_at) (get item :warranty_ends_at)))
+              equipment-list)]
+      (db_exec DB
+        (str "INSERT INTO outreach_touches (site_id, equipment_id, touch_type, channel, next_touch_at)
+              VALUES (?, NULL, 'CHECKIN', 'PHONE', datetime('now', '+"
+             first-outreach-days " days'))")
+        [site-id])
+      {:customer_id resolved-customer-id
+       :site_id site-id
+       :equipment created-equipment
+       :site_public_token site-token})))
+
+;; ---- 장비관리 링크 (사업장 단위 공개 조회, 티켓 단위 공개 링크와는 별개) ----
+(defn get-site-public-view [raw-token ip-address]
+  (do
+    (prune-link-access-logs)
+    (let [token-hash (sha256 raw-token)
+          token-identifier (sha256_short raw-token)]
+      (if (public-ip-rate-limited? ip-address)
+        (do
+          (log-public-link-access nil token-identifier ip-address "RATE_LIMITED")
+          {:result "RATE_LIMITED"})
+        (let [rows (db_query DB
+                     "SELECT id, name, contact_phone FROM sites
+                      WHERE public_token_hash = ? AND public_token_revoked_at IS NULL
+                      LIMIT 1"
+                     [token-hash])]
+          (if (= (length rows) 0)
+            (do
+              (log-public-link-access nil token-identifier ip-address "NOT_FOUND")
+              nil)
+            (if (public-token-rate-limited? token-identifier)
+              (do
+                (log-public-link-access nil token-identifier ip-address "RATE_LIMITED")
+                {:result "RATE_LIMITED"})
+              (let [site (first rows)]
+                (log-public-link-access nil token-identifier ip-address "OK")
+                {:site_name (get site :name)
+                 :contact_phone (get site :contact_phone)
+                 :equipment (db_query DB
+                              "SELECT category, model, installed_at, warranty_ends_at, status
+                               FROM equipment WHERE site_id = ? ORDER BY installed_at"
+                              [(get site :id)])}))))))))
+
+(defn revoke-site-link [site-id]
+  (do
+    (db_exec DB
+      "UPDATE sites SET public_token_revoked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?"
+      [site-id])
+    true))
+
+(defn reissue-site-link [site-id]
+  (let [raw-token (random_bytes 32)
+        token-hash (sha256 raw-token)]
+    (db_exec DB
+      "UPDATE sites SET public_token_hash = ?, public_token_revoked_at = NULL,
+       updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      [token-hash site-id])
+    {:site_id site-id :site_public_token raw-token}))
+
+;; ---- 보증 만료 임박 (판매 관리 대시보드용, 재구매·교체판매 트리거 후보) ----
+(defn list-warranty-expiring [days]
+  (db_query DB
+    (str
+      "SELECT e.id, e.model, e.category, e.warranty_ends_at, e.status,
+              s.id AS site_id, s.name AS site_name, s.contact_phone
+       FROM equipment e
+       JOIN sites s ON s.id = e.site_id
+       WHERE e.warranty_ends_at IS NOT NULL
+         AND date(e.warranty_ends_at) <= date('now', '+" days " days')
+       ORDER BY e.warranty_ends_at")
+    []))

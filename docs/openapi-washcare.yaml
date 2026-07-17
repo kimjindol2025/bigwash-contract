@@ -355,6 +355,104 @@ paths:
           headers:
             Cache-Control: { schema: { type: string, example: "no-store" } }
 
+  /care/sales:
+    post:
+      summary: "판매 등록 (고객/사업장/장비 생성 + 장비관리 링크 발급 + 첫 접촉 예약, orchestrated)"
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_name, equipment]
+              properties:
+                customer_id: { type: integer, nullable: true, description: "있으면 기존 고객 재사용" }
+                customer_name: { type: string }
+                customer_phone: { type: string }
+                customer_email: { type: string }
+                site_name: { type: string }
+                site_address: { type: string }
+                site_contact_phone: { type: string }
+                contract_id: { type: integer, nullable: true }
+                equipment:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      category: { type: string }
+                      model: { type: string }
+                      serial_number: { type: string }
+                      installed_at: { type: string, format: date }
+                      warranty_ends_at: { type: string, format: date }
+                first_outreach_days: { type: integer, default: 90 }
+      responses:
+        "200":
+          description: "생성됨. site_public_token은 이 응답에서만 원문으로 내려옴(재조회 불가)."
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/sites/{id}/link/revoke:
+    post:
+      summary: 사업장 장비관리 링크 폐기
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: 폐기됨 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/sites/{id}/link/reissue:
+    post:
+      summary: "사업장 장비관리 링크 재발급 (이전 토큰은 즉시 무효화)"
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: 재발급됨 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/warranty-expiring:
+    get:
+      summary: "보증 만료 임박 장비 목록 (재구매·교체판매 제안 대상)"
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, default: 30 }
+      responses:
+        "200": { description: 목록 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/site-status/{token}:
+    get:
+      summary: "장비관리 링크 공개 조회 (인증 없음, 고객용, 티켓과 무관하게 지속됨)"
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: "유효 토큰. 계약금액·이메일·A/S이력 상세는 포함하지 않음."
+          headers:
+            Cache-Control: { schema: { type: string, example: "no-store" } }
+        "404":
+          description: "존재하지 않거나 폐기됨"
+          headers:
+            Cache-Control: { schema: { type: string, example: "no-store" } }
+        "429":
+          description: "분당 요청 제한 초과"
+          headers:
+            Cache-Control: { schema: { type: string, example: "no-store" } }
+
 components:
   securitySchemes:
     ApiKeyAuth:
