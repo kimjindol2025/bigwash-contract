@@ -133,13 +133,59 @@
         FOREIGN KEY(ticket_id) REFERENCES service_tickets(id)
       )" [])
 
+    ;; 2026-07-17 추가: 매출 30%인 부품판매. A/S(service_visits)와 독립적으로도
+    ;; 판매될 수 있어야 하므로 ticket_id/equipment_id는 nullable이다.
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS part_sales (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        equipment_id INTEGER,
+        ticket_id INTEGER,
+        part_name TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        unit_price REAL NOT NULL,
+        total_price REAL NOT NULL,
+        channel TEXT NOT NULL DEFAULT 'STORE'
+          CHECK (channel IN ('STORE', 'ONLINE')),
+        sold_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id),
+        FOREIGN KEY(equipment_id) REFERENCES equipment(id),
+        FOREIGN KEY(ticket_id) REFERENCES service_tickets(id)
+      )" [])
+
+    ;; 2026-07-17 추가: 판매 후 ~3년 휴면기 동안의 주기적 홍보/관계유지. 이게 실제로
+    ;; 가장 자주 도는 흐름이라 next_touch_at 기준 조회가 핵심이다.
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS outreach_touches (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        equipment_id INTEGER,
+        touch_type TEXT NOT NULL DEFAULT 'CHECKIN'
+          CHECK (touch_type IN ('CHECKIN', 'INSPECTION_REMINDER', 'REPLACEMENT_OFFER', 'PROMOTION')),
+        channel TEXT NOT NULL DEFAULT 'PHONE'
+          CHECK (channel IN ('PHONE', 'KAKAO', 'SMS', 'EMAIL')),
+        sent_at TIMESTAMP,
+        response TEXT
+          CHECK (response IS NULL OR response IN ('NO_RESPONSE', 'POSITIVE', 'NEGATIVE', 'CONVERTED')),
+        converted_to TEXT
+          CHECK (converted_to IS NULL OR converted_to IN ('TICKET', 'PART_SALE', 'NEW_EQUIPMENT')),
+        converted_ref_id INTEGER,
+        next_touch_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id),
+        FOREIGN KEY(equipment_id) REFERENCES equipment(id)
+      )" [])
+
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_contracts_customer_id ON contracts(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_sites_customer_id ON sites(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_equipment_site_id ON equipment(site_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_tickets_site_status ON service_tickets(site_id, status)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_visits_ticket_id ON service_visits(ticket_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_link_logs_token_time ON link_access_logs(token_identifier, accessed_at)" [])
-    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_link_logs_ip_time ON link_access_logs(ip_address, accessed_at)" [])))
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_link_logs_ip_time ON link_access_logs(ip_address, accessed_at)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_part_sales_site_id ON part_sales(site_id)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_outreach_site_id ON outreach_touches(site_id)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_outreach_next_touch ON outreach_touches(next_touch_at)" [])))
 
 (defn phase1-backfill-legacy-customers []
   (do

@@ -154,6 +154,57 @@
 (defn handle-admin-page [req]
   (server_html ADMIN-HTML))
 
+;; ---- 부품판매 ----
+(defn handle-create-part-sale [req]
+  (if (internal-authorized? req)
+    (let [body (server_req_json req)]
+      (server_json {:ok true
+                    :data (create-part-sale
+                            (get body :site_id)
+                            (get body :equipment_id)
+                            (get body :ticket_id)
+                            (get body :part_name)
+                            (or (get body :quantity) 1)
+                            (get body :unit_price)
+                            (or (get body :channel) "STORE"))}))
+    (unauthorized)))
+
+(defn handle-list-part-sales [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true :data (list-site-part-sales (server_req_query req "site_id"))})
+    (unauthorized)))
+
+;; ---- 휴면기 관리·홍보 ----
+(defn handle-create-outreach [req]
+  (if (internal-authorized? req)
+    (let [body (server_req_json req)]
+      (server_json {:ok true
+                    :data (create-outreach-touch
+                            (get body :site_id)
+                            (get body :equipment_id)
+                            (or (get body :touch_type) "CHECKIN")
+                            (or (get body :channel) "PHONE")
+                            (get body :next_touch_at))}))
+    (unauthorized)))
+
+(defn handle-outreach-response [req]
+  (if (internal-authorized? req)
+    (let [touch-id (server_req_param req "id")
+          body (server_req_json req)]
+      (server_json {:ok true
+                    :data (record-outreach-response
+                            touch-id
+                            (get body :response)
+                            (get body :converted_to)
+                            (get body :converted_ref_id)
+                            (get body :next_touch_at))}))
+    (unauthorized)))
+
+(defn handle-outreach-due [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true :data (list-due-outreach)})
+    (unauthorized)))
+
 (server_post "/care/customers" "handle-create-customer")
 (server_get  "/care/customers" "handle-search-customers")
 (server_post "/care/sites" "handle-create-site")
@@ -166,6 +217,11 @@
 (server_post "/care/tickets/:id/link/revoke" "handle-revoke-link")
 (server_post "/care/tickets/:id/link/reissue" "handle-reissue-link")
 (server_get  "/care/status/:token" "handle-public-ticket")
+(server_post "/care/part-sales" "handle-create-part-sale")
+(server_get  "/care/part-sales" "handle-list-part-sales")
+(server_post "/care/outreach" "handle-create-outreach")
+(server_post "/care/outreach/:id/response" "handle-outreach-response")
+(server_get  "/care/outreach/due" "handle-outreach-due")
 (server_get  "/care/admin" "handle-admin-page")
 
 (println (str "BigWash Care Phase 1 API starting on port " CARE-PORT))

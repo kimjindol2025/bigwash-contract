@@ -211,6 +211,93 @@ paths:
       responses:
         "200": { description: HTML }
 
+  /care/part-sales:
+    post:
+      summary: "부품판매 등록 (A/S와 독립적으로도 가능, 매출 30%)"
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, part_name, unit_price]
+              properties:
+                site_id: { type: integer }
+                equipment_id: { type: integer, nullable: true }
+                ticket_id: { type: integer, nullable: true }
+                part_name: { type: string }
+                quantity: { type: integer, default: 1 }
+                unit_price: { type: number }
+                channel: { type: string, enum: [STORE, ONLINE], default: STORE }
+      responses:
+        "200": { description: "생성됨. total_price는 서버가 quantity*unit_price로 계산" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    get:
+      summary: 사업장별 부품판매 목록
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: site_id
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: 목록 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/outreach:
+    post:
+      summary: "홍보/휴면기 접촉 예정 생성 (판매 후 ~3년 휴면기 관리)"
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id]
+              properties:
+                site_id: { type: integer }
+                equipment_id: { type: integer, nullable: true }
+                touch_type: { type: string, enum: [CHECKIN, INSPECTION_REMINDER, REPLACEMENT_OFFER, PROMOTION] }
+                channel: { type: string, enum: [PHONE, KAKAO, SMS, EMAIL] }
+                next_touch_at: { type: string, format: date-time, nullable: true }
+      responses:
+        "200": { description: 생성됨 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/outreach/{id}/response:
+    post:
+      summary: 접촉 응답·전환 결과 기록
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                response: { type: string, enum: [NO_RESPONSE, POSITIVE, NEGATIVE, CONVERTED] }
+                converted_to: { type: string, enum: [TICKET, PART_SALE, NEW_EQUIPMENT], nullable: true }
+                converted_ref_id: { type: integer, nullable: true }
+                next_touch_at: { type: string, format: date-time, nullable: true, description: "전환됐으면 null로 둬서 재접촉 종결" }
+      responses:
+        "200": { description: 갱신됨 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/outreach/due:
+    get:
+      summary: "접촉 예정일이 지난(또는 오늘인) 대상 목록 (사업장·장비별 최신 1건만)"
+      security: [{ApiKeyAuth: []}]
+      responses:
+        "200": { description: 목록 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /care/tickets/{id}/link/revoke:
     post:
       summary: 공개 링크 폐기

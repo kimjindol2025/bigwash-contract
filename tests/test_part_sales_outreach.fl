@@ -1,0 +1,48 @@
+(load "/root/apps/bigwash-contract/src/washcare.fl")
+
+;; db/contracts.sqlite는 테스트 간 리셋되지 않는 공유 파일이라, 이 테스트 픽스처를
+;; 먼저 정리한다.
+(db_exec DB
+  "DELETE FROM part_sales WHERE site_id IN (SELECT id FROM sites WHERE name = '부품테스트 세차장')" [])
+(db_exec DB
+  "DELETE FROM outreach_touches WHERE site_id IN (SELECT id FROM sites WHERE name = '부품테스트 세차장')" [])
+(db_exec DB "DELETE FROM equipment WHERE serial_number = 'SERIAL-PARTS-001'" [])
+(db_exec DB "DELETE FROM sites WHERE name = '부품테스트 세차장'" [])
+(db_exec DB "DELETE FROM customers WHERE name = '부품테스트 점주'" [])
+
+(let [customer (create-customer "부품테스트 점주" "010-2222-3333" "parts@example.com" "")
+      customer-id (get customer :id)
+      site (create-site customer-id "부품테스트 세차장" "서울시 부품구" "02-2222-3333")
+      site-id (get site :id)
+      equipment (create-equipment site-id nil "세차기" "BW-200" "SERIAL-PARTS-001" "2023-01-01" "2024-01-01")
+      equipment-id (get equipment :id)]
+
+  ;; A/S와 무관한 독립 부품판매
+  (let [sale (create-part-sale site-id equipment-id nil "필터" 2 5000 "STORE")]
+    (assert (= (get sale :total_price) 10000) "부품판매 총액은 수량*단가여야 한다")
+    (assert (= (get sale :channel) "STORE") "채널이 저장돼야 한다")
+    (assert (nil? (get sale :ticket_id)) "A/S와 무관한 부품판매는 ticket_id 없이도 가능해야 한다"))
+
+  (let [sales (list-site-part-sales site-id)]
+    (assert (= (length sales) 1) "사업장별 부품판매 목록 조회가 가능해야 한다"))
+
+  ;; 휴면기 관리: 접촉 생성 → 무응답 기록(다음 접촉일 갱신) → 전환 기록
+  (let [touch1 (create-outreach-touch site-id equipment-id "CHECKIN" "PHONE" "2026-06-01T00:00:00Z")]
+    (assert (= (get touch1 :touch_type) "CHECKIN") "접촉 유형이 저장돼야 한다")
+
+    (let [due-before (filter (fn [d] (= (get d :site_id) site-id)) (list-due-outreach))]
+      (assert (> (length due-before) 0) "next_touch_at이 지난 접촉은 due 목록에 나와야 한다"))
+
+    (record-outreach-response (get touch1 :id) "NO_RESPONSE" nil nil "2026-08-01T00:00:00Z")
+    (let [updated (first (db_query DB "SELECT * FROM outreach_touches WHERE id = ?" [(get touch1 :id)]))]
+      (assert (= (get updated :response) "NO_RESPONSE") "응답이 기록돼야 한다")
+      (assert (= (get updated :next_touch_at) "2026-08-01T00:00:00Z") "무응답이면 다음 접촉일이 갱신돼야 한다")))
+
+  (let [touch2 (create-outreach-touch site-id equipment-id "REPLACEMENT_OFFER" "KAKAO" "2026-06-01T00:00:00Z")
+        sale2 (create-part-sale site-id equipment-id nil "배터리" 1 30000 "STORE")]
+    (record-outreach-response (get touch2 :id) "CONVERTED" "PART_SALE" (get sale2 :id) nil)
+    (let [converted (first (db_query DB "SELECT * FROM outreach_touches WHERE id = ?" [(get touch2 :id)]))]
+      (assert (= (get converted :converted_to) "PART_SALE") "홍보 전환 결과가 기록돼야 한다")
+      (assert (= (get converted :converted_ref_id) (get sale2 :id)) "전환된 대상 ID가 연결돼야 한다"))))
+
+(println "✓ Part sales and outreach tests passed")

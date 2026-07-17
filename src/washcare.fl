@@ -259,3 +259,57 @@
      WHERE name LIKE ? OR phone LIKE ?
      ORDER BY name LIMIT 50"
     [(str "%" query "%") (str "%" query "%")]))
+
+;; ---- 부품판매 (매출 30%, A/S와 독립적으로도 발생) ----
+
+(defn create-part-sale [site-id equipment-id ticket-id part-name quantity unit-price channel]
+  (let [total (* quantity unit-price)]
+    (db_exec DB
+      "INSERT INTO part_sales
+       (site_id, equipment_id, ticket_id, part_name, quantity, unit_price, total_price, channel)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      [site-id equipment-id ticket-id part-name quantity unit-price total channel])
+    (let [id (inserted-id "part_sales")]
+      (first (db_query DB "SELECT * FROM part_sales WHERE id = ?" [id])))))
+
+(defn list-site-part-sales [site-id]
+  (db_query DB
+    "SELECT * FROM part_sales WHERE site_id = ? ORDER BY sold_at DESC"
+    [site-id]))
+
+;; ---- 휴면기 관리·홍보 (활동 20%, 판매 후 ~3년 동안 가장 자주 도는 흐름) ----
+
+(defn create-outreach-touch [site-id equipment-id touch-type channel next-touch-at]
+  (do
+    (db_exec DB
+      "INSERT INTO outreach_touches (site_id, equipment_id, touch_type, channel, next_touch_at)
+       VALUES (?, ?, ?, ?, ?)"
+      [site-id equipment-id touch-type channel next-touch-at])
+    (let [id (inserted-id "outreach_touches")]
+      (first (db_query DB "SELECT * FROM outreach_touches WHERE id = ?" [id])))))
+
+;; 접촉 기록: 응답과 전환 여부를 남기고, 전환 안 됐으면 다음 접촉일을 갱신한다.
+;; converted-to가 있으면 next-touch-at 없이 이 라운드를 종결한다(전환됐으니 재접촉 불필요).
+(defn record-outreach-response [touch-id response converted-to converted-ref-id next-touch-at]
+  (do
+    (db_exec DB
+      "UPDATE outreach_touches
+       SET sent_at = CURRENT_TIMESTAMP, response = ?, converted_to = ?,
+           converted_ref_id = ?, next_touch_at = ?
+       WHERE id = ?"
+      [response converted-to converted-ref-id next-touch-at touch-id])
+    (first (db_query DB "SELECT * FROM outreach_touches WHERE id = ?" [touch-id]))))
+
+;; 오늘 기준 접촉이 밀린(또는 예정된) 대상 목록 — Admin UI "홍보 대상" 화면용.
+(defn list-due-outreach []
+  (db_query DB
+    "SELECT o.id, o.site_id, o.equipment_id, o.touch_type, o.channel,
+            o.next_touch_at, s.name AS site_name, s.contact_phone
+     FROM outreach_touches o
+     JOIN sites s ON s.id = o.site_id
+     WHERE o.next_touch_at IS NOT NULL AND o.next_touch_at <= datetime('now')
+       AND o.id IN (
+         SELECT MAX(id) FROM outreach_touches GROUP BY site_id, equipment_id
+       )
+     ORDER BY o.next_touch_at"
+    []))

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-17 — 부품판매·휴면기 관리(홍보) 추가
+
+실제 사업 구조 확인(매출 장비70%/부품30%, 활동 판매40%/홍보20%/서비스15%/출장25%,
+장비당 A/S 주기 ~3년) 후 제품 문서(`docs/01`)를 재정리하고, 지금까지 완전히 빠져있던
+두 축을 구현.
+
+- `part_sales` 테이블 + `create-part-sale`/`list-site-part-sales` — A/S와 무관하게도
+  등록 가능한 독립 매출 이벤트로 설계 (equipment_id/ticket_id nullable)
+- `outreach_touches` 테이블 + `create-outreach-touch`/`record-outreach-response`/
+  `list-due-outreach` — 판매 후 휴면기 동안의 접촉을 추적하고, A/S·부품판매·신규판매
+  중 어디로 전환됐는지(`converted_to`/`converted_ref_id`) 기록
+- API 5종 추가: `POST /care/part-sales`, `GET /care/part-sales`, `POST /care/outreach`,
+  `POST /care/outreach/:id/response`, `GET /care/outreach/due`
+- Admin UI에 "홍보 대상"(due 목록 + 원클릭 긍정/부정/무응답 기록) / "+ 부품판매" 메뉴 추가
+- 신규 테스트 `tests/test_part_sales_outreach.fl` — 부품판매 총액 계산, A/S 무관 판매,
+  홍보 due 목록 노출, 무응답 시 재접촉일 갱신, 전환 기록 연결까지 검증. 3회 연속 실행
+  안정성 확인
+- 실서버로 전체 흐름(부품판매 생성/조회, 홍보 생성/due조회/응답기록, API키 미인증 401)
+  실측 확인
+
+전체 테스트(`test_contract.fl`, `test_phase1_migration.fl`×3, `test_washcare.fl`,
+`test_part_sales_outreach.fl`) 통과 확인 후 커밋.
+
 ## 2026-07-16 — WASHCARE-RUN-006: E2E 검증 및 Admin UI (MVP)
 
 **목표**: WashCare Phase 1을 "테스트 통과" 수준이 아니라 실제 고객 접수부터 완료까지

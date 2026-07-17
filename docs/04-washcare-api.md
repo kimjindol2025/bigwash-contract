@@ -28,6 +28,11 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | GET | `/care/tickets/:id` | 티켓 상세 + 방문이력 + 상태변경이력 (2026-07-16 추가) | O |
 | GET | `/care/customers?q=X` | 이름·전화번호로 고객 검색, 최대 50건 (2026-07-16 추가) | O |
 | GET | `/care/admin` | Admin UI 페이지 (HTML) — **이 경로 자체는 인증 없이 열람 가능**, 실제 데이터는 브라우저에서 API 키를 입력해야 조회됨 | X (셸만) |
+| POST | `/care/part-sales` | 부품판매 등록 (2026-07-17 추가) | O |
+| GET | `/care/part-sales?site_id=X` | 사업장별 부품판매 목록 (2026-07-17 추가) | O |
+| POST | `/care/outreach` | 홍보/휴면기 접촉 예정 생성 (2026-07-17 추가) | O |
+| POST | `/care/outreach/:id/response` | 접촉 응답·전환 결과 기록 (2026-07-17 추가) | O |
+| GET | `/care/outreach/due` | 접촉 예정일이 지난(또는 오늘인) 대상 목록 (2026-07-17 추가) | O |
 
 ### POST /care/customers
 
@@ -119,13 +124,56 @@ Admin UI에서 이 에러를 그대로 사용자에게 보여주면 안 되고, 
 
 응답 200: `{ok: true, data: [{id, name, phone, email, migration_status}, ...]}`
 
+### POST /care/part-sales
+
+요청: `{site_id, equipment_id, ticket_id, part_name, quantity, unit_price, channel}`
+(`equipment_id`/`ticket_id`는 nullable — A/S와 무관하게 부품만 팔 수 있음. `channel`은
+`STORE`|`ONLINE`, 기본값 `STORE`)
+
+`total_price`는 서버에서 `quantity * unit_price`로 계산(요청에 넣을 필요 없음).
+
+응답 200: `{ok: true, data: {...part_sales row}}`
+
+### GET /care/part-sales?site_id=X
+
+응답 200: `{ok: true, data: [{...part_sales row}, ...]}` (최신순)
+
+### POST /care/outreach
+
+요청: `{site_id, equipment_id, touch_type, channel, next_touch_at}`
+
+- `touch_type`: `CHECKIN`|`INSPECTION_REMINDER`|`REPLACEMENT_OFFER`|`PROMOTION`
+- `channel`: `PHONE`|`KAKAO`|`SMS`|`EMAIL`
+
+응답 200: `{ok: true, data: {...outreach_touches row}}`
+
+### POST /care/outreach/:id/response
+
+요청: `{response, converted_to, converted_ref_id, next_touch_at}`
+
+- `response`: `NO_RESPONSE`|`POSITIVE`|`NEGATIVE`|`CONVERTED`
+- `converted_to`(선택): `TICKET`|`PART_SALE`|`NEW_EQUIPMENT` — 이 접촉이 실제 A/S·부품판매·
+  신규판매로 이어졌으면 어느 쪽인지, `converted_ref_id`로 해당 레코드 id 연결
+- 전환됐으면 `next_touch_at`을 `null`로 둬서 이 라운드를 종결(재접촉 불필요)
+
+응답 200: `{ok: true, data: {...갱신된 row}}`
+
+### GET /care/outreach/due
+
+`next_touch_at <= now`인 대상 중, 사업장·장비 조합별로 **가장 최근 접촉 1건만** 반환
+(과거 이력이 아니라 "지금 연락해야 할 대상" 목록).
+
+응답 200: `{ok: true, data: [{id, site_id, equipment_id, touch_type, channel, next_touch_at, site_name, contact_phone}, ...]}`
+
 ## Admin UI (MVP)
 
 `GET /care/admin` — 단일 정적 HTML(`src/washcare-admin.html`, 인라인 JS, 프레임워크 없음).
 
-- 메뉴: 오늘 접수 / 진행중 / 완료 / 고객검색 / + 접수 생성
+- 메뉴: 오늘 접수 / 진행중 / 완료 / 고객검색 / 홍보 대상 / + 접수 생성 / + 부품판매
 - 기능: 목록 조회, 상세 조회(방문·상태변경 이력 포함), 상태 변경(허용된 다음 상태만
-  버튼으로 노출), 공개 링크 재발급 + 토큰 복사, 신규 접수 생성 + 발급된 토큰 복사
+  버튼으로 노출), 공개 링크 재발급 + 토큰 복사, 신규 접수 생성 + 발급된 토큰 복사,
+  부품판매 등록, 홍보 대상 목록에서 긍정/부정/무응답 원클릭 기록(무응답=30일 후 재접촉,
+  긍정=90일 후, 부정=재접촉 안 함)
 - API 키는 페이지 상단 입력창에 입력 → `localStorage`에 저장 → 모든 호출에
   `x-api-key` 헤더로 사용. 페이지 자체(HTML/JS)는 인증 없이 열람 가능하지만, 데이터
   호출은 전부 내부 인증을 거치므로 키를 모르면 아무 데이터도 못 본다.

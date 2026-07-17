@@ -44,7 +44,9 @@
   <button data-view="progress">진행중</button>
   <button data-view="done">완료</button>
   <button data-view="search">고객검색</button>
+  <button data-view="outreach">홍보 대상</button>
   <button data-view="new" class="ghost">+ 접수 생성</button>
+  <button data-view="newpart" class="ghost">+ 부품판매</button>
 </nav>
 <main>
   <div class="msg" id="msg"></div>
@@ -201,6 +203,67 @@ async function createTicket() {
   } catch (e) { msg.textContent = '오류: ' + e.message; }
 }
 
+async function loadOutreach() {
+  msg.textContent = '불러오는 중...';
+  try {
+    const res = await api('GET', '/care/outreach/due');
+    msg.textContent = '';
+    const rows = res.data.map(o => `<tr>
+      <td>${o.site_name}</td><td>${o.contact_phone || ''}</td>
+      <td>${o.touch_type}</td><td>${o.channel}</td><td>${(o.next_touch_at || '').slice(0,10)}</td>
+      <td>
+        <button class="ghost" onclick="respondOutreach(${o.id}, 'POSITIVE')">긍정</button>
+        <button class="ghost" onclick="respondOutreach(${o.id}, 'NEGATIVE')">부정</button>
+        <button class="ghost" onclick="respondOutreach(${o.id}, 'NO_RESPONSE')">무응답(30일 후 재접촉)</button>
+      </td>
+    </tr>`).join('');
+    content.innerHTML = `<table><thead><tr>
+      <th>사업장</th><th>연락처</th><th>유형</th><th>채널</th><th>접촉예정일</th><th>기록</th>
+    </tr></thead><tbody>${rows || '<tr><td colspan="6">접촉 대상 없음</td></tr>'}</tbody></table>`;
+  } catch (e) { msg.textContent = '오류: ' + e.message; }
+}
+
+async function respondOutreach(id, response) {
+  try {
+    const next = new Date(Date.now() + (response === 'NO_RESPONSE' ? 30 : 90) * 86400000).toISOString();
+    await api('POST', '/care/outreach/' + id + '/response', {
+      response, converted_to: null, converted_ref_id: null,
+      next_touch_at: response === 'NEGATIVE' ? null : next
+    });
+    loadOutreach();
+  } catch (e) { msg.textContent = '오류: ' + e.message; }
+}
+
+function loadNewPartSaleForm() {
+  content.innerHTML = `<div class="panel">
+    <h2>부품판매 등록</h2>
+    <div class="row"><div><label>사업장 ID</label><input id="p-site"></div>
+    <div><label>장비 ID (선택)</label><input id="p-equipment"></div></div>
+    <div class="row"><div><label>부품명</label><input id="p-name"></div>
+    <div><label>수량</label><input id="p-qty" type="number" value="1"></div>
+    <div><label>단가</label><input id="p-price" type="number"></div>
+    <div><label>채널</label><select id="p-channel"><option value="STORE" selected>매장</option><option value="ONLINE">온라인</option></select></div></div>
+    <button class="primary" onclick="createPartSale()">판매 등록</button>
+    <div id="partResult"></div>
+  </div>`;
+}
+
+async function createPartSale() {
+  try {
+    const body = {
+      site_id: Number(document.querySelector('#p-site').value),
+      equipment_id: document.querySelector('#p-equipment').value ? Number(document.querySelector('#p-equipment').value) : null,
+      ticket_id: null,
+      part_name: document.querySelector('#p-name').value,
+      quantity: Number(document.querySelector('#p-qty').value || 1),
+      unit_price: Number(document.querySelector('#p-price').value || 0),
+      channel: document.querySelector('#p-channel').value
+    };
+    const res = await api('POST', '/care/part-sales', body);
+    document.querySelector('#partResult').innerHTML = `<p>등록됨: #${res.data.id} — 총액 ${res.data.total_price.toLocaleString()}원</p>`;
+  } catch (e) { msg.textContent = '오류: ' + e.message; }
+}
+
 document.querySelectorAll('nav button[data-view]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('nav button[data-view]').forEach(b => b.classList.remove('active'));
@@ -210,7 +273,9 @@ document.querySelectorAll('nav button[data-view]').forEach(btn => {
     else if (view === 'progress') loadTickets('IN_PROGRESS', false);
     else if (view === 'done') loadTickets('COMPLETED', false);
     else if (view === 'search') loadSearch();
+    else if (view === 'outreach') loadOutreach();
     else if (view === 'new') loadNewTicketForm();
+    else if (view === 'newpart') loadNewPartSaleForm();
   });
 });
 
