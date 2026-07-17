@@ -385,10 +385,11 @@ paths:
                       serial_number: { type: string }
                       installed_at: { type: string, format: date }
                       warranty_ends_at: { type: string, format: date }
-                first_outreach_days: { type: integer, default: 90 }
+                first_outreach_days: { type: integer, minimum: 0, maximum: 3650, default: 90 }
       responses:
         "200":
           description: "생성됨. site_public_token은 이 응답에서만 원문으로 내려옴(재조회 불가)."
+        "400": { description: "요청값 오류" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/sites/{id}/link/revoke:
@@ -402,6 +403,7 @@ paths:
           schema: { type: integer }
       responses:
         "200": { description: 폐기됨 }
+        "404": { description: "사업장을 찾을 수 없음" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/sites/{id}/link/reissue:
@@ -415,6 +417,7 @@ paths:
           schema: { type: integer }
       responses:
         "200": { description: 재발급됨 }
+        "404": { description: "사업장을 찾을 수 없음" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/warranty-expiring:
@@ -425,9 +428,10 @@ paths:
         - name: days
           in: query
           required: false
-          schema: { type: integer, default: 30 }
+          schema: { type: integer, minimum: 0, maximum: 3650, default: 30 }
       responses:
         "200": { description: 목록 }
+        "400": { description: "days는 0~3650 사이의 정수여야 함" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/site-status/{token}:

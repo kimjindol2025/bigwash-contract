@@ -1,6 +1,9 @@
 (load "/root/apps/bigwash-contract/src/washcare.fl")
 
-;; db/contracts.sqlite는 테스트 간 리셋되지 않는 공유 파일이라, 이 테스트 픽스처를
+(if (= DB "/root/apps/bigwash-contract/db/contracts.sqlite")
+  (error "test_sales_flow.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
+
+;; 격리 테스트 DB 재실행을 위해 이 테스트 픽스처를
 ;; 먼저 정리한다 (FK 순서: outreach_touches/equipment -> sites -> customers).
 (db_exec DB
   "DELETE FROM outreach_touches WHERE site_id IN
@@ -53,25 +56,42 @@
                     nil [] 90)]
       (assert (= (get result2 :customer_id) customer-id) "기존 고객 ID를 재사용해야 한다"))))
 
-;; 보증 만료 임박 목록 — 30일 이내로 만료되는 장비만 나와야 한다
+;; 보증 만료 임박 목록 — 실행일 기준 15일 후 장비만 30일 목록에 포함한다.
 (db_exec DB
   "DELETE FROM outreach_touches WHERE site_id IN
    (SELECT id FROM sites WHERE name = '만료임박 세차장')" [])
-(db_exec DB "DELETE FROM equipment WHERE serial_number = 'SERIAL-EXPIRING-001'" [])
+(db_exec DB "DELETE FROM equipment WHERE serial_number IN ('SERIAL-EXPIRING-001', 'SERIAL-EXPIRED-001')" [])
 (db_exec DB "DELETE FROM sites WHERE name = '만료임박 세차장'" [])
 (db_exec DB "DELETE FROM customers WHERE name = '만료임박 점주'" [])
 
-(let [result (register-sale
+(let [future-date (get (first (db_query DB "SELECT date('now', '+15 days') AS value" [])) :value)
+      expired-date (get (first (db_query DB "SELECT date('now', '-1 day') AS value" [])) :value)
+      result (register-sale
                nil "만료임박 점주" "010-4444-5555" ""
                "만료임박 세차장" "서울" "02-4444-5555"
                nil
                [{:category "세차기" :model "BW-400" :serial_number "SERIAL-EXPIRING-001"
-                 :installed_at "2023-01-01" :warranty_ends_at "2026-08-01"}]
+                 :installed_at "2023-01-01" :warranty_ends_at future-date}
+                {:category "세차기" :model "BW-OLD" :serial_number "SERIAL-EXPIRED-001"
+                 :installed_at "2020-01-01" :warranty_ends_at expired-date}]
                90)]
   (let [expiring (filter (fn [e] (= (get e :model) "BW-400")) (list-warranty-expiring 30))]
-    (assert (> (length expiring) 0) "30일 이내 만료되는 장비는 목록에 나와야 한다"))
+    (assert (= (length expiring) 1) "30일 이내 만료되는 장비는 목록에 나와야 한다"))
   (let [expiring-1day (filter (fn [e] (= (get e :model) "BW-400")) (list-warranty-expiring 1))]
-    (assert (= (length expiring-1day) 0) "1일 이내로 좁히면 8/1 만료 장비는 안 나와야 한다")))
+    (assert (= (length expiring-1day) 0) "1일 이내로 좁히면 15일 후 만료 장비는 안 나와야 한다"))
+  (let [expired (filter (fn [e] (= (get e :model) "BW-OLD")) (list-warranty-expiring 30))]
+    (assert (= (length expired) 0) "이미 만료된 장비는 만료 임박 목록에서 제외해야 한다")))
+
+(let [injection-rejected
+        (try
+          (do
+            (list-warranty-expiring "30 days') OR 1=1 --")
+            false)
+          (catch [e] true))]
+  (assert injection-rejected "days SQL 조작 입력을 거부해야 한다"))
+
+(assert (not (revoke-site-link 99999999)) "없는 사업장 링크 폐기는 실패해야 한다")
+(assert (nil? (reissue-site-link 99999999)) "없는 사업장 링크 재발급은 nil이어야 한다")
 
 ;; 중간 실패 원자성: 장비 UNIQUE 오류가 나면 앞서 만든 고객·사업장·접촉도 남으면 안 된다.
 (db_exec DB "DELETE FROM customers WHERE name = '판매롤백 점주'" [])

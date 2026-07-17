@@ -171,7 +171,7 @@ Admin UI에서 이 에러를 그대로 사용자에게 보여주면 안 되고, 
 
 ### POST /care/sales
 
-9장 "신규 장비 판매" 흐름(견적·계약 → 고객/사업장 생성 → 장비 등록 → 장비관리 링크 전달 →
+9장 "신규 장비 판매" 흐름(기존 계약 연결 → 고객/사업장 생성 → 장비 등록 → 장비관리 링크 전달 →
 첫 접촉 예약)을 하나의 호출로 묶은 orchestration 엔드포인트. 다섯 단계는 하나의 DB
 트랜잭션으로 실행되며, 장비 등록 등 중간 단계가 실패하면 신규 고객·사업장·장비·접촉
 예약을 모두 롤백한다.
@@ -196,7 +196,7 @@ DB에는 해시만 저장). 고객에게 이 링크(`/care/site-status/:token`)�
 
 ### GET /care/warranty-expiring?days=N
 
-`days`(기본 30) 이내에 `warranty_ends_at`이 도래하는 장비 목록 — 재구매·교체판매 제안
+`days`(기본 30, 허용범위 0~3650) 이내에 `warranty_ends_at`이 도래하는 장비 목록. 이미 만료된 장비는 제외한다 — 재구매·교체판매 제안
 대상 후보. 응답 200: `{ok: true, data: [{id, model, category, warranty_ends_at, status, site_id, site_name, contact_phone}, ...]}`
 
 ## Admin UI (MVP)

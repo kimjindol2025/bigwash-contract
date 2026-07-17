@@ -211,19 +211,22 @@
 ;; ---- 판매 관리 ----
 (defn handle-register-sale [req]
   (if (internal-authorized? req)
-    (let [body (server_req_json req)]
-      (server_json {:ok true
-                    :data (register-sale
-                            (get body :customer_id)
-                            (get body :customer_name)
-                            (get body :customer_phone)
-                            (get body :customer_email)
-                            (get body :site_name)
-                            (get body :site_address)
-                            (get body :site_contact_phone)
-                            (get body :contract_id)
-                            (or (get body :equipment) [])
-                            (or (get body :first_outreach_days) 90))}))
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (register-sale
+                              (get body :customer_id)
+                              (get body :customer_name)
+                              (get body :customer_phone)
+                              (get body :customer_email)
+                              (get body :site_name)
+                              (get body :site_address)
+                              (get body :site_contact_phone)
+                              (get body :contract_id)
+                              (or (get body :equipment) [])
+                              (or (get body :first_outreach_days) 90))}))
+      (catch [e]
+        (server_status 400 {:ok false :error "Invalid sale request"})))
     (unauthorized)))
 
 (defn handle-site-public-status [req]
@@ -239,18 +242,26 @@
 
 (defn handle-revoke-site-link [req]
   (if (internal-authorized? req)
-    (server_json {:ok (revoke-site-link (server_req_param req "id"))})
+    (if (revoke-site-link (server_req_param req "id"))
+      (server_json {:ok true})
+      (server_status 404 {:ok false :error "Not found"}))
     (unauthorized)))
 
 (defn handle-reissue-site-link [req]
   (if (internal-authorized? req)
-    (server_json {:ok true :data (reissue-site-link (server_req_param req "id"))})
+    (let [result (reissue-site-link (server_req_param req "id"))]
+      (if (nil? result)
+        (server_status 404 {:ok false :error "Not found"})
+        (server_json {:ok true :data result})))
     (unauthorized)))
 
 (defn handle-warranty-expiring [req]
   (if (internal-authorized? req)
-    (server_json {:ok true
-                  :data (list-warranty-expiring (or (server_req_query req "days") "30"))})
+    (try
+      (server_json {:ok true
+                    :data (list-warranty-expiring (or (server_req_query req "days") "30"))})
+      (catch [e]
+        (server_status 400 {:ok false :error "days must be an integer between 0 and 3650"})))
     (unauthorized)))
 
 (server_post "/care/customers" "handle-create-customer")
