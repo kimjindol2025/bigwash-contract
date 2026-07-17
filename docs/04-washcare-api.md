@@ -172,7 +172,9 @@ Admin UI에서 이 에러를 그대로 사용자에게 보여주면 안 되고, 
 ### POST /care/sales
 
 9장 "신규 장비 판매" 흐름(견적·계약 → 고객/사업장 생성 → 장비 등록 → 장비관리 링크 전달 →
-첫 접촉 예약)을 하나의 호출로 묶은 orchestration 엔드포인트.
+첫 접촉 예약)을 하나의 호출로 묶은 orchestration 엔드포인트. 다섯 단계는 하나의 DB
+트랜잭션으로 실행되며, 장비 등록 등 중간 단계가 실패하면 신규 고객·사업장·장비·접촉
+예약을 모두 롤백한다.
 
 요청: `{customer_id, customer_name, customer_phone, customer_email, site_name,
 site_address, site_contact_phone, contract_id, equipment: [{category, model,

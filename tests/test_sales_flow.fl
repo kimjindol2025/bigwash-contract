@@ -73,4 +73,34 @@
   (let [expiring-1day (filter (fn [e] (= (get e :model) "BW-400")) (list-warranty-expiring 1))]
     (assert (= (length expiring-1day) 0) "1일 이내로 좁히면 8/1 만료 장비는 안 나와야 한다")))
 
+;; 중간 실패 원자성: 장비 UNIQUE 오류가 나면 앞서 만든 고객·사업장·접촉도 남으면 안 된다.
+(db_exec DB "DELETE FROM customers WHERE name = '판매롤백 점주'" [])
+(let [customers-before (get (first (db_query DB "SELECT COUNT(*) AS count FROM customers" [])) :count)
+      sites-before (get (first (db_query DB "SELECT COUNT(*) AS count FROM sites" [])) :count)
+      equipment-before (get (first (db_query DB "SELECT COUNT(*) AS count FROM equipment" [])) :count)
+      outreach-before (get (first (db_query DB "SELECT COUNT(*) AS count FROM outreach_touches" [])) :count)]
+  (try
+    (do
+      (register-sale
+        nil "판매롤백 점주" "010-5555-6666" "rollback@example.com"
+      "판매롤백 세차장" "서울" "02-5555-6666"
+      nil
+      [{:category "세차기" :model "BW-FAIL" :serial_number "SERIAL-SALE-001"
+        :installed_at "2026-07-17" :warranty_ends_at "2029-07-17"}]
+        90)
+      (error "중복 일련번호 판매 등록은 실패해야 한다"))
+    (catch [e] true))
+  (assert (= (get (first (db_query DB "SELECT COUNT(*) AS count FROM customers" [])) :count)
+             customers-before)
+    "판매 실패 시 신규 고객이 롤백되어야 한다")
+  (assert (= (get (first (db_query DB "SELECT COUNT(*) AS count FROM sites" [])) :count)
+             sites-before)
+    "판매 실패 시 신규 사업장이 롤백되어야 한다")
+  (assert (= (get (first (db_query DB "SELECT COUNT(*) AS count FROM equipment" [])) :count)
+             equipment-before)
+    "판매 실패 시 장비가 남으면 안 된다")
+  (assert (= (get (first (db_query DB "SELECT COUNT(*) AS count FROM outreach_touches" [])) :count)
+             outreach-before)
+    "판매 실패 시 접촉 예약이 남으면 안 된다"))
+
 (println "✓ Sales flow tests passed")

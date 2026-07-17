@@ -57,10 +57,14 @@
     ;; 2026-07-17 추가: "고객에게 장비관리 링크 전달"(9장 판매 흐름) — 티켓 단위가
     ;; 아니라 사업장 단위로 지속되는 링크. 판매 등록 시 한 번 발급한다.
     (if (not (phase1-column-exists? "sites" "public_token_hash"))
-      (db_exec DB "ALTER TABLE sites ADD COLUMN public_token_hash TEXT" [])
+      (do
+        (db_exec DB "ALTER TABLE sites ADD COLUMN public_token_hash TEXT" [])
+        true)
       true)
     (if (not (phase1-column-exists? "sites" "public_token_revoked_at"))
-      (db_exec DB "ALTER TABLE sites ADD COLUMN public_token_revoked_at TEXT" [])
+      (do
+        (db_exec DB "ALTER TABLE sites ADD COLUMN public_token_revoked_at TEXT" [])
+        true)
       true)
 
     (db_exec DB

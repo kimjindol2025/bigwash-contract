@@ -320,33 +320,44 @@
 (defn register-sale [customer-id customer-name customer-phone customer-email
                       site-name site-address site-contact-phone
                       contract-id equipment-list first-outreach-days]
-  (let [resolved-customer-id
-          (if (not (nil? customer-id))
-            customer-id
-            (get (create-customer customer-name customer-phone customer-email "") :id))
-        site-token (random_bytes 32)
-        site-token-hash (sha256 site-token)]
-    (db_exec DB
-      "INSERT INTO sites (customer_id, name, address, contact_phone, public_token_hash)
-       VALUES (?, ?, ?, ?, ?)"
-      [resolved-customer-id site-name site-address site-contact-phone site-token-hash])
-    (let [site-id (inserted-id "sites")
-          created-equipment
-            (map
-              (fn [item]
-                (create-equipment site-id contract-id
-                  (get item :category) (get item :model) (get item :serial_number)
-                  (get item :installed_at) (get item :warranty_ends_at)))
-              equipment-list)]
-      (db_exec DB
-        (str "INSERT INTO outreach_touches (site_id, equipment_id, touch_type, channel, next_touch_at)
-              VALUES (?, NULL, 'CHECKIN', 'PHONE', datetime('now', '+"
-             first-outreach-days " days'))")
-        [site-id])
-      {:customer_id resolved-customer-id
-       :site_id site-id
-       :equipment created-equipment
-       :site_public_token site-token})))
+  (do
+    (db_exec DB "BEGIN TRANSACTION" [])
+    (try
+      (let [resolved-customer-id
+              (if (not (nil? customer-id))
+                customer-id
+                (get (create-customer customer-name customer-phone customer-email "") :id))
+            site-token (random_bytes 32)
+            site-token-hash (sha256 site-token)]
+        (db_exec DB
+          "INSERT INTO sites (customer_id, name, address, contact_phone, public_token_hash)
+           VALUES (?, ?, ?, ?, ?)"
+          [resolved-customer-id site-name site-address site-contact-phone site-token-hash])
+        (let [site-id (inserted-id "sites")
+              created-equipment
+                (map
+                  (fn [item]
+                    (create-equipment site-id contract-id
+                      (get item :category) (get item :model) (get item :serial_number)
+                      (get item :installed_at) (get item :warranty_ends_at)))
+                  equipment-list)]
+          (db_exec DB
+            (str "INSERT INTO outreach_touches (site_id, equipment_id, touch_type, channel, next_touch_at)
+                  VALUES (?, NULL, 'CHECKIN', 'PHONE', datetime('now', '+"
+                 first-outreach-days " days'))")
+            [site-id])
+          (let [result {:customer_id resolved-customer-id
+                        :site_id site-id
+                        :equipment created-equipment
+                        :site_public_token site-token}]
+            (db_exec DB "COMMIT" [])
+            result)))
+      (catch [e]
+        (do
+          (try
+            (db_exec DB "ROLLBACK" [])
+            (catch [rollback-error] false))
+          (error (str "Sale registration failed: " e)))))))
 
 ;; ---- 장비관리 링크 (사업장 단위 공개 조회, 티켓 단위 공개 링크와는 별개) ----
 (defn get-site-public-view [raw-token ip-address]
