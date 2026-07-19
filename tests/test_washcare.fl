@@ -29,7 +29,7 @@
       (get-public-ticket token ip)
       (hit-public-link token ip (- remaining 1)))))
 
-(let [customer (create-customer "테스트 점주" "010-1111-2222" "owner@example.com" "")
+(let [customer (create-customer "테스트 점주" "010-1111-2222" "owner@example.com" "" nil nil)
       customer-id (get customer :id)
       site (create-site customer-id "테스트 세차장" "서울시 테스트구" "02-1234-5678")
       site-id (get site :id)

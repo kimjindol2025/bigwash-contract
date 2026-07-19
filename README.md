@@ -12,7 +12,13 @@
 
 계약 시스템 위에 장비 자산·A/S 관리를 얹은 별도 도메인. `docs/01-product-payment-marketing-plan.md`
 (제품기획), `docs/02-integration-architecture.md`(통합 아키텍처), `docs/04-washcare-api.md`
-(API 문서) 참조. E2E 검증 완료(2026-07-16) — `docs/04-washcare-api.md` 참조.
+(API 문서), `docs/05-customer-management-design.md`(고객관리 상세 설계, 상담·견적·
+미수금·사후관리 등 향후 확장 범위), `docs/06-customer-management-page-tree.md`
+(고객관리 화면 구조·페이지 트리), `docs/07-company-system-menu.md`(회사 전체
+관리시스템 최상위 메뉴 — 고객관리는 그중 한 모듈) 참조. E2E 검증 완료(2026-07-16)
+— `docs/04-washcare-api.md` 참조. `docs/design-reference-smart-accounting.md`는
+회계·수금 모듈(향후) 설계용 외부 디자인 레퍼런스 — 이 저장소의 실제 시각
+규칙은 아니며 루트 `design.md`가 정본이다.
 
 - 고객·사업장·장비대장, A/S 접수·상태추적·방문이력
 - 고객용 공개 상태 링크 (토큰 해시 저장, rate limit, 완료 후 7일 유지 후 자동 만료)

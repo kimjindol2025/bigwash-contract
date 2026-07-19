@@ -1,6 +1,6 @@
 ;;; BigWash Care Phase 1 domain operations
 
-(load "/root/apps/bigwash-contract/src/phase1-db.fl")
+(load "/home/kim/kim/bigwash-contract/src/phase1-db.fl")
 
 (define TICKET-RECEIVED "RECEIVED")
 (define TICKET-SCHEDULED "SCHEDULED")
@@ -12,13 +12,31 @@
   (let [rows (db_query DB (str "SELECT id FROM " table-name " ORDER BY id DESC LIMIT 1") [])]
     (get (first rows) :id)))
 
-(defn create-customer [name phone email memo]
-  (do
-    (db_exec DB
-      "INSERT INTO customers (name, phone, email, memo, migration_status) VALUES (?, ?, ?, ?, 'VERIFIED')"
-      [name phone email memo])
-    (let [id (inserted-id "customers")]
-      (first (db_query DB "SELECT * FROM customers WHERE id = ?" [id])))))
+(defn valid-customer-type? [customer-type]
+  (or (= customer-type "LEAD")
+      (= customer-type "CUSTOMER")
+      (= customer-type "SERVICE")
+      (= customer-type "VENDOR")))
+
+(defn valid-customer-filter? [customer-filter]
+  (or (= customer-filter "ALL")
+      (valid-customer-type? customer-filter)))
+
+(defn create-customer [name phone email memo customer-type address]
+  (let [resolved-type (if (nil? customer-type) "LEAD" customer-type)]
+    (if (not (valid-customer-type? resolved-type))
+      (error "customer_type must be one of LEAD, CUSTOMER, SERVICE, VENDOR"))
+    (do
+      (db_exec DB
+        "INSERT INTO customers
+         (name, phone, email, memo, customer_type, address, migration_status)
+         VALUES (?, ?, ?, ?, ?, ?, 'VERIFIED')"
+        [name phone email memo resolved-type address])
+      (let [id (inserted-id "customers")]
+        (first (db_query DB "SELECT * FROM customers WHERE id = ?" [id]))))))
+
+(defn get-customer [customer-id]
+  (first (db_query DB "SELECT * FROM customers WHERE id = ?" [customer-id])))
 
 (defn create-site [customer-id name address contact-phone]
   (do
@@ -208,6 +226,118 @@
      WHERE customer_id = ? ORDER BY name"
     [customer-id]))
 
+(defn list-customer-equipment [customer-id]
+  (db_query DB
+    "SELECT e.id, e.site_id, e.category, e.model, e.serial_number,
+            e.installed_at, e.warranty_ends_at, e.status, s.name AS site_name
+     FROM equipment e
+     JOIN sites s ON s.id = e.site_id
+     WHERE s.customer_id = ?
+     ORDER BY e.installed_at DESC, e.id DESC"
+    [customer-id]))
+
+(defn list-customer-contracts [customer-id]
+  (db_query DB
+    "SELECT id, number, status, amount, created_at, updated_at
+     FROM contracts
+     WHERE customer_id = ?
+     ORDER BY created_at DESC, id DESC"
+    [customer-id]))
+
+(defn generate-quote-number []
+  (str "QT-" (now_ms) "-" (+ 1000 (floor (* (random) 8999)))))
+
+(defn generate-converted-contract-number []
+  (str "CTR-" (now_ms) "-" (+ 1000 (floor (* (random) 8999)))))
+
+(defn valid-quote-transition? [from to]
+  (cond
+    [(= from "DRAFT") (= to "SENT")]
+    [(= from "SENT")
+     (or (= to "REVIEWING") (= to "ON_HOLD") (= to "REJECTED"))]
+    [(= from "REVIEWING")
+     (or (= to "REVISION_REQUESTED") (= to "APPROVED")
+         (= to "ON_HOLD") (= to "REJECTED"))]
+    [(= from "REVISION_REQUESTED")
+     (or (= to "SENT") (= to "ON_HOLD") (= to "REJECTED"))]
+    [(= from "ON_HOLD") (= to "REVIEWING")]
+    [true false]))
+
+(defn create-quote [customer-id title amount valid-until memo]
+  (let [number (generate-quote-number)]
+    (db_exec DB
+      "INSERT INTO quotes (customer_id, quote_number, title, amount, valid_until, memo)
+       VALUES (?, ?, ?, ?, ?, ?)"
+      [customer-id number title amount valid-until memo])
+    (let [id (inserted-id "quotes")]
+      (first (db_query DB "SELECT * FROM quotes WHERE id = ?" [id])))))
+
+(defn list-customer-quotes [customer-id]
+  (db_query DB
+    "SELECT * FROM quotes WHERE customer_id = ? ORDER BY created_at DESC, id DESC"
+    [customer-id]))
+
+(defn update-quote-status [quote-id new-status]
+  (let [rows (db_query DB "SELECT status FROM quotes WHERE id = ?" [quote-id])]
+    (if (= (length rows) 0) (error "Quote not found"))
+    (let [current (get (first rows) :status)]
+      (if (not (valid-quote-transition? current new-status))
+        (error "Invalid quote status transition"))
+      (cond
+        [(= new-status "SENT")
+         (db_exec DB
+           "UPDATE quotes
+            SET status = ?, sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?"
+           [new-status quote-id])]
+        [true
+         (db_exec DB
+           "UPDATE quotes SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+           [new-status quote-id])])
+      (first (db_query DB "SELECT * FROM quotes WHERE id = ?" [quote-id])))))
+
+(defn quote-shadow-client-id [customer-id]
+  (let [rows (db_query DB "SELECT legacy_client_id FROM customers WHERE id = ?" [customer-id])]
+    (if (= (length rows) 0) (error "Customer not found"))
+    (let [legacy-id (get (first rows) :legacy_client_id)]
+      (if (nil? legacy-id) (- 0 customer-id) legacy-id))))
+
+(defn convert-quote-to-contract [quote-id]
+  (let [rows (db_query DB "SELECT * FROM quotes WHERE id = ?" [quote-id])]
+    (if (= (length rows) 0) (error "Quote not found"))
+    (let [quote (first rows)]
+      (if (not (= (get quote :status) "APPROVED"))
+        (error "Only APPROVED quotes can be converted to a contract"))
+      (db_exec DB "BEGIN TRANSACTION" [])
+      (try
+        (let [contract-number (generate-converted-contract-number)
+              shadow-client-id (quote-shadow-client-id (get quote :customer_id))]
+          (db_exec DB
+            "INSERT INTO contracts (number, status, client_id, customer_id, amount)
+             VALUES (?, 'DRAFT', ?, ?, ?)"
+            [contract-number shadow-client-id (get quote :customer_id) (get quote :amount)])
+          (let [contract-id (inserted-id "contracts")]
+            (db_exec DB
+              "UPDATE quotes
+               SET status = 'CONVERTED', contract_id = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?"
+              [contract-id quote-id])
+            (db_exec DB "COMMIT" [])
+            (first (db_query DB "SELECT * FROM quotes WHERE id = ?" [quote-id]))))
+        (catch [e]
+          (try (db_exec DB "ROLLBACK" []) (catch [re] false))
+          (error (str "Quote conversion failed: " e)))))))
+
+(defn list-customer-tickets [customer-id]
+  (db_query DB
+    "SELECT t.id, t.site_id, t.equipment_id, t.symptom, t.priority, t.source,
+            t.status, t.scheduled_at, t.created_at, s.name AS site_name
+     FROM service_tickets t
+     JOIN sites s ON s.id = t.site_id
+     WHERE s.customer_id = ?
+     ORDER BY t.created_at DESC, t.id DESC"
+    [customer-id]))
+
 (defn list-site-tickets [site-id]
   (db_query DB
     "SELECT id, equipment_id, symptom, priority, source, status, scheduled_at, created_at
@@ -253,12 +383,32 @@
                    WHERE ticket_id = ? ORDER BY changed_at"
                   [ticket-id])})))
 
-(defn search-customers [query]
-  (db_query DB
-    "SELECT id, name, phone, email, migration_status FROM customers
-     WHERE name LIKE ? OR phone LIKE ?
-     ORDER BY name LIMIT 50"
-    [(str "%" query "%") (str "%" query "%")]))
+(defn search-customers [query customer-filter]
+  (let [resolved-filter (if (or (nil? customer-filter) (str-blank? customer-filter)) "ALL" customer-filter)]
+    (if (not (valid-customer-filter? resolved-filter))
+      (error "filter must be one of ALL, LEAD, CUSTOMER, SERVICE, VENDOR"))
+    (db_query DB
+      "SELECT c.id, c.name, c.phone, c.email, c.address, c.customer_type, c.migration_status,
+              (SELECT co.consulted_at
+               FROM consultations co
+               WHERE co.customer_id = c.id
+               ORDER BY co.consulted_at DESC, co.id DESC LIMIT 1) AS last_consulted_at,
+              (SELECT co.next_contact_at
+               FROM consultations co
+               WHERE co.customer_id = c.id
+                 AND co.completed_at IS NULL
+                 AND co.next_contact_at IS NOT NULL
+               ORDER BY co.next_contact_at ASC, co.id DESC LIMIT 1) AS next_contact_at
+       FROM customers c
+       WHERE (? = 'ALL' OR c.customer_type = ?)
+         AND (? = ''
+              OR c.name LIKE ?
+              OR c.phone LIKE ?
+              OR c.address LIKE ?
+              OR c.memo LIKE ?)
+       ORDER BY c.name LIMIT 50"
+      [resolved-filter resolved-filter query
+       (str "%" query "%") (str "%" query "%") (str "%" query "%") (str "%" query "%")])))
 
 ;; ---- 부품판매 (매출 30%, A/S와 독립적으로도 발생) ----
 
@@ -276,6 +426,16 @@
   (db_query DB
     "SELECT * FROM part_sales WHERE site_id = ? ORDER BY sold_at DESC"
     [site-id]))
+
+(defn list-customer-part-sales [customer-id]
+  (db_query DB
+    "SELECT p.id, p.site_id, p.equipment_id, p.ticket_id, p.part_name, p.quantity,
+            p.unit_price, p.total_price, p.channel, p.sold_at, s.name AS site_name
+     FROM part_sales p
+     JOIN sites s ON s.id = p.site_id
+     WHERE s.customer_id = ?
+     ORDER BY p.sold_at DESC, p.id DESC"
+    [customer-id]))
 
 ;; ---- 휴면기 관리·홍보 (활동 20%, 판매 후 ~3년 동안 가장 자주 도는 흐름) ----
 
@@ -336,7 +496,7 @@
       (let [resolved-customer-id
               (if (not (nil? customer-id))
                 customer-id
-                (get (create-customer customer-name customer-phone customer-email "") :id))
+                (get (create-customer customer-name customer-phone customer-email "" "CUSTOMER" site-address) :id))
             site-token (random_bytes 32)
             site-token-hash (sha256 site-token)]
         (db_exec DB
@@ -439,3 +599,199 @@
          AND date(e.warranty_ends_at) <= date('now', ?)
        ORDER BY e.warranty_ends_at"
       [(str "+" window-days " days")])))
+
+;; ---- 상담 관리 (고객관리 1차) ----
+
+(defn valid-consultation-method? [method]
+  (or (= method "PHONE")
+      (= method "SMS")
+      (= method "KAKAO")
+      (= method "VISIT")
+      (= method "OTHER")))
+
+(defn valid-next-action? [action]
+  (or (= action "NONE")
+      (= action "CALLBACK")
+      (= action "QUOTE")
+      (= action "SERVICE_TICKET")
+      (= action "SALE")
+      (= action "CONTRACT_REVIEW")))
+
+(defn create-consultation [customer-id consulted-at method content next-action next-contact-at]
+  (let [resolved-method (if (nil? method) "PHONE" method)
+        resolved-action (if (nil? next-action) "NONE" next-action)]
+    (if (not (valid-consultation-method? resolved-method))
+      (error "method must be one of PHONE, SMS, KAKAO, VISIT, OTHER"))
+    (if (not (valid-next-action? resolved-action))
+      (error "next_action must be one of NONE, CALLBACK, QUOTE, SERVICE_TICKET, SALE, CONTRACT_REVIEW"))
+    (do
+      (db_exec DB
+        "INSERT INTO consultations
+         (customer_id, consulted_at, method, content, next_action, next_contact_at)
+         VALUES (?, ?, ?, ?, ?, ?)"
+        [customer-id consulted-at resolved-method content resolved-action next-contact-at])
+      (let [id (inserted-id "consultations")]
+        (first (db_query DB "SELECT * FROM consultations WHERE id = ?" [id]))))))
+
+(defn list-customer-consultations [customer-id]
+  (db_query DB
+    "SELECT * FROM consultations WHERE customer_id = ? ORDER BY consulted_at DESC"
+    [customer-id]))
+
+(defn complete-consultation [id]
+  (do
+    (db_exec DB "UPDATE consultations SET completed_at = CURRENT_TIMESTAMP WHERE id = ?" [id])
+    (first (db_query DB "SELECT * FROM consultations WHERE id = ?" [id]))))
+
+(defn list-followups-today []
+  (db_query DB
+    "SELECT c.id, c.customer_id, c.next_contact_at, c.next_action, c.content,
+            cu.name AS customer_name, cu.phone
+     FROM consultations c
+     JOIN customers cu ON cu.id = c.customer_id
+     WHERE c.completed_at IS NULL
+       AND c.next_contact_at IS NOT NULL
+       AND date(c.next_contact_at) <= date('now')
+     ORDER BY c.next_contact_at"
+    []))
+
+(defn list-recent-consultations [limit]
+  (db_query DB
+    "SELECT c.id, c.customer_id, c.consulted_at, c.method, c.content,
+            cu.name AS customer_name, cu.phone
+     FROM consultations c
+     JOIN customers cu ON cu.id = c.customer_id
+     ORDER BY c.consulted_at DESC LIMIT ?"
+    [limit]))
+
+(defn list-pending-next-actions []
+  (db_query DB
+    "SELECT c.id, c.customer_id, c.next_action, c.next_contact_at, c.content,
+            cu.name AS customer_name, cu.phone
+     FROM consultations c
+     JOIN customers cu ON cu.id = c.customer_id
+     WHERE c.completed_at IS NULL AND c.next_action <> 'NONE'
+     ORDER BY c.consulted_at DESC"
+    []))
+
+;; ---- 고객관리 2차: 담당자/할 일/사후관리 ----
+
+(defn valid-contact-role? [role]
+  (or (= role "OWNER")
+      (= role "MANAGER")
+      (= role "SITE_MANAGER")
+      (= role "ACCOUNTING")
+      (= role "PURCHASING")
+      (= role "FACILITY")
+      (= role "OTHER")))
+
+(defn valid-contact-status? [status]
+  (or (= status "ACTIVE")
+      (= status "INACTIVE")))
+
+(defn create-customer-contact [customer-id name position department phone email role is-primary status memo]
+  (let [resolved-role (if (nil? role) "OTHER" role)
+        resolved-primary (if (= is-primary true) 1 (if (= is-primary 1) 1 0))
+        resolved-status (if (nil? status) "ACTIVE" status)]
+    (if (not (valid-contact-role? resolved-role))
+      (error "role must be one of OWNER, MANAGER, SITE_MANAGER, ACCOUNTING, PURCHASING, FACILITY, OTHER"))
+    (if (not (valid-contact-status? resolved-status))
+      (error "status must be ACTIVE or INACTIVE"))
+    (do
+      (db_exec DB
+        "INSERT INTO customer_contacts
+         (customer_id, name, position, department, phone, email, role, is_primary, status, memo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        [customer-id name position department phone email resolved-role resolved-primary resolved-status memo])
+      (let [id (inserted-id "customer_contacts")]
+        (first (db_query DB "SELECT * FROM customer_contacts WHERE id = ?" [id]))))))
+
+(defn list-customer-contacts [customer-id]
+  (db_query DB
+    "SELECT * FROM customer_contacts
+     WHERE customer_id = ?
+     ORDER BY is_primary DESC, created_at DESC, id DESC"
+    [customer-id]))
+
+(defn valid-task-priority? [priority]
+  (or (= priority "LOW")
+      (= priority "NORMAL")
+      (= priority "HIGH")))
+
+(defn valid-task-status? [status]
+  (or (= status "PENDING")
+      (= status "IN_PROGRESS")
+      (= status "DONE")
+      (= status "DELAYED")
+      (= status "CANCELLED")))
+
+(defn create-customer-task [customer-id title due-at priority memo]
+  (let [resolved-priority (if (nil? priority) "NORMAL" priority)]
+    (if (not (valid-task-priority? resolved-priority))
+      (error "priority must be LOW, NORMAL, or HIGH"))
+    (do
+      (db_exec DB
+        "INSERT INTO customer_tasks (customer_id, title, due_at, priority, memo)
+         VALUES (?, ?, ?, ?, ?)"
+        [customer-id title due-at resolved-priority memo])
+      (let [id (inserted-id "customer_tasks")]
+        (first (db_query DB "SELECT * FROM customer_tasks WHERE id = ?" [id]))))))
+
+(defn list-customer-tasks [customer-id]
+  (db_query DB
+    "SELECT * FROM customer_tasks
+     WHERE customer_id = ?
+     ORDER BY (due_at IS NULL), due_at, id DESC"
+    [customer-id]))
+
+(defn complete-customer-task [id]
+  (do
+    (db_exec DB
+      "UPDATE customer_tasks
+       SET status = 'DONE', completed_at = CURRENT_TIMESTAMP
+       WHERE id = ?"
+      [id])
+    (first (db_query DB "SELECT * FROM customer_tasks WHERE id = ?" [id]))))
+
+(defn valid-followup-type? [followup-type]
+  (or (= followup-type "CONSULT_RECALL")
+      (= followup-type "QUOTE_CHECK")
+      (= followup-type "INSTALL_CHECK")
+      (= followup-type "SERVICE_CHECK")
+      (= followup-type "REPAIR_RECHECK")
+      (= followup-type "PAYMENT_NOTICE")
+      (= followup-type "CONSUMABLE_NOTICE")
+      (= followup-type "WARRANTY_END_NOTICE")
+      (= followup-type "CARE_PLAN_RENEWAL")
+      (= followup-type "LONG_TERM_INACTIVE")))
+
+(defn create-customer-followup [customer-id followup-type scheduled-at contact-method result customer-reaction next-followup-at]
+  (let [resolved-type (if (nil? followup-type) "CONSULT_RECALL" followup-type)]
+    (if (not (valid-followup-type? resolved-type))
+      (error "followup_type is invalid"))
+    (if (and (not (nil? contact-method)) (not (valid-consultation-method? contact-method)))
+      (error "contact_method must be one of PHONE, SMS, KAKAO, VISIT, OTHER"))
+    (do
+      (db_exec DB
+        "INSERT INTO customer_followups
+         (customer_id, followup_type, scheduled_at, contact_method, result, customer_reaction, next_followup_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
+        [customer-id resolved-type scheduled-at contact-method result customer-reaction next-followup-at])
+      (let [id (inserted-id "customer_followups")]
+        (first (db_query DB "SELECT * FROM customer_followups WHERE id = ?" [id]))))))
+
+(defn list-customer-followups [customer-id]
+  (db_query DB
+    "SELECT * FROM customer_followups
+     WHERE customer_id = ?
+     ORDER BY scheduled_at DESC, id DESC"
+    [customer-id]))
+
+(defn complete-customer-followup [id]
+  (do
+    (db_exec DB
+      "UPDATE customer_followups
+       SET completed_at = CURRENT_TIMESTAMP
+       WHERE id = ?"
+      [id])
+    (first (db_query DB "SELECT * FROM customer_followups WHERE id = ?" [id]))))

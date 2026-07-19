@@ -10,7 +10,7 @@
 (db_exec DB "DELETE FROM sites WHERE name = '부품테스트 세차장'" [])
 (db_exec DB "DELETE FROM customers WHERE name = '부품테스트 점주'" [])
 
-(let [customer (create-customer "부품테스트 점주" "010-2222-3333" "parts@example.com" "")
+(let [customer (create-customer "부품테스트 점주" "010-2222-3333" "parts@example.com" "" nil nil)
       customer-id (get customer :id)
       site (create-site customer-id "부품테스트 세차장" "서울시 부품구" "02-2222-3333")
       site-id (get site :id)

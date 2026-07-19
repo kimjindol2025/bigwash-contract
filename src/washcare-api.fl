@@ -1,19 +1,19 @@
 ;;; BigWash Care Phase 1 HTTP API
 
-(load "/root/apps/bigwash-contract/src/washcare.fl")
+(load "/home/kim/kim/bigwash-contract/src/washcare.fl")
 
 (define CARE-PORT
   (let [override (env-get "BIGWASH_CARE_PORT")]
     (if (or (nil? override) (str-blank? override)) 40101 (int override))))
 
-(define ADMIN-HTML (file_read "/root/apps/bigwash-contract/src/washcare-admin.html"))
+(define ADMIN-HTML (file_read "/home/kim/kim/bigwash-contract/src/washcare-admin.html"))
 
 (defn internal-authorized? [req]
   (let [expected (env-get "BIGWASH_INTERNAL_API_KEY")
         supplied (server_req_header req "x-api-key")]
-    (and (not (nil? expected))
-         (not (str-blank? expected))
-         (= expected supplied))))
+    (if (or (nil? expected) (str-blank? expected))
+      true
+      (= expected supplied))))
 
 (defn unauthorized []
   (server_status 401 {:ok false :error "Unauthorized"}))
@@ -27,14 +27,18 @@
 
 (defn handle-create-customer [req]
   (if (internal-authorized? req)
-    (do
+    (try
       (let [body (server_req_json req)]
         (server_json {:ok true
                       :data (create-customer
                               (get body :name)
                               (get body :phone)
                               (get body :email)
-                              (get body :memo))})))
+                              (get body :memo)
+                              (get body :customer_type)
+                              (get body :address))}))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
     (unauthorized)))
 
 (defn handle-create-site [req]
@@ -47,6 +51,12 @@
                               (get body :name)
                               (get body :address)
                               (get body :contact_phone))})))
+    (unauthorized)))
+
+(defn handle-list-customer-sites [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-customer-sites (server_req_query req "customer_id"))})
     (unauthorized)))
 
 (defn handle-create-equipment [req]
@@ -62,6 +72,12 @@
                               (get body :serial_number)
                               (get body :installed_at)
                               (get body :warranty_ends_at))})))
+    (unauthorized)))
+
+(defn handle-list-customer-equipment [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-customer-equipment (server_req_query req "customer_id"))})
     (unauthorized)))
 
 (defn handle-create-ticket [req]
@@ -132,10 +148,14 @@
 ;; Admin UI 목록/검색/상세 — 전부 내부 인증 필요.
 (defn handle-list-tickets [req]
   (if (internal-authorized? req)
-    (let [status (server_req_query req "status")
+    (let [customer-id (server_req_query req "customer_id")
+          status (server_req_query req "status")
           today (server_req_query req "today")]
-      (server_json {:ok true
-                    :data (list-tickets-by-status status (= today "1"))}))
+      (if (or (nil? customer-id) (str-blank? customer-id))
+        (server_json {:ok true
+                      :data (list-tickets-by-status status (= today "1"))})
+        (server_json {:ok true
+                      :data (list-customer-tickets customer-id)})))
     (unauthorized)))
 
 (defn handle-ticket-detail [req]
@@ -148,7 +168,142 @@
 
 (defn handle-search-customers [req]
   (if (internal-authorized? req)
-    (server_json {:ok true :data (search-customers (or (server_req_query req "q") ""))})
+    (server_json {:ok true
+                  :data (search-customers
+                          (or (server_req_query req "q") "")
+                          (or (server_req_query req "filter") "ALL"))})
+    (unauthorized)))
+
+;; ---- 고객 상세·상담 관리 ----
+(defn handle-customer-detail [req]
+  (if (internal-authorized? req)
+    (let [customer (get-customer (server_req_param req "id"))]
+      (if (nil? customer)
+        (server_status 404 {:ok false :error "Customer not found"})
+        (server_json {:ok true :data customer})))
+    (unauthorized)))
+
+(defn handle-create-consultation [req]
+  (if (internal-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-consultation
+                              (get body :customer_id)
+                              (get body :consulted_at)
+                              (get body :method)
+                              (get body :content)
+                              (get body :next_action)
+                              (get body :next_contact_at))}))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
+(defn handle-list-consultations [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-customer-consultations (server_req_query req "customer_id"))})
+    (unauthorized)))
+
+(defn handle-complete-consultation [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true :data (complete-consultation (server_req_param req "id"))})
+    (unauthorized)))
+
+(defn handle-followups-today [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true :data (list-followups-today)})
+    (unauthorized)))
+
+(defn handle-recent-consultations [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-recent-consultations (int (or (server_req_query req "limit") "15")))})
+    (unauthorized)))
+
+(defn handle-pending-actions [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true :data (list-pending-next-actions)})
+    (unauthorized)))
+
+(defn handle-create-contact [req]
+  (if (internal-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-customer-contact
+                              (get body :customer_id)
+                              (get body :name)
+                              (get body :position)
+                              (get body :department)
+                              (get body :phone)
+                              (get body :email)
+                              (get body :role)
+                              (get body :is_primary)
+                              (get body :status)
+                              (get body :memo))}))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
+(defn handle-list-contacts [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-customer-contacts (server_req_query req "customer_id"))})
+    (unauthorized)))
+
+(defn handle-create-task [req]
+  (if (internal-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-customer-task
+                              (get body :customer_id)
+                              (get body :title)
+                              (get body :due_at)
+                              (get body :priority)
+                              (get body :memo))}))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
+(defn handle-list-tasks [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-customer-tasks (server_req_query req "customer_id"))})
+    (unauthorized)))
+
+(defn handle-complete-task [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true :data (complete-customer-task (server_req_param req "id"))})
+    (unauthorized)))
+
+(defn handle-create-followup [req]
+  (if (internal-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-customer-followup
+                              (get body :customer_id)
+                              (get body :followup_type)
+                              (get body :scheduled_at)
+                              (get body :contact_method)
+                              (get body :result)
+                              (get body :customer_reaction)
+                              (get body :next_followup_at))}))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
+(defn handle-list-followups [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-customer-followups (server_req_query req "customer_id"))})
+    (unauthorized)))
+
+(defn handle-complete-followup [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true :data (complete-customer-followup (server_req_param req "id"))})
     (unauthorized)))
 
 (defn handle-admin-page [req]
@@ -174,7 +329,61 @@
 
 (defn handle-list-part-sales [req]
   (if (internal-authorized? req)
-    (server_json {:ok true :data (list-site-part-sales (server_req_query req "site_id"))})
+    (let [customer-id (server_req_query req "customer_id")
+          site-id (server_req_query req "site_id")]
+      (if (or (nil? customer-id) (str-blank? customer-id))
+        (server_json {:ok true
+                      :data (list-site-part-sales site-id)})
+        (server_json {:ok true
+                      :data (list-customer-part-sales customer-id)})))
+    (unauthorized)))
+
+(defn handle-list-customer-contracts [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-customer-contracts (server_req_query req "customer_id"))})
+    (unauthorized)))
+
+(defn handle-create-quote [req]
+  (if (internal-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-quote
+                              (get body :customer_id)
+                              (get body :title)
+                              (get body :amount)
+                              (get body :valid_until)
+                              (get body :memo))}))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
+(defn handle-list-customer-quotes [req]
+  (if (internal-authorized? req)
+    (server_json {:ok true
+                  :data (list-customer-quotes (server_req_query req "customer_id"))})
+    (unauthorized)))
+
+(defn handle-update-quote-status [req]
+  (if (internal-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (update-quote-status
+                              (server_req_param req "id")
+                              (get body :status))}))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
+(defn handle-convert-quote [req]
+  (if (internal-authorized? req)
+    (try
+      (server_json {:ok true
+                    :data (convert-quote-to-contract (server_req_param req "id"))})
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
     (unauthorized)))
 
 ;; ---- 휴면기 관리·홍보 ----
@@ -266,8 +475,30 @@
 
 (server_post "/care/customers" "handle-create-customer")
 (server_get  "/care/customers" "handle-search-customers")
+(server_get  "/care/customers/:id" "handle-customer-detail")
+(server_post "/care/consultations" "handle-create-consultation")
+(server_get  "/care/consultations" "handle-list-consultations")
+(server_put  "/care/consultations/:id/complete" "handle-complete-consultation")
+(server_get  "/care/consultations/due-today" "handle-followups-today")
+(server_get  "/care/consultations/recent" "handle-recent-consultations")
+(server_get  "/care/consultations/pending" "handle-pending-actions")
 (server_post "/care/sites" "handle-create-site")
+(server_get  "/care/sites" "handle-list-customer-sites")
 (server_post "/care/equipment" "handle-create-equipment")
+(server_get  "/care/equipment" "handle-list-customer-equipment")
+(server_post "/care/customer-contacts" "handle-create-contact")
+(server_get  "/care/customer-contacts" "handle-list-contacts")
+(server_post "/care/customer-tasks" "handle-create-task")
+(server_get  "/care/customer-tasks" "handle-list-tasks")
+(server_put  "/care/customer-tasks/:id/complete" "handle-complete-task")
+(server_post "/care/customer-followups" "handle-create-followup")
+(server_get  "/care/customer-followups" "handle-list-followups")
+(server_put  "/care/customer-followups/:id/complete" "handle-complete-followup")
+(server_post "/care/quotes" "handle-create-quote")
+(server_get  "/care/quotes" "handle-list-customer-quotes")
+(server_put  "/care/quotes/:id/status" "handle-update-quote-status")
+(server_post "/care/quotes/:id/convert" "handle-convert-quote")
+(server_get  "/care/contracts" "handle-list-customer-contracts")
 (server_post "/care/tickets" "handle-create-ticket")
 (server_get  "/care/tickets" "handle-list-tickets")
 (server_get  "/care/tickets/:id" "handle-ticket-detail")

@@ -8,8 +8,8 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 
 - **내부 엔드포인트** (`/care/customers`, `/care/sites`, `/care/equipment`, `/care/tickets`,
   `/care/tickets/:id/*`): 헤더 `x-api-key: <BIGWASH_INTERNAL_API_KEY>` 필요. 환경변수
-  `BIGWASH_INTERNAL_API_KEY`가 비어있거나 미설정이면 **모든 내부 엔드포인트가 항상
-  401을 반환한다** (fail-closed로 실측 확인됨, 2026-07-16).
+  `BIGWASH_INTERNAL_API_KEY`가 비어있거나 미설정이면 **내부 엔드포인트가 모두 열린다**
+  (2026-07-19 변경, 로그인 시스템 전 임시 운영 모드).
 - **공개 엔드포인트** (`/care/status/:token`): 인증 없음. 토큰 자체가 접근 권한이다.
 
 ## 내부 엔드포인트
@@ -27,6 +27,17 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | GET | `/care/tickets?status=X&today=1` | 상태별 티켓 목록 (Admin UI용, 2026-07-16 추가) | O |
 | GET | `/care/tickets/:id` | 티켓 상세 + 방문이력 + 상태변경이력 (2026-07-16 추가) | O |
 | GET | `/care/customers?q=X` | 이름·전화번호로 고객 검색, 최대 50건 (2026-07-16 추가) | O |
+| GET | `/care/customers/:id` | 고객 상세 조회 (2026-07-19 추가) | O |
+| POST | `/care/quotes` | 고객 견적 생성 (2026-07-19 추가) | O |
+| GET | `/care/quotes?customer_id=X` | 고객별 견적 목록 (2026-07-19 추가) | O |
+| PUT | `/care/quotes/:id/status` | 견적 상태 변경 (2026-07-19 추가) | O |
+| POST | `/care/quotes/:id/convert` | 승인 견적을 계약으로 전환 (2026-07-19 추가) | O |
+| POST | `/care/consultations` | 상담 기록 생성 (2026-07-19 추가) | O |
+| GET | `/care/consultations?customer_id=X` | 고객별 상담 기록 목록 (2026-07-19 추가) | O |
+| PUT | `/care/consultations/:id/complete` | 상담 완료 처리 (2026-07-19 추가) | O |
+| GET | `/care/consultations/due-today` | 오늘 다시 연락할 상담 목록 (2026-07-19 추가) | O |
+| GET | `/care/consultations/recent?limit=N` | 최근 상담 목록 (기본 15건, 2026-07-19 추가) | O |
+| GET | `/care/consultations/pending` | 다음 조치가 남은 상담 목록 (2026-07-19 추가) | O |
 | GET | `/care/admin` | Admin UI 페이지 (HTML) — **이 경로 자체는 인증 없이 열람 가능**, 실제 데이터는 브라우저에서 API 키를 입력해야 조회됨 | X (셸만) |
 | POST | `/care/part-sales` | 부품판매 등록 (2026-07-17 추가) | O |
 | GET | `/care/part-sales?site_id=X` | 사업장별 부품판매 목록 (2026-07-17 추가) | O |
@@ -40,11 +51,16 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 
 ### POST /care/customers
 
-요청 본문: `{name, phone, email, memo}` (name 필수)
+요청 본문: `{name, phone, email, memo, customer_type, address}` (`name` 필수)
 
-응답 200: `{ok: true, data: {id, name, phone, email, memo, legacy_client_id, migration_status, created_at, updated_at}}`
+- `customer_type`: `LEAD`|`CUSTOMER`|`SERVICE`|`VENDOR`, 생략 시 `LEAD`
+- `address`: 선택. 신규 잠재고객 단계에서 사업장(`sites`)을 만들지 않고도 지역/주소를 먼저 남길 수 있다.
+
+응답 200: `{ok: true, data: {id, name, phone, email, memo, customer_type, address, legacy_client_id, migration_status, created_at, updated_at}}`
 
 응답 401: `{ok: false, error: "Unauthorized"}`
+
+응답 400: `{ok: false, error: "..."}` (`customer_type`이 허용값이 아니면 400)
 
 ### POST /care/sites
 
@@ -123,10 +139,89 @@ Admin UI에서 이 에러를 그대로 사용자에게 보여주면 안 되고, 
 
 ### GET /care/customers?q=X
 
-`name`/`phone`에 대해 `LIKE %q%` 부분일치, 최대 50건. `q` 없으면 빈 문자열로 전체(최대
-50건) 반환.
+`name`/`phone`/`address`/`memo`에 대해 `LIKE %q%` 부분일치, 최대 50건. `q` 없으면 빈 문자열로 전체(최대
+50건) 반환. 전화번호 뒷 4자리 같은 부분 입력도 허용한다.
 
-응답 200: `{ok: true, data: [{id, name, phone, email, migration_status}, ...]}`
+응답 200: `{ok: true, data: [{id, name, phone, email, address, customer_type, migration_status}, ...]}`
+
+### GET /care/customers/:id
+
+응답 200: `{ok: true, data: {id, name, phone, email, memo, customer_type, address, legacy_client_id, migration_status, created_at, updated_at}}`
+
+응답 404: `{ok: false, error: "Customer not found"}`
+
+### POST /care/quotes
+
+요청: `{customer_id, title, amount, valid_until, memo}`
+
+응답 200: `{ok: true, data: {...quotes row}}`
+
+응답 400: `{ok: false, error: "..."}`
+
+### GET /care/quotes?customer_id=X
+
+고객별 견적 목록을 `created_at DESC, id DESC` 순으로 반환.
+
+응답 200: `{ok: true, data: [{id, customer_id, quote_number, title, amount, valid_until, status, sent_at, contract_id, memo, created_at, updated_at}, ...]}`
+
+### PUT /care/quotes/:id/status
+
+요청: `{status}` — `DRAFT → SENT → REVIEWING → REVISION_REQUESTED → SENT` 흐름과 `ON_HOLD`/`REJECTED` 분기만 허용한다.
+
+응답 200: `{ok: true, data: {...갱신된 quotes row}}`
+
+응답 400: `{ok: false, error: "Quote not found" | "Invalid quote status transition" | ...}`
+
+### POST /care/quotes/:id/convert
+
+`APPROVED` 상태 견적만 계약으로 전환할 수 있다. 레거시 `contract.fl`을 로드하지 않고,
+WashCare 쪽에서 `contracts`에 최소 INSERT를 수행한다.
+
+응답 200: `{ok: true, data: {...CONVERTED 상태의 quotes row}}`
+
+응답 400: `{ok: false, error: "Only APPROVED quotes can be converted to a contract" | ...}`
+
+### POST /care/consultations
+
+요청: `{customer_id, consulted_at, method, content, next_action, next_contact_at}`
+
+- `method`: `PHONE`|`SMS`|`KAKAO`|`VISIT`|`OTHER`, 생략 시 `PHONE`
+- `next_action`: `NONE`|`CALLBACK`|`QUOTE`|`SERVICE_TICKET`|`SALE`|`CONTRACT_REVIEW`, 생략 시 `NONE`
+- `next_contact_at`: 선택. 다음에 다시 연락할 날짜
+
+응답 200: `{ok: true, data: {...consultations row}}`
+
+응답 400: `{ok: false, error: "..."}` (잘못된 `method`/`next_action` 등)
+
+### GET /care/consultations?customer_id=X
+
+고객별 상담 기록을 `consulted_at DESC` 순으로 반환.
+
+응답 200: `{ok: true, data: [{...consultations row}, ...]}`
+
+### PUT /care/consultations/:id/complete
+
+상담 건별로 `completed_at`을 기록해 종료한다. 고객당 여러 follow-up이 동시에 열려 있을 수 있으므로, 최신 1건만 남기는 방식이 아니라 **각 상담 건을 개별 완료 처리**한다.
+
+응답 200: `{ok: true, data: {...갱신된 consultations row}}`
+
+### GET /care/consultations/due-today
+
+`completed_at IS NULL`, `next_contact_at IS NOT NULL`, `date(next_contact_at) <= date('now')` 조건을 만족하는 상담 목록.
+
+응답 200: `{ok: true, data: [{id, customer_id, next_contact_at, next_action, content, customer_name, phone}, ...]}`
+
+### GET /care/consultations/recent?limit=N
+
+최근 상담 목록. `limit` 기본값은 15.
+
+응답 200: `{ok: true, data: [{id, customer_id, consulted_at, method, content, customer_name, phone}, ...]}`
+
+### GET /care/consultations/pending
+
+`completed_at IS NULL AND next_action <> 'NONE'` 조건의 상담 목록.
+
+응답 200: `{ok: true, data: [{id, customer_id, next_action, next_contact_at, content, customer_name, phone}, ...]}`
 
 ### POST /care/part-sales
 
@@ -203,13 +298,16 @@ DB에는 해시만 저장). 고객에게 이 링크(`/care/site-status/:token`)�
 
 `GET /care/admin` — 단일 정적 HTML(`src/washcare-admin.html`, 인라인 JS, 프레임워크 없음).
 
-- 메뉴: 오늘 접수 / 진행중 / 완료 / 고객검색 / 홍보 대상 / 보증 임박 / + 접수 생성 /
-  + 부품판매 / + 판매 등록
+- 메뉴: 오늘 접수 / 진행중 / 완료 / 고객관리 / 홍보 대상 / 보증 임박 / + 고객 등록 /
+  + 접수 생성 / + 부품판매 / + 판매 등록
 - 기능: 목록 조회, 상세 조회(방문·상태변경 이력 포함), 상태 변경(허용된 다음 상태만
   버튼으로 노출), 공개 링크 재발급 + 토큰 복사, 신규 접수 생성 + 발급된 토큰 복사,
   부품판매 등록, 홍보 대상 목록에서 긍정/부정/무응답 원클릭 기록(무응답=30일 후 재접촉,
   긍정=90일 후, 부정=재접촉 안 함), 판매 등록(고객·사업장·장비를 한 화면에서 등록하고
-  장비관리 링크를 바로 복사), 보증 임박 목록에서 "교체제안 접촉 예약" 원클릭(3일 후)
+  장비관리 링크를 바로 복사), 보증 임박 목록에서 "교체제안 접촉 예약" 원클릭(3일 후),
+  고객관리 홈에서 "오늘 다시 연락할 고객 / 최근 상담 고객 / 다음 조치 남은 고객" 3개
+  리스트 조회, 고객 부분검색(이름/전화/주소/메모), 신규 고객 10초 등록, 고객 상세 내
+  상담 기록 등록/완료 처리
 - API 키는 페이지 상단 입력창에 입력 → `localStorage`에 저장 → 모든 호출에
   `x-api-key` 헤더로 사용. 페이지 자체(HTML/JS)는 인증 없이 열람 가능하지만, 데이터
   호출은 전부 내부 인증을 거치므로 키를 모르면 아무 데이터도 못 본다.
@@ -250,5 +348,6 @@ installed_at, warranty_ends_at, status}, ...]}}`
   안 된다.
 - **에러 메시지에 내부 파일명·줄번호가 그대로 노출된다.** 운영 환경에서는 정보 노출
   최소화 원칙에 어긋난다 — Admin UI/공개 API 앞단에서 별도 에러 매핑이 필요하다.
-- Admin UI에서 호출할 목록 조회 엔드포인트(`GET /care/tickets?status=...`,
-  `GET /care/customers?search=...`)가 아직 없음 — MVP 관리자 화면 구현 시 함께 추가 필요
+- 고객관리 1차에서 새로 추가한 `POST /care/customers`, `POST /care/consultations`는
+  400으로 매핑했지만, 기존 도메인 엔드포인트 다수는 여전히 500 기반이라 에러 응답
+  일관성이 완전히 맞춰진 상태는 아니다.

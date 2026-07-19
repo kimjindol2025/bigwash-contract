@@ -1,5 +1,62 @@
 # Changelog
 
+## 2026-07-19 — 고객관리 3차-B (견적 연결 + 계약 전환)
+
+고객 상세에서 아직 비어 있던 견적 흐름을 붙였다. 이번 단계는 읽기 전용이 아니라
+신규 도메인 추가다. 견적을 작성하고, 상태를 전이시키고, 승인된 견적을 바로 계약으로
+전환할 수 있게 했다. 계약 생성은 레거시 `contract.fl`을 끌어오지 않고 WashCare 쪽
+최소 `INSERT INTO contracts` 방식으로 처리해, 3차-A에서 이미 만든 고객별 계약 조회와
+자동으로 이어지게 했다.
+
+- 신규 `quotes` 테이블 + `idx_quotes_customer_id` 인덱스 추가
+- 신규 도메인 함수: `generate-quote-number`, `valid-quote-transition?`,
+  `create-quote`, `list-customer-quotes`, `update-quote-status`,
+  `convert-quote-to-contract`
+- 견적 상태 8종 도입: `DRAFT`, `SENT`, `REVIEWING`, `REVISION_REQUESTED`,
+  `APPROVED`, `ON_HOLD`, `REJECTED`, `CONVERTED`
+- 신규 API 4종: `POST /care/quotes`, `GET /care/quotes`,
+  `PUT /care/quotes/:id/status`, `POST /care/quotes/:id/convert`
+- Admin UI 고객 상세에 `견적` 탭 추가: 견적 목록, `+ 견적 작성`, 다음 상태만 노출하는
+  버튼, `APPROVED` 상태에서만 가능한 `계약 전환` 버튼
+- 계약 전환 완료 후에는 별도 연결 코드 없이 기존 `list-customer-contracts` 결과에
+  새 계약이 자동으로 나타남
+- `tests/test_customer_2nd_phase.fl`에 견적 생성, 잘못된 전이 거부,
+  `DRAFT → SENT → REVIEWING → APPROVED`, 계약 전환 후 `contracts` 반영 및
+  `list-customer-contracts` 노출 확인을 추가
+- **검증 한계**: 이번 반영 뒤에는 테스트와 브라우저 E2E를 아직 재실행하지 않았다.
+
+## 2026-07-19 — 고객관리 1차 (고객 등록·검색·상담 기록)
+
+고객관리 전체 설계에서 실제 1차 범위를 세 가지로만 잘라 구현했다: 신규 고객을 빠르게
+등록하고, 전화번호 부분 입력으로 기존 고객을 찾고, 상담 내용을 고객 기록에 남기고,
+오늘 다시 연락할 고객을 자동으로 보이게 하는 단계다. 장비·출장·견적·판매·미수금·
+사후관리 연결은 이번 범위에 넣지 않았다.
+
+- `customers.customer_type`, `customers.address` 컬럼 추가 — 잠재고객 단계에서
+  `sites`를 강제하지 않고도 최소 분류/주소를 저장
+- 신규 `consultations` 테이블 + 인덱스 2종(`customer_id`, `next_contact_at`)
+- `create-customer` 확장: `customer_type` 검증, 기본값 `LEAD`, 주소 저장
+- `search-customers` 확장: 이름/전화뿐 아니라 주소·메모까지 부분검색
+- 신규 도메인 함수: `get-customer`, `create-consultation`,
+  `list-customer-consultations`, `complete-consultation`,
+  `list-followups-today`, `list-recent-consultations`,
+  `list-pending-next-actions`
+- 신규 API 7종: `GET /care/customers/:id`, `POST /care/consultations`,
+  `GET /care/consultations`, `PUT /care/consultations/:id/complete`,
+  `GET /care/consultations/due-today`, `GET /care/consultations/recent`,
+  `GET /care/consultations/pending`
+- `POST /care/customers`에 400 에러 매핑 추가 — 새 고객 구분 검증 실패를 500이 아니라
+  400으로 응답
+- Admin UI 고객관리 화면 추가: 고객관리 홈, 부분검색, `+ 고객 등록`, 고객 상세,
+  상담 등록/완료, 오늘 다시 연락할 고객/최근 상담/다음 조치 남은 고객 3개 리스트
+- 신규 테스트 `tests/test_customer_consultation.fl` 작성, 기존
+  `test_washcare.fl`/`test_part_sales_outreach.fl`의 `create-customer` 호출부를
+  새 시그니처에 맞게 수정
+- **검증 한계**: 이 워크스페이스에는 `/root/apps/bigwash-contract` 경로가 없어,
+  기존 절대경로 `load`/`import`를 전제로 한 전체 회귀 테스트와 실서버 E2E는 아직
+  실행하지 못했다. 기능 코드는 반영했지만, 로컬 검증을 위해서는 절대경로 전략을
+  별도로 정리해야 한다.
+
 ## 2026-07-17 — 판매 관리 흐름 보강 (활동 40%, 마지막 축)
 
 부품판매·홍보에 이어 마지막으로 남았던 "판매" 축을 관리 흐름으로 보강. 지금까지는

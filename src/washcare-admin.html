@@ -3,15 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WashCare 관리자</title>
+<title>대한이엔지 통합관리시스템</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  /* design.skl.kr #13 "Write Post PC" 기반 (화이트+민트 #0FA3A3, 사이드바 내비, 카드형 패널) */
+  /* design.skl.kr #13 구조를 유지하되, 2026-07-19 기준 기본 강조색은 보라/레드 체계 */
   * { box-sizing: border-box; }
   body { font-family: 'Manrope', -apple-system, "Segoe UI", sans-serif; background:#E4E7E9; color:#22292E; margin:0; }
   .topbar { background:#FFFFFF; border-bottom:1px solid #E7ECED; padding:14px 24px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .topbar-title { display:flex; flex-direction:column; gap:2px; }
   .topbar h1 { font-size:17px; margin:0; font-weight:800; color:#22292E; }
+  .topbar-sub { font-size:12px; color:#8B979B; font-weight:700; }
   .topbar input { background:#F4F6F6; border:1px solid #E7ECED; color:#22292E; padding:8px 12px; border-radius:9px; font-size:12.5px; width:220px; font-family:inherit; }
   .shell { display:flex; align-items:flex-start; min-height:calc(100vh - 53px); }
   aside.sidebar { width:220px; flex-shrink:0; background:#FFFFFF; border-right:1px solid #E7ECED; padding:22px 16px; }
@@ -19,12 +21,12 @@
   .sidebar-label:first-child { margin-top:0; }
   nav { display:flex; flex-direction:column; gap:2px; }
   nav button { text-align:left; background:transparent; border:none; color:#69767B; padding:11px 10px; border-radius:9px; cursor:pointer; font-size:13.5px; font-weight:600; font-family:inherit; }
-  nav button.active { background:#EAF6F5; color:#0FA3A3; font-weight:800; }
-  nav button.ghost { color:#0FA3A3; }
+  nav button.active { background:#EFEAFB; color:#6C4CE0; font-weight:800; }
+  nav button.ghost { color:#6C4CE0; }
   main { flex:1; min-width:0; padding:28px 32px 40px; background:#F4F6F6; }
   .row { display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
   input, select, textarea { background:#FFFFFF; border:1px solid #E7ECED; color:#22292E; padding:10px 12px; border-radius:9px; font-size:13.5px; font-family:inherit; }
-  button.primary { background:#0FA3A3; color:#FFFFFF; border:none; padding:10px 18px; border-radius:9px; font-weight:700; font-size:13.5px; cursor:pointer; font-family:inherit; }
+  button.primary { background:#6C4CE0; color:#FFFFFF; border:none; padding:10px 18px; border-radius:9px; font-weight:700; font-size:13.5px; cursor:pointer; font-family:inherit; }
   button.ghost { background:#F1F4F4; border:none; color:#69767B; padding:10px 18px; border-radius:9px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit; }
   table { width:100%; border-collapse:collapse; margin-top:12px; font-size:13.5px; background:#FFFFFF; border:1px solid #E7ECED; border-radius:14px; overflow:hidden; }
   th, td { text-align:left; padding:12px 14px; border-bottom:1px solid #EFF2F2; }
@@ -34,10 +36,36 @@
   .badge { padding:4px 11px; border-radius:9999px; font-size:11px; font-weight:800; }
   .b-RECEIVED { background:#F1F4F4; color:#69767B; }
   .b-SCHEDULED { background:#FFF4E5; color:#B4780A; }
-  .b-IN_PROGRESS { background:#EAF6F5; color:#0FA3A3; }
+  .b-IN_PROGRESS { background:#EFEAFB; color:#6C4CE0; }
+  .b-DRAFT { background:#F1F4F4; color:#69767B; }
+  .b-SENT { background:#E9F5FF; color:#226BA5; }
+  .b-REVIEWING { background:#EFEAFB; color:#6C4CE0; }
+  .b-REVISION_REQUESTED { background:#FFF4E5; color:#B4780A; }
+  .b-APPROVED { background:#E8F7EF; color:#1C9A5B; }
+  .b-ON_HOLD { background:#FDEEEE; color:#D64545; }
+  .b-REJECTED { background:#FDEEEE; color:#D64545; }
+  .b-CONVERTED { background:#E7ECED; color:#445158; }
+  .stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:16px; }
+  .stat-card { border-radius:18px; padding:22px; color:#FFFFFF; min-height:140px; display:flex; flex-direction:column; justify-content:space-between; }
+  .stat-card-red { background:#E85454; }
+  .stat-card-purple { background:#6C4CE0; }
+  .stat-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .stat-card-label { font-size:12px; font-weight:700; opacity:.84; letter-spacing:.2px; }
+  .stat-card-icon { width:34px; height:34px; border-radius:9999px; background:rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:800; }
+  .stat-card-value { font-size:30px; line-height:1.1; font-weight:800; letter-spacing:-.3px; }
+  .stat-card-note { font-size:12px; opacity:.82; }
   .b-COMPLETED { background:#E8F7EF; color:#1C9A5B; }
   .b-CANCELLED { background:#FDEEEE; color:#D64545; }
   .panel { background:#FFFFFF; border:1px solid #E7ECED; border-radius:14px; padding:24px; margin-top:0; }
+  .placeholder-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; }
+  .placeholder-card { background:#FBFAFE; border:1px solid #E6E0FA; border-left:4px solid #6C4CE0; border-radius:14px; padding:16px 16px 16px 14px; min-height:108px; }
+  .placeholder-card-title { margin:0; font-size:14px; font-weight:800; color:#31285A; line-height:1.5; }
+  .badge-pending { background:#FFF4E5; color:#B4780A; }
+  .empty-state { margin-top:12px; padding:28px 18px; border:1px dashed #D9E0E3; border-radius:14px; background:#FBFCFC; color:#7B878C; text-align:center; }
+  .empty-state-title { margin:0 0 6px; font-size:14px; font-weight:800; color:#5C666C; }
+  .empty-state-text { margin:0; font-size:13px; line-height:1.5; }
+  .tab-bar { display:flex; gap:8px; flex-wrap:wrap; margin:18px 0 20px; }
+  .tab-panel { margin-top:18px; }
   .msg { min-height:20px; color:#B4780A; font-size:13px; margin:0 0 12px; font-weight:600; }
   .token-box { display:flex; gap:8px; align-items:center; background:#F4F6F6; padding:10px 12px; border-radius:9px; font-family:ui-monospace,monospace; font-size:12px; word-break:break-all; border:1px solid #E7ECED; }
   h2 { font-size:16px; color:#22292E; margin:0 0 16px; font-weight:800; }
@@ -59,20 +87,40 @@
 </head>
 <body>
 <div class="topbar">
-  <h1>WashCare 관리자</h1>
-  <input id="apiKey" type="password" placeholder="API 키 (x-api-key)">
+  <div class="topbar-title">
+    <h1>대한이엔지 통합관리시스템</h1>
+    <span class="topbar-sub">WashCare 데이터 기반</span>
+  </div>
+  <input id="apiKey" type="password" placeholder="API 키 (선택)">
 </div>
 <div class="shell">
   <aside class="sidebar">
-    <div class="sidebar-label">현황</div>
     <nav>
+      <button data-view="home">홈</button>
+      <div class="sidebar-label">고객</div>
+      <button data-view="customers">고객관리</button>
+      <div class="sidebar-label">영업</div>
+      <button data-view="products">상품·판매</button>
+      <button data-view="quotes">견적관리</button>
+      <button data-view="contracts">계약관리</button>
+      <div class="sidebar-label">서비스</div>
       <button data-view="today" class="active">오늘 접수</button>
       <button data-view="progress">진행중</button>
       <button data-view="done">완료</button>
-      <button data-view="search">고객검색</button>
       <button data-view="outreach">홍보 대상</button>
       <button data-view="warranty">보증 임박</button>
+      <button data-view="careplan">연간관리</button>
+      <div class="sidebar-label">관리</div>
+      <button data-view="accounting">회계·수금</button>
+      <button data-view="messages">메시지</button>
+      <button data-view="todos">일정·할 일</button>
+      <button data-view="files">사진·문서</button>
+      <div class="sidebar-label">분석</div>
+      <button data-view="reports">통계·보고서</button>
+      <div class="sidebar-label">시스템</div>
+      <button data-view="settings">설정</button>
       <div class="sidebar-label">작성</div>
+      <button data-view="newcustomer" class="ghost">+ 고객 등록</button>
       <button data-view="new" class="ghost">+ 접수 생성</button>
       <button data-view="newpart" class="ghost">+ 부품판매</button>
       <button data-view="newsale" class="ghost">+ 판매 등록</button>
@@ -106,8 +154,319 @@ function badge(status) {
   return `<span class="badge b-${status}">${status}</span>`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+function toLocalDateInputValue(date = new Date()) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function toLocalDateTimeInputValue(date = new Date()) {
+  return `${toLocalDateInputValue(date)}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function customerTypeLabel(type) {
+  return {
+    LEAD: '잠재고객',
+    CUSTOMER: '거래고객',
+    SERVICE: '서비스고객',
+    VENDOR: '거래처',
+  }[type] || type || '-';
+}
+
+function consultationMethodLabel(method) {
+  return {
+    PHONE: '전화',
+    SMS: '문자',
+    KAKAO: '카카오',
+    VISIT: '방문',
+    OTHER: '기타',
+  }[method] || method || '-';
+}
+
+function contactRoleLabel(role) {
+  return {
+    OWNER: '대표자',
+    MANAGER: '관리자',
+    SITE_MANAGER: '현장담당자',
+    ACCOUNTING: '회계담당자',
+    PURCHASING: '구매담당자',
+    FACILITY: '시설담당자',
+    OTHER: '기타',
+  }[role] || role || '-';
+}
+
+function nextActionLabel(action) {
+  return {
+    NONE: '없음',
+    CALLBACK: '다시 연락',
+    QUOTE: '견적 작성',
+    SERVICE_TICKET: '출장 접수',
+    SALE: '상품 판매',
+    CONTRACT_REVIEW: '계약 검토',
+  }[action] || action || '-';
+}
+
+function taskPriorityLabel(priority) {
+  return {
+    LOW: '낮음',
+    NORMAL: '보통',
+    HIGH: '높음',
+  }[priority] || priority || '-';
+}
+
+function taskStatusLabel(status) {
+  return {
+    PENDING: '대기',
+    IN_PROGRESS: '진행중',
+    DONE: '완료',
+    DELAYED: '지연',
+    CANCELLED: '취소',
+  }[status] || status || '-';
+}
+
+function followupTypeLabel(type) {
+  return {
+    CONSULT_RECALL: '상담 재연락',
+    QUOTE_CHECK: '견적 확인',
+    INSTALL_CHECK: '설치 확인',
+    SERVICE_CHECK: '서비스 확인',
+    REPAIR_RECHECK: '수리 재점검',
+    PAYMENT_NOTICE: '입금 안내',
+    CONSUMABLE_NOTICE: '소모품 안내',
+    WARRANTY_END_NOTICE: '보증 종료 안내',
+    CARE_PLAN_RENEWAL: '연간관리 갱신',
+    LONG_TERM_INACTIVE: '장기 미활동',
+  }[type] || type || '-';
+}
+
+function quoteStatusLabel(status) {
+  return {
+    DRAFT: '작성중',
+    SENT: '발송',
+    REVIEWING: '검토중',
+    REVISION_REQUESTED: '수정요청',
+    APPROVED: '승인',
+    ON_HOLD: '보류',
+    REJECTED: '거절',
+    CONVERTED: '계약전환',
+  }[status] || status || '-';
+}
+
+const QUOTE_NEXT = {
+  DRAFT: ['SENT'],
+  SENT: ['REVIEWING', 'ON_HOLD', 'REJECTED'],
+  REVIEWING: ['REVISION_REQUESTED', 'APPROVED', 'ON_HOLD', 'REJECTED'],
+  REVISION_REQUESTED: ['SENT', 'ON_HOLD', 'REJECTED'],
+  ON_HOLD: ['REVIEWING'],
+};
+
+function actionAttrs(action, args = [], options = {}) {
+  const attrs = [
+    `data-action="${escapeHtml(action)}"`,
+    `data-args="${escapeHtml(JSON.stringify(args))}"`
+  ];
+  if (options.stopPropagation) attrs.push('data-stop-propagation="1"');
+  return attrs.join(' ');
+}
+
+const CUSTOMER_FILTERS = [
+  ['ALL', '전체'],
+  ['LEAD', '잠재고객'],
+  ['CUSTOMER', '거래고객'],
+  ['SERVICE', '서비스고객'],
+  ['VENDOR', '거래처'],
+];
+
+let currentCustomerFilter = 'ALL';
+let currentCustomerTab = 'basic';
+let currentCustomerId = null;
+let currentCustomerDetail = null;
+
+function emptyState(title = '없음', description = '표시할 데이터가 아직 없습니다.') {
+  return `<div class="empty-state">
+    <p class="empty-state-title">${escapeHtml(title)}</p>
+    <p class="empty-state-text">${escapeHtml(description)}</p>
+  </div>`;
+}
+
+function emptyStateRow(colspan, title = '없음', description = '표시할 데이터가 아직 없습니다.') {
+  return `<tr><td colspan="${colspan}">${emptyState(title, description)}</td></tr>`;
+}
+
+const MODULE_PLACEHOLDERS = {
+  home: {
+    title: '홈',
+    description: '오늘 무엇부터 처리해야 하는지 한눈에 보는 요약 화면입니다.',
+    outline: [
+      '오늘의 업무',
+      '신규 문의',
+      '오늘 출장',
+      '견적 대기',
+      '계약 진행',
+      '입금 예정',
+      '미수금',
+      '사후관리',
+      '연간관리 만료',
+      '최근 고객 활동',
+      '매출 요약'
+    ]
+  },
+  products: {
+    title: '상품·판매',
+    description: '상품, 재고, 주문, 판매 흐름을 한 모듈로 묶는 자리입니다.',
+    outline: [
+      '상품 목록 / 상품 등록 / 상품 분류 / 재고 현황',
+      '주문 접수 / 판매 목록 / 결제 대기 / 배송 관리 / 설치 판매',
+      '취소·반품',
+      '판매 고객',
+      '판매 설정'
+    ]
+  },
+  quotes: {
+    title: '견적관리',
+    description: '견적 작성부터 승인, 계약 전환 전까지의 상태를 관리합니다.',
+    outline: [
+      '전체/신규/작성중/고객발송/검토중/수정요청 견적',
+      '승인 견적 / 계약 전환 / 보류 / 거절 / 만료',
+      '견적 양식'
+    ]
+  },
+  contracts: {
+    title: '계약관리',
+    description: '계약 검토, 서명, 잔금, 종료까지 계약 라이프사이클을 다룹니다.',
+    outline: [
+      '전체/신규 계약 / 계약 검토 / 서명 대기 / 계약 완료',
+      '계약금 대기 / 작업 예정·진행 / 완료 대기 / 잔금 대기',
+      '종료 / 취소 계약',
+      '계약서 양식'
+    ]
+  },
+  careplan: {
+    title: '연간관리',
+    description: '연간관리 플랜, 정기점검, 갱신 대상을 관리하는 자리입니다.',
+    outline: [
+      '관리 플랜 / 가입 고객 / 신규 계약 / 이용 중',
+      '정기점검 예정 / 출장 사용 내역 / 판매 혜택 내역',
+      '남은 서비스 / 만료 예정 / 갱신 대상 / 종료 계약',
+      '수익성 분석'
+    ]
+  },
+  accounting: {
+    title: '회계·수금',
+    description: '매출, 미수금, 입금 일정 등 돈 흐름을 모아보는 모듈입니다.',
+    outline: [
+      '회계 대시보드 / 매출 / 매입 / 입금 / 출금',
+      '미수금 / 미지급금',
+      '견적·계약 수금 / 출장 매출 / 상품 매출 / 연간관리 매출',
+      '경비 / 계좌·현금 / 세금계산서 상태',
+      '월별 마감'
+    ]
+  },
+  messages: {
+    title: '메시지',
+    description: '고객 알림과 발송 이력을 모아보는 메시지 모듈입니다.',
+    outline: [
+      '메시지 작성 / 문자 발송 / 카카오 발송 / 이메일 발송',
+      '발송 예정 / 자동 발송 / 발송 완료 / 발송 실패',
+      '고객 답변 / 발송 이력',
+      '메시지 템플릿',
+      '수신거부 관리'
+    ]
+  },
+  todos: {
+    title: '일정·할 일',
+    description: '상담 후속, 출장 일정, 입금 확인 같은 실행 업무를 한곳에 모읍니다.',
+    outline: [
+      '오늘 / 내일 / 이번 주 / 캘린더',
+      '상담후속 / 견적후속 / 계약일정 / 출장일정 / 입금확인',
+      '사후관리 / 연간관리일정',
+      '지연 업무 / 완료 업무'
+    ]
+  },
+  files: {
+    title: '사진·문서',
+    description: '고객, 현장, 장비, 출장, 계약에 연결된 파일 보관 모듈입니다.',
+    outline: [
+      '전체/고객/현장/장비/출장 사진',
+      '작업 전·후 사진',
+      '견적서/계약서/거래명세서/사업자등록증/세금계산서',
+      '장비 매뉴얼/도면',
+      '기타 문서'
+    ]
+  },
+  reports: {
+    title: '통계·보고서',
+    description: '운영 지표와 매출 현황을 요약 보고서로 모아보는 자리입니다.',
+    outline: [
+      '일간/주간/월간/연간 보고',
+      '고객현황 / 상담전환율 / 견적승인율 / 계약현황 / 출장현황',
+      '상품매출 / 서비스매출 / 연간관리현황',
+      '미수금현황 / 고객별매출 / 지역별현황'
+    ]
+  },
+  settings: {
+    title: '설정',
+    description: '분류, 양식, 규칙, 백업 같은 시스템 공통 설정을 모아둡니다.',
+    outline: [
+      '회사 정보 / 사용자 정보',
+      '고객 분류 / 상품 분류 / 견적 양식 / 계약 양식',
+      '출장 유형 / 연간관리 플랜 / 회계 항목 / 결제 방법',
+      '메시지 템플릿 / 자동 알림 규칙 / 번호 생성 규칙',
+      '파일 저장 설정 / 데이터 백업',
+      '변경 이력'
+    ]
+  }
+};
+
+function loadModulePlaceholder(title, description, outline) {
+  msg.textContent = '';
+  content.innerHTML = `<div class="panel">
+    <div class="row" style="justify-content:space-between; align-items:center;">
+      <h2>${escapeHtml(title)}</h2>
+      <span class="badge badge-pending">준비 중</span>
+    </div>
+    <p style="color:#8B979B; margin:0 0 16px;">${escapeHtml(description)}</p>
+    <div class="placeholder-grid">
+      ${outline.map(line => `<div class="placeholder-card"><h3 class="placeholder-card-title">${escapeHtml(line)}</h3></div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function customerRow(c) {
+  return `<tr ${actionAttrs('viewCustomer', [c.id])}>
+    <td>${c.id}</td>
+    <td>${escapeHtml(c.name)}</td>
+    <td>${escapeHtml(c.phone || '')}</td>
+    <td>${escapeHtml(c.address || '')}</td>
+    <td>${escapeHtml(customerTypeLabel(c.customer_type))}</td>
+    <td>${escapeHtml(c.last_consulted_at || '-')}</td>
+    <td>${escapeHtml(c.next_contact_at || '-')}</td>
+  </tr>`;
+}
+
+function consultationRow(c) {
+  return `<tr ${actionAttrs('viewCustomer', [c.customer_id])}>
+    <td>${escapeHtml(c.customer_name || '')}</td>
+    <td>${escapeHtml(c.phone || '')}</td>
+    <td>${escapeHtml(nextActionLabel(c.next_action))}</td>
+    <td>${escapeHtml(c.next_contact_at || c.consulted_at || '-')}</td>
+    <td>${escapeHtml(c.content || '')}</td>
+  </tr>`;
+}
+
 function ticketRow(t) {
-  return `<tr onclick="showDetail(${t.id})">
+  return `<tr ${actionAttrs('showDetail', [t.id])}>
     <td>#${t.id}</td>
     <td>${t.site_name || ''}</td>
     <td>${t.symptom || ''}</td>
@@ -126,7 +485,7 @@ async function loadTickets(status, todayOnly) {
     const rows = res.data.map(ticketRow).join('');
     content.innerHTML = `<table><thead><tr>
       <th>ID</th><th>사업장</th><th>증상</th><th>우선순위</th><th>상태</th><th>예정일</th>
-    </tr></thead><tbody>${rows || '<tr><td colspan="6">없음</td></tr>'}</tbody></table>`;
+    </tr></thead><tbody>${rows || emptyStateRow(6, '접수 없음', '조건에 맞는 티켓이 아직 없습니다.')}</tbody></table>`;
   } catch (e) { msg.textContent = '오류: ' + e.message; }
 }
 
@@ -144,14 +503,14 @@ async function showDetail(id) {
       <p>고객: ${t.customer_name} / 사업장: ${t.site_name} (${t.address || ''}, ${t.contact_phone || ''})</p>
       <p>증상: ${t.symptom}</p>
       <div class="row">
-        ${nextOptions.map(s => `<button class="ghost" onclick="changeStatus(${t.id}, '${s}')">${s}로 변경</button>`).join('')}
-        <button class="ghost" onclick="reissueLink(${t.id})">공개 링크 재발급</button>
+        ${nextOptions.map(s => `<button class="ghost" ${actionAttrs('changeStatus', [t.id, s])}>${s}로 변경</button>`).join('')}
+        <button class="ghost" ${actionAttrs('reissueLink', [t.id])}>공개 링크 재발급</button>
       </div>
       <h2>방문 이력</h2>
-      <ul>${visits || '<li>없음</li>'}</ul>
+      ${visits ? `<ul>${visits}</ul>` : emptyState('방문 이력 없음', '아직 등록된 방문 기록이 없습니다.')}
       <h2>상태 변경 이력</h2>
-      <ul>${history || '<li>없음</li>'}</ul>
-      <button class="ghost" onclick="loadTickets('${t.status}', false)">목록으로</button>
+      ${history ? `<ul>${history}</ul>` : emptyState('상태 변경 이력 없음', '아직 기록된 상태 변경 내역이 없습니다.')}
+      <button class="ghost" ${actionAttrs('loadTickets', [t.status, false])}>목록으로</button>
     </div>`;
   } catch (e) { msg.textContent = '오류: ' + e.message; }
 }
@@ -170,28 +529,620 @@ async function reissueLink(id) {
     content.insertAdjacentHTML('afterbegin', `<div class="panel">
       <h2>재발급된 토큰 (한 번만 표시됨)</h2>
       <div class="token-box"><span id="tk">${token}</span>
-        <button class="ghost" onclick="navigator.clipboard.writeText(document.querySelector('#tk').textContent)">복사</button>
+        <button class="ghost" ${actionAttrs('copyTextFromSelector', ['#tk'])}>복사</button>
       </div>
     </div>`);
   } catch (e) { msg.textContent = '오류: ' + e.message; }
 }
 
-async function loadSearch() {
-  content.innerHTML = `<div class="row">
-    <input id="searchQ" placeholder="고객명 또는 전화번호">
-    <button class="primary" onclick="runSearch()">검색</button>
-  </div><div id="searchResult"></div>`;
+async function loadCustomerHome() {
+  msg.textContent = '불러오는 중...';
+  content.innerHTML = `<div class="panel">
+    <div class="row" style="justify-content:space-between; align-items:center;">
+      <div>
+        <h2>고객관리</h2>
+        <p style="color:#8B979B; margin:0;">고객 등록, 검색, 상담, 오늘 다시 연락할 고객</p>
+      </div>
+      <button class="primary" ${actionAttrs('loadNewCustomerForm')}>+ 신규 고객 등록</button>
+    </div>
+    <div class="row" id="customerFilterTabs">
+      ${CUSTOMER_FILTERS.map(([value, label]) => `<button class="${value === currentCustomerFilter ? 'primary' : 'ghost'}" ${actionAttrs('setCustomerFilter', [value])}>${escapeHtml(label)}</button>`).join('')}
+    </div>
+    <div class="row">
+      <input id="customerSearchQ" placeholder="고객명, 전화번호, 주소, 메모 검색" style="min-width:280px">
+      <button class="primary" ${actionAttrs('runCustomerSearch')}>검색</button>
+    </div>
+    <div id="customerSearchResult"></div>
+  </div>
+  <div class="panel" id="followupsPanel"><h2>오늘 다시 연락할 고객</h2><p>불러오는 중...</p></div>
+  <div class="panel" id="recentConsultationsPanel"><h2>최근 상담 고객</h2><p>불러오는 중...</p></div>
+  <div class="panel" id="pendingActionsPanel"><h2>다음 조치 남은 고객</h2><p>불러오는 중...</p></div>`;
+  try {
+    const [followups, recent, pending] = await Promise.all([
+      api('GET', '/care/consultations/due-today'),
+      api('GET', '/care/consultations/recent?limit=15'),
+      api('GET', '/care/consultations/pending'),
+    ]);
+    msg.textContent = '';
+    document.querySelector('#followupsPanel').innerHTML = `<h2>오늘 다시 연락할 고객</h2>
+      <table><thead><tr>
+        <th>고객</th><th>연락처</th><th>다음조치</th><th>예정일</th><th>상담내용</th>
+      </tr></thead><tbody>${followups.data.map(consultationRow).join('') || emptyStateRow(5, '오늘 연락할 고객 없음', '오늘 다시 연락해야 할 고객이 없습니다.')}</tbody></table>`;
+    document.querySelector('#recentConsultationsPanel').innerHTML = `<h2>최근 상담 고객</h2>
+      <table><thead><tr>
+        <th>고객</th><th>연락처</th><th>상담방법</th><th>상담일시</th><th>상담내용</th>
+      </tr></thead><tbody>${recent.data.map(c => `<tr ${actionAttrs('viewCustomer', [c.customer_id])}><td>${escapeHtml(c.customer_name || '')}</td><td>${escapeHtml(c.phone || '')}</td><td>${escapeHtml(consultationMethodLabel(c.method))}</td><td>${escapeHtml(c.consulted_at || '-')}</td><td>${escapeHtml(c.content || '')}</td></tr>`).join('') || emptyStateRow(5, '최근 상담 없음', '아직 표시할 상담 기록이 없습니다.')}</tbody></table>`;
+    document.querySelector('#pendingActionsPanel').innerHTML = `<h2>다음 조치 남은 고객</h2>
+      <table><thead><tr>
+        <th>고객</th><th>연락처</th><th>다음조치</th><th>다음연락일</th><th>상담내용</th>
+      </tr></thead><tbody>${pending.data.map(consultationRow).join('') || emptyStateRow(5, '남은 다음 조치 없음', '미완료 후속 조치가 없습니다.')}</tbody></table>`;
+    runCustomerSearch();
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
 }
 
-async function runSearch() {
-  const q = document.querySelector('#searchQ').value;
+async function runCustomerSearch() {
+  const q = (document.querySelector('#customerSearchQ') || {}).value || '';
   try {
-    const res = await api('GET', '/care/customers?q=' + encodeURIComponent(q));
-    const rows = res.data.map(c => `<tr><td>${c.id}</td><td>${c.name}</td><td>${c.phone || ''}</td><td>${c.email || ''}</td><td>${c.migration_status}</td></tr>`).join('');
-    document.querySelector('#searchResult').innerHTML = `<table><thead><tr>
-      <th>ID</th><th>이름</th><th>연락처</th><th>이메일</th><th>상태</th>
-    </tr></thead><tbody>${rows || '<tr><td colspan="5">없음</td></tr>'}</tbody></table>`;
-  } catch (e) { msg.textContent = '오류: ' + e.message; }
+    const res = await api('GET', '/care/customers?q=' + encodeURIComponent(q) + '&filter=' + encodeURIComponent(currentCustomerFilter));
+    document.querySelector('#customerSearchResult').innerHTML = `<table><thead><tr>
+      <th>ID</th><th>고객명</th><th>연락처</th><th>주소</th><th>구분</th><th>최근 연락</th><th>다음 연락</th>
+    </tr></thead><tbody>${res.data.map(customerRow).join('') || emptyStateRow(7, '검색 결과 없음', '입력한 조건에 맞는 고객이 없습니다.')}</tbody></table>`;
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+function setCustomerFilter(filter) {
+  currentCustomerFilter = filter;
+  loadCustomerHome();
+}
+
+function showCustomerTab(tab) {
+  currentCustomerTab = tab;
+  renderCustomerDetail();
+}
+
+function customerDetailTabs() {
+  const tabs = [
+    ['basic', '기본정보'],
+    ['sites', '현장'],
+    ['equipment', '장비'],
+    ['quotes', '견적'],
+    ['contracts', '계약'],
+    ['tickets', '출장'],
+    ['sales', '판매'],
+    ['contacts', '담당자'],
+    ['consultations', '상담'],
+    ['tasks', '할 일'],
+    ['followups', '사후관리'],
+  ];
+  return `<div class="tab-bar">
+    ${tabs.map(([value, label]) => `<button class="${value === currentCustomerTab ? 'primary' : 'ghost'}" ${actionAttrs('showCustomerTab', [value])}>${escapeHtml(label)}</button>`).join('')}
+  </div>`;
+}
+
+function renderBasicTab(detail) {
+  const customer = detail.customer;
+  const recent = detail.consultations.slice(0, 3);
+  const pending = detail.consultations.filter(c => c.next_action !== 'NONE' && !c.completed_at);
+  return `<div class="tab-panel">
+    <p>연락처: ${escapeHtml(customer.phone || '-')} / 주소: ${escapeHtml(customer.address || '-')}</p>
+    <p>구분: ${escapeHtml(customerTypeLabel(customer.customer_type))}</p>
+    <p>메모: ${escapeHtml(customer.memo || '-')}</p>
+    <p>현장 ${detail.sites.length}건 / 장비 ${detail.equipment.length}건 / 담당자 ${detail.contacts.length}명 / 할 일 ${detail.tasks.filter(t => t.status !== 'DONE').length}건 / 사후관리 ${detail.followups.filter(f => !f.completed_at).length}건</p>
+    <h2>최근 상담</h2>
+    ${recent.length ? `<ul>${recent.map(c => `<li>${escapeHtml(c.consulted_at || '-')} / ${escapeHtml(consultationMethodLabel(c.method))} / ${escapeHtml(c.content || '')}</li>`).join('')}</ul>` : emptyState('최근 상담 없음', '아직 등록된 상담 기록이 없습니다.')}
+    <h2>다음 해야 할 일</h2>
+    ${pending.length ? `<ul>${pending.map(c => `<li>${escapeHtml(nextActionLabel(c.next_action))} ${c.next_contact_at ? '(' + escapeHtml(c.next_contact_at) + ')' : ''} — ${escapeHtml(c.content || '')}</li>`).join('')}</ul>` : emptyState('다음 해야 할 일 없음', '미완료 후속 조치가 없습니다.')}
+  </div>`;
+}
+
+function renderSitesTab(detail) {
+  const customer = detail.customer;
+  return `<div class="tab-panel">
+    <h2>현장 목록</h2>
+    <table><thead><tr>
+      <th>현장명</th><th>주소</th><th>연락처</th><th>상태</th>
+    </tr></thead><tbody>${detail.sites.map(site => `<tr><td>${escapeHtml(site.name)}</td><td>${escapeHtml(site.address || '-')}</td><td>${escapeHtml(site.contact_phone || '-')}</td><td>${escapeHtml(site.status || '-')}</td></tr>`).join('') || emptyStateRow(4, '현장 없음', '등록된 현장이 없습니다.')}</tbody></table>
+    <div class="panel" style="margin-top:16px;">
+      <h2>+ 현장 추가</h2>
+      <div class="row">
+        <div><label>현장명</label><input id="site-name"></div>
+        <div><label>연락처</label><input id="site-phone"></div>
+      </div>
+      <div class="row"><div style="flex:1"><label>주소</label><input id="site-address"></div></div>
+      <button class="primary" ${actionAttrs('createCustomerSite', [customer.id])}>현장 저장</button>
+    </div>
+  </div>`;
+}
+
+function renderEquipmentTab(detail) {
+  return `<div class="tab-panel">
+    <h2>고객 장비</h2>
+    <table><thead><tr>
+      <th>현장</th><th>종류</th><th>모델</th><th>시리얼</th><th>설치일</th><th>보증만료일</th><th>상태</th>
+    </tr></thead><tbody>${detail.equipment.map(e => `<tr><td>${escapeHtml(e.site_name || '-')}</td><td>${escapeHtml(e.category || '-')}</td><td>${escapeHtml(e.model || '-')}</td><td>${escapeHtml(e.serial_number || '-')}</td><td>${escapeHtml(e.installed_at || '-')}</td><td>${escapeHtml(e.warranty_ends_at || '-')}</td><td>${escapeHtml(e.status || '-')}</td></tr>`).join('') || emptyStateRow(7, '장비 없음', '판매 등록으로 연결된 장비가 아직 없습니다.')}</tbody></table>
+  </div>`;
+}
+
+function renderQuotesTab(detail) {
+  const customer = detail.customer;
+  return `<div class="tab-panel">
+    <h2>고객 견적</h2>
+    <table><thead><tr>
+      <th>견적번호</th><th>제목</th><th>금액</th><th>상태</th><th>유효기간</th><th>처리</th>
+    </tr></thead><tbody>${detail.quotes.map(q => {
+      const actions = [];
+      const nextStatuses = QUOTE_NEXT[q.status] || [];
+      nextStatuses.forEach(status => {
+        actions.push(`<button class="ghost" ${actionAttrs('updateQuoteStatus', [q.id, status, customer.id], { stopPropagation: true })}>${escapeHtml(quoteStatusLabel(status))}</button>`);
+      });
+      if (q.status === 'APPROVED') {
+        actions.push(`<button class="primary" ${actionAttrs('convertQuoteToContract', [q.id, customer.id], { stopPropagation: true })}>계약 전환</button>`);
+      }
+      return `<tr>
+        <td>${escapeHtml(q.quote_number || '-')}</td>
+        <td>${escapeHtml(q.title || '-')}</td>
+        <td>${escapeHtml(String(q.amount ?? '-'))}</td>
+        <td>${badge(q.status)} ${escapeHtml(quoteStatusLabel(q.status))}</td>
+        <td>${escapeHtml(q.valid_until || '-')}</td>
+        <td>${actions.join(' ') || '-'}</td>
+      </tr>`;
+    }).join('') || emptyStateRow(6, '견적 없음', '이 고객에 연결된 견적이 없습니다.')}</tbody></table>
+    <div class="panel" style="margin-top:16px;">
+      <h2>+ 견적 작성</h2>
+      <div class="row">
+        <div><label>제목</label><input id="quote-title"></div>
+        <div><label>금액</label><input id="quote-amount" type="number"></div>
+        <div><label>유효기간</label><input id="quote-valid-until" type="date" value="${toLocalDateInputValue()}"></div>
+      </div>
+      <div class="row"><div style="flex:1"><label>메모</label><textarea id="quote-memo" rows="3"></textarea></div></div>
+      <button class="primary" ${actionAttrs('createQuote', [customer.id])}>견적 저장</button>
+    </div>
+  </div>`;
+}
+
+function renderContractsTab(detail) {
+  return `<div class="tab-panel">
+    <h2>고객 계약</h2>
+    <table><thead><tr>
+      <th>계약번호</th><th>상태</th><th>금액</th><th>생성일</th><th>수정일</th>
+    </tr></thead><tbody>${detail.contracts.map(c => `<tr><td>${escapeHtml(c.number || '-')}</td><td>${escapeHtml(c.status || '-')}</td><td>${escapeHtml(String(c.amount ?? '-'))}</td><td>${escapeHtml(c.created_at || '-')}</td><td>${escapeHtml(c.updated_at || '-')}</td></tr>`).join('') || emptyStateRow(5, '계약 없음', '이 고객에 연결된 계약이 없습니다.')}</tbody></table>
+  </div>`;
+}
+
+function renderTicketsTab(detail) {
+  return `<div class="tab-panel">
+    <h2>고객 출장</h2>
+    <table><thead><tr>
+      <th>ID</th><th>현장</th><th>증상</th><th>우선순위</th><th>상태</th><th>예정일</th>
+    </tr></thead><tbody>${detail.tickets.map(t => `<tr><td>#${escapeHtml(t.id)}</td><td>${escapeHtml(t.site_name || '-')}</td><td>${escapeHtml(t.symptom || '-')}</td><td>${escapeHtml(t.priority || '-')}</td><td>${badge(t.status)}</td><td>${escapeHtml(t.scheduled_at || '-')}</td></tr>`).join('') || emptyStateRow(6, '출장 없음', '이 고객에 연결된 출장 기록이 없습니다.')}</tbody></table>
+  </div>`;
+}
+
+function renderSalesTab(detail) {
+  return `<div class="tab-panel">
+    <h2>고객 판매</h2>
+    <table><thead><tr>
+      <th>판매일</th><th>현장</th><th>품목</th><th>수량</th><th>단가</th><th>총액</th><th>채널</th>
+    </tr></thead><tbody>${detail.sales.map(s => `<tr><td>${escapeHtml(s.sold_at || '-')}</td><td>${escapeHtml(s.site_name || '-')}</td><td>${escapeHtml(s.part_name || '-')}</td><td>${escapeHtml(String(s.quantity ?? '-'))}</td><td>${escapeHtml(String(s.unit_price ?? '-'))}</td><td>${escapeHtml(String(s.total_price ?? '-'))}</td><td>${escapeHtml(s.channel || '-')}</td></tr>`).join('') || emptyStateRow(7, '판매 없음', '이 고객에 연결된 판매 기록이 없습니다.')}</tbody></table>
+  </div>`;
+}
+
+function renderContactsTab(detail) {
+  const customer = detail.customer;
+  return `<div class="tab-panel">
+    <h2>담당자 목록</h2>
+    <table><thead><tr>
+      <th>이름</th><th>역할</th><th>직책</th><th>부서</th><th>연락처</th><th>이메일</th><th>주담당</th>
+    </tr></thead><tbody>${detail.contacts.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(contactRoleLabel(c.role))}</td><td>${escapeHtml(c.position || '-')}</td><td>${escapeHtml(c.department || '-')}</td><td>${escapeHtml(c.phone || '-')}</td><td>${escapeHtml(c.email || '-')}</td><td>${c.is_primary ? '주담당' : '-'}</td></tr>`).join('') || emptyStateRow(7, '담당자 없음', '등록된 고객 담당자가 없습니다.')}</tbody></table>
+    <div class="panel" style="margin-top:16px;">
+      <h2>+ 담당자 추가</h2>
+      <div class="row">
+        <div><label>이름</label><input id="contact-name"></div>
+        <div><label>역할</label><select id="contact-role">
+          <option value="OWNER">대표자</option>
+          <option value="MANAGER">관리자</option>
+          <option value="SITE_MANAGER">현장담당자</option>
+          <option value="ACCOUNTING">회계담당자</option>
+          <option value="PURCHASING">구매담당자</option>
+          <option value="FACILITY">시설담당자</option>
+          <option value="OTHER" selected>기타</option>
+        </select></div>
+        <div><label>주담당</label><select id="contact-primary"><option value="0" selected>아니오</option><option value="1">예</option></select></div>
+      </div>
+      <div class="row">
+        <div><label>직책</label><input id="contact-position"></div>
+        <div><label>부서</label><input id="contact-department"></div>
+        <div><label>연락처</label><input id="contact-phone"></div>
+      </div>
+      <div class="row"><div style="flex:1"><label>이메일</label><input id="contact-email"></div></div>
+      <div class="row"><div style="flex:1"><label>메모</label><textarea id="contact-memo" rows="3"></textarea></div></div>
+      <button class="primary" ${actionAttrs('createCustomerContact', [customer.id])}>담당자 저장</button>
+    </div>
+  </div>`;
+}
+
+function renderConsultationsTab(detail) {
+  const customer = detail.customer;
+  return `<div class="tab-panel">
+    <h2>상담 기록 전체</h2>
+    <table><thead><tr>
+      <th>상담일시</th><th>방법</th><th>내용</th><th>다음조치</th><th>다음연락일</th><th>완료</th>
+    </tr></thead><tbody>${detail.consultations.map(c => `<tr>
+      <td>${escapeHtml(c.consulted_at || '-')}</td>
+      <td>${escapeHtml(consultationMethodLabel(c.method))}</td>
+      <td>${escapeHtml(c.content || '')}</td>
+      <td>${escapeHtml(nextActionLabel(c.next_action))}</td>
+      <td>${escapeHtml(c.next_contact_at || '-')}</td>
+      <td>${c.completed_at ? '완료' : `<button class="ghost" ${actionAttrs('completeConsultation', [c.id, customer.id], { stopPropagation: true })}>완료</button>`}</td>
+    </tr>`).join('') || emptyStateRow(6, '상담 기록 없음', '아직 저장된 상담 기록이 없습니다.')}</tbody></table>
+    <div class="panel" style="margin-top:16px;">
+      <h2>+ 상담 등록</h2>
+      <div class="row">
+        <div><label>상담방법</label><select id="consult-method">
+          <option value="PHONE" selected>전화</option>
+          <option value="SMS">문자</option>
+          <option value="KAKAO">카카오</option>
+          <option value="VISIT">방문</option>
+          <option value="OTHER">기타</option>
+        </select></div>
+        <div><label>상담일시</label><input id="consulted-at" type="datetime-local" value="${toLocalDateTimeInputValue()}"></div>
+      </div>
+      <div class="row"><div style="flex:1"><label>상담내용</label><textarea id="consult-content" rows="4"></textarea></div></div>
+      <div class="row">
+        <div><label>다음조치</label><select id="next-action">
+          <option value="NONE" selected>없음</option>
+          <option value="CALLBACK">다시 연락</option>
+          <option value="QUOTE">견적 작성</option>
+          <option value="SERVICE_TICKET">출장 접수</option>
+          <option value="SALE">상품 판매</option>
+          <option value="CONTRACT_REVIEW">계약 검토</option>
+        </select></div>
+        <div><label>다음연락일</label><input id="next-contact-at" type="date" value="${toLocalDateInputValue()}"></div>
+      </div>
+      <button class="primary" ${actionAttrs('createConsultation', [customer.id])}>상담 저장</button>
+    </div>
+  </div>`;
+}
+
+function renderTasksTab(detail) {
+  const customer = detail.customer;
+  return `<div class="tab-panel">
+    <h2>고객 할 일</h2>
+    <table><thead><tr>
+      <th>제목</th><th>기한</th><th>우선순위</th><th>상태</th><th>메모</th><th>완료</th>
+    </tr></thead><tbody>${detail.tasks.map(task => `<tr>
+      <td>${escapeHtml(task.title || '')}</td>
+      <td>${escapeHtml(task.due_at || '-')}</td>
+      <td>${escapeHtml(taskPriorityLabel(task.priority))}</td>
+      <td>${escapeHtml(taskStatusLabel(task.status))}</td>
+      <td>${escapeHtml(task.memo || '-')}</td>
+      <td>${task.completed_at ? '완료' : `<button class="ghost" ${actionAttrs('completeCustomerTask', [task.id, customer.id], { stopPropagation: true })}>완료</button>`}</td>
+    </tr>`).join('') || emptyStateRow(6, '할 일 없음', '등록된 고객 할 일이 없습니다.')}</tbody></table>
+    <div class="panel" style="margin-top:16px;">
+      <h2>+ 할 일 추가</h2>
+      <div class="row">
+        <div><label>제목</label><input id="task-title"></div>
+        <div><label>기한</label><input id="task-due-at" type="datetime-local" value="${toLocalDateTimeInputValue()}"></div>
+        <div><label>우선순위</label><select id="task-priority"><option value="LOW">낮음</option><option value="NORMAL" selected>보통</option><option value="HIGH">높음</option></select></div>
+      </div>
+      <div class="row"><div style="flex:1"><label>메모</label><textarea id="task-memo" rows="3"></textarea></div></div>
+      <button class="primary" ${actionAttrs('createCustomerTask', [customer.id])}>할 일 저장</button>
+    </div>
+  </div>`;
+}
+
+function renderFollowupsTab(detail) {
+  const customer = detail.customer;
+  return `<div class="tab-panel">
+    <h2>사후관리</h2>
+    <table><thead><tr>
+      <th>유형</th><th>예정일</th><th>연락방법</th><th>결과</th><th>다음 예정</th><th>완료</th>
+    </tr></thead><tbody>${detail.followups.map(f => `<tr>
+      <td>${escapeHtml(followupTypeLabel(f.followup_type))}</td>
+      <td>${escapeHtml(f.scheduled_at || '-')}</td>
+      <td>${escapeHtml(consultationMethodLabel(f.contact_method))}</td>
+      <td>${escapeHtml(f.result || '-')}</td>
+      <td>${escapeHtml(f.next_followup_at || '-')}</td>
+      <td>${f.completed_at ? '완료' : `<button class="ghost" ${actionAttrs('completeCustomerFollowup', [f.id, customer.id], { stopPropagation: true })}>완료</button>`}</td>
+    </tr>`).join('') || emptyStateRow(6, '사후관리 없음', '등록된 사후관리 일정이 없습니다.')}</tbody></table>
+    <div class="panel" style="margin-top:16px;">
+      <h2>+ 사후관리 추가</h2>
+      <div class="row">
+        <div><label>유형</label><select id="followup-type">
+          <option value="CONSULT_RECALL" selected>상담 재연락</option>
+          <option value="QUOTE_CHECK">견적 확인</option>
+          <option value="INSTALL_CHECK">설치 확인</option>
+          <option value="SERVICE_CHECK">서비스 확인</option>
+          <option value="REPAIR_RECHECK">수리 재점검</option>
+          <option value="PAYMENT_NOTICE">입금 안내</option>
+          <option value="CONSUMABLE_NOTICE">소모품 안내</option>
+          <option value="WARRANTY_END_NOTICE">보증 종료 안내</option>
+          <option value="CARE_PLAN_RENEWAL">연간관리 갱신</option>
+          <option value="LONG_TERM_INACTIVE">장기 미활동</option>
+        </select></div>
+        <div><label>예정일</label><input id="followup-scheduled-at" type="datetime-local" value="${toLocalDateTimeInputValue()}"></div>
+        <div><label>연락방법</label><select id="followup-contact-method">
+          <option value="PHONE" selected>전화</option>
+          <option value="SMS">문자</option>
+          <option value="KAKAO">카카오</option>
+          <option value="VISIT">방문</option>
+          <option value="OTHER">기타</option>
+        </select></div>
+      </div>
+      <div class="row">
+        <div><label>결과</label><input id="followup-result"></div>
+        <div><label>다음 예정</label><input id="followup-next-at" type="datetime-local"></div>
+      </div>
+      <div class="row"><div style="flex:1"><label>고객 반응</label><textarea id="followup-reaction" rows="3"></textarea></div></div>
+      <button class="primary" ${actionAttrs('createCustomerFollowup', [customer.id])}>사후관리 저장</button>
+    </div>
+  </div>`;
+}
+
+function renderCustomerDetail() {
+  if (!currentCustomerDetail) return;
+  let tabContent = '';
+  if (currentCustomerTab === 'basic') tabContent = renderBasicTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'sites') tabContent = renderSitesTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'equipment') tabContent = renderEquipmentTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'quotes') tabContent = renderQuotesTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'contracts') tabContent = renderContractsTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'tickets') tabContent = renderTicketsTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'sales') tabContent = renderSalesTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'contacts') tabContent = renderContactsTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'consultations') tabContent = renderConsultationsTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'tasks') tabContent = renderTasksTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'followups') tabContent = renderFollowupsTab(currentCustomerDetail);
+
+  content.innerHTML = `<div class="panel">
+    <div class="row" style="justify-content:space-between; align-items:flex-start;">
+      <div>
+        <h2>${escapeHtml(currentCustomerDetail.customer.name)}</h2>
+        <p style="margin:0; color:#8B979B;">고객 상세 관리</p>
+      </div>
+      <button class="ghost" ${actionAttrs('loadCustomerHome')}>← 고객관리로</button>
+    </div>
+    ${customerDetailTabs()}
+    ${tabContent}
+  </div>`;
+}
+
+function loadNewCustomerForm() {
+  content.innerHTML = `<div class="panel">
+    <div class="row" style="justify-content:space-between; align-items:center;">
+      <h2>신규 고객 등록</h2>
+      <button class="ghost" ${actionAttrs('loadCustomerHome')}>← 고객관리로</button>
+    </div>
+    <div class="row">
+      <div><label>고객명 / 사업장명</label><input id="c-name" placeholder="예: 대한셀프세차장" autofocus></div>
+      <div><label>전화번호</label><input id="c-phone" placeholder="010-1234-5678"></div>
+    </div>
+    <div class="row">
+      <div><label>지역 또는 주소</label><input id="c-address" placeholder="예: 서울 강서구"></div>
+      <div><label>고객 구분</label><select id="c-type">
+        <option value="LEAD" selected>잠재고객</option>
+        <option value="CUSTOMER">거래고객</option>
+        <option value="SERVICE">서비스고객</option>
+        <option value="VENDOR">거래처</option>
+      </select></div>
+    </div>
+    <div class="row"><div style="flex:1"><label>메모</label><textarea id="c-memo" rows="4" placeholder="간단한 상담 메모"></textarea></div></div>
+    <button class="primary" ${actionAttrs('createCustomer')}>저장 후 고객 상세로</button>
+  </div>`;
+}
+
+async function createCustomer() {
+  try {
+    const body = {
+      name: document.querySelector('#c-name').value,
+      phone: document.querySelector('#c-phone').value,
+      email: '',
+      memo: document.querySelector('#c-memo').value,
+      customer_type: document.querySelector('#c-type').value,
+      address: document.querySelector('#c-address').value
+    };
+    const res = await api('POST', '/care/customers', body);
+    msg.textContent = '고객이 등록되었습니다.';
+    viewCustomer(res.data.id);
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function viewCustomer(id, selectedTab) {
+  msg.textContent = '불러오는 중...';
+  try {
+    const [customerRes, consultationsRes, sitesRes, equipmentRes, quotesRes, contractsRes, ticketsRes, salesRes, contactsRes, tasksRes, followupsRes] = await Promise.all([
+      api('GET', '/care/customers/' + id),
+      api('GET', '/care/consultations?customer_id=' + id),
+      api('GET', '/care/sites?customer_id=' + id),
+      api('GET', '/care/equipment?customer_id=' + id),
+      api('GET', '/care/quotes?customer_id=' + id),
+      api('GET', '/care/contracts?customer_id=' + id),
+      api('GET', '/care/tickets?customer_id=' + id),
+      api('GET', '/care/part-sales?customer_id=' + id),
+      api('GET', '/care/customer-contacts?customer_id=' + id),
+      api('GET', '/care/customer-tasks?customer_id=' + id),
+      api('GET', '/care/customer-followups?customer_id=' + id)
+    ]);
+    msg.textContent = '';
+    currentCustomerId = id;
+    currentCustomerTab = selectedTab || 'basic';
+    currentCustomerDetail = {
+      customer: customerRes.data,
+      consultations: consultationsRes.data,
+      sites: sitesRes.data,
+      equipment: equipmentRes.data,
+      quotes: quotesRes.data,
+      contracts: contractsRes.data,
+      tickets: ticketsRes.data,
+      sales: salesRes.data,
+      contacts: contactsRes.data,
+      tasks: tasksRes.data,
+      followups: followupsRes.data
+    };
+    renderCustomerDetail();
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function createQuote(customerId) {
+  try {
+    await api('POST', '/care/quotes', {
+      customer_id: customerId,
+      title: document.querySelector('#quote-title').value,
+      amount: Number(document.querySelector('#quote-amount').value || 0),
+      valid_until: document.querySelector('#quote-valid-until').value || null,
+      memo: document.querySelector('#quote-memo').value
+    });
+    msg.textContent = '견적이 저장되었습니다.';
+    viewCustomer(customerId, 'quotes');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function updateQuoteStatus(quoteId, status, customerId) {
+  try {
+    await api('PUT', '/care/quotes/' + quoteId + '/status', { status });
+    msg.textContent = '견적 상태를 변경했습니다.';
+    viewCustomer(customerId, 'quotes');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function convertQuoteToContract(quoteId, customerId) {
+  try {
+    await api('POST', '/care/quotes/' + quoteId + '/convert');
+    msg.textContent = '견적을 계약으로 전환했습니다.';
+    viewCustomer(customerId, 'quotes');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function createCustomerSite(customerId) {
+  try {
+    await api('POST', '/care/sites', {
+      customer_id: customerId,
+      name: document.querySelector('#site-name').value,
+      address: document.querySelector('#site-address').value,
+      contact_phone: document.querySelector('#site-phone').value
+    });
+    msg.textContent = '현장이 저장되었습니다.';
+    viewCustomer(customerId, 'sites');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function createCustomerContact(customerId) {
+  try {
+    await api('POST', '/care/customer-contacts', {
+      customer_id: customerId,
+      name: document.querySelector('#contact-name').value,
+      position: document.querySelector('#contact-position').value,
+      department: document.querySelector('#contact-department').value,
+      phone: document.querySelector('#contact-phone').value,
+      email: document.querySelector('#contact-email').value,
+      role: document.querySelector('#contact-role').value,
+      is_primary: Number(document.querySelector('#contact-primary').value || 0),
+      status: 'ACTIVE',
+      memo: document.querySelector('#contact-memo').value
+    });
+    msg.textContent = '담당자가 저장되었습니다.';
+    viewCustomer(customerId, 'contacts');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function createConsultation(customerId) {
+  try {
+    const body = {
+      customer_id: customerId,
+      consulted_at: document.querySelector('#consulted-at').value,
+      method: document.querySelector('#consult-method').value,
+      content: document.querySelector('#consult-content').value,
+      next_action: document.querySelector('#next-action').value,
+      next_contact_at: document.querySelector('#next-contact-at').value || null
+    };
+    await api('POST', '/care/consultations', body);
+    msg.textContent = '상담이 저장되었습니다.';
+    viewCustomer(customerId, 'consultations');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function completeConsultation(id, customerId) {
+  try {
+    await api('PUT', '/care/consultations/' + id + '/complete');
+    msg.textContent = '상담을 완료 처리했습니다.';
+    viewCustomer(customerId, 'consultations');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function createCustomerTask(customerId) {
+  try {
+    await api('POST', '/care/customer-tasks', {
+      customer_id: customerId,
+      title: document.querySelector('#task-title').value,
+      due_at: document.querySelector('#task-due-at').value || null,
+      priority: document.querySelector('#task-priority').value,
+      memo: document.querySelector('#task-memo').value
+    });
+    msg.textContent = '할 일이 저장되었습니다.';
+    viewCustomer(customerId, 'tasks');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function completeCustomerTask(id, customerId) {
+  try {
+    await api('PUT', '/care/customer-tasks/' + id + '/complete');
+    msg.textContent = '할 일을 완료 처리했습니다.';
+    viewCustomer(customerId, 'tasks');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function createCustomerFollowup(customerId) {
+  try {
+    await api('POST', '/care/customer-followups', {
+      customer_id: customerId,
+      followup_type: document.querySelector('#followup-type').value,
+      scheduled_at: document.querySelector('#followup-scheduled-at').value,
+      contact_method: document.querySelector('#followup-contact-method').value,
+      result: document.querySelector('#followup-result').value,
+      customer_reaction: document.querySelector('#followup-reaction').value,
+      next_followup_at: document.querySelector('#followup-next-at').value || null
+    });
+    msg.textContent = '사후관리가 저장되었습니다.';
+    viewCustomer(customerId, 'followups');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function completeCustomerFollowup(id, customerId) {
+  try {
+    await api('PUT', '/care/customer-followups/' + id + '/complete');
+    msg.textContent = '사후관리를 완료 처리했습니다.';
+    viewCustomer(customerId, 'followups');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
 }
 
 function loadNewTicketForm() {
@@ -209,7 +1160,7 @@ function loadNewTicketForm() {
       </select></div>
       <div><label>예정일시</label><input id="f-scheduled" type="datetime-local"></div>
     </div>
-    <button class="primary" onclick="createTicket()">접수 생성</button>
+    <button class="primary" ${actionAttrs('createTicket')}>접수 생성</button>
     <div id="newResult"></div>
   </div>`;
 }
@@ -228,7 +1179,7 @@ async function createTicket() {
     const token = res.data.public_token;
     document.querySelector('#newResult').innerHTML = `<p>생성됨: #${res.data.id}</p>
       <div class="token-box"><span id="tk2">${token}</span>
-        <button class="ghost" onclick="navigator.clipboard.writeText(document.querySelector('#tk2').textContent)">복사</button>
+        <button class="ghost" ${actionAttrs('copyTextFromSelector', ['#tk2'])}>복사</button>
       </div>
       <p style="color:#f59e0b">이 토큰은 지금만 표시됩니다 — 고객에게 바로 전달하세요.</p>`;
   } catch (e) { msg.textContent = '오류: ' + e.message; }
@@ -243,14 +1194,14 @@ async function loadOutreach() {
       <td>${o.site_name}</td><td>${o.contact_phone || ''}</td>
       <td>${o.touch_type}</td><td>${o.channel}</td><td>${(o.next_touch_at || '').slice(0,10)}</td>
       <td>
-        <button class="ghost" onclick="respondOutreach(${o.id}, 'POSITIVE')">긍정</button>
-        <button class="ghost" onclick="respondOutreach(${o.id}, 'NEGATIVE')">부정</button>
-        <button class="ghost" onclick="respondOutreach(${o.id}, 'NO_RESPONSE')">무응답(30일 후 재접촉)</button>
+        <button class="ghost" ${actionAttrs('respondOutreach', [o.id, 'POSITIVE'])}>긍정</button>
+        <button class="ghost" ${actionAttrs('respondOutreach', [o.id, 'NEGATIVE'])}>부정</button>
+        <button class="ghost" ${actionAttrs('respondOutreach', [o.id, 'NO_RESPONSE'])}>무응답(30일 후 재접촉)</button>
       </td>
     </tr>`).join('');
     content.innerHTML = `<table><thead><tr>
       <th>사업장</th><th>연락처</th><th>유형</th><th>채널</th><th>접촉예정일</th><th>기록</th>
-    </tr></thead><tbody>${rows || '<tr><td colspan="6">접촉 대상 없음</td></tr>'}</tbody></table>`;
+    </tr></thead><tbody>${rows || emptyStateRow(6, '접촉 대상 없음', '지금 바로 관리할 홍보 대상이 없습니다.')}</tbody></table>`;
   } catch (e) { msg.textContent = '오류: ' + e.message; }
 }
 
@@ -274,7 +1225,7 @@ function loadNewPartSaleForm() {
     <div><label>수량</label><input id="p-qty" type="number" value="1"></div>
     <div><label>단가</label><input id="p-price" type="number"></div>
     <div><label>채널</label><select id="p-channel"><option value="STORE" selected>매장</option><option value="ONLINE">온라인</option></select></div></div>
-    <button class="primary" onclick="createPartSale()">판매 등록</button>
+    <button class="primary" ${actionAttrs('createPartSale')}>판매 등록</button>
     <div id="partResult"></div>
   </div>`;
 }
@@ -303,12 +1254,12 @@ async function loadWarranty() {
     const rows = res.data.map(e => `<tr>
       <td>${e.site_name}</td><td>${e.contact_phone || ''}</td>
       <td>${e.model}</td><td>${e.category}</td><td>${e.warranty_ends_at}</td>
-      <td><button class="ghost" onclick="quickOutreach(${e.site_id}, ${e.id})">교체제안 접촉 예약</button></td>
+      <td><button class="ghost" ${actionAttrs('quickOutreach', [e.site_id, e.id])}>교체제안 접촉 예약</button></td>
     </tr>`).join('');
     content.innerHTML = `<p style="color:#94a3b8">30일 이내 보증 만료 — 재구매·교체판매 제안 대상</p>
     <table><thead><tr>
       <th>사업장</th><th>연락처</th><th>모델</th><th>종류</th><th>보증만료일</th><th></th>
-    </tr></thead><tbody>${rows || '<tr><td colspan="6">없음</td></tr>'}</tbody></table>`;
+    </tr></thead><tbody>${rows || emptyStateRow(6, '보증 임박 대상 없음', '30일 이내 보증 만료 예정 장비가 없습니다.')}</tbody></table>`;
   } catch (e) { msg.textContent = '오류: ' + e.message; }
 }
 
@@ -342,7 +1293,7 @@ function loadNewSaleForm() {
       <div><label>보증만료일</label><input id="s-eq-warranty" type="date"></div>
     </div>
     <div class="row"><div><label>첫 접촉까지(일)</label><input id="s-first-days" type="number" value="90"></div></div>
-    <button class="primary" onclick="createSale()">판매 등록</button>
+    <button class="primary" ${actionAttrs('createSale')}>판매 등록</button>
     <div id="saleResult"></div>
   </div>`;
 }
@@ -373,23 +1324,76 @@ async function createSale() {
     document.querySelector('#saleResult').innerHTML = `<p>등록됨 — 사업장 #${res.data.site_id}, 고객 #${res.data.customer_id}</p>
       <p>장비관리 링크(고객에게 전달):</p>
       <div class="token-box"><span id="tk3">${location.origin}/care/site-status/${token}</span>
-        <button class="ghost" onclick="navigator.clipboard.writeText(document.querySelector('#tk3').textContent)">복사</button>
+        <button class="ghost" ${actionAttrs('copyTextFromSelector', ['#tk3'])}>복사</button>
       </div>
       <p style="color:#f59e0b">이 링크는 지금만 표시됩니다.</p>`;
   } catch (e) { msg.textContent = '오류: ' + e.message; }
 }
+
+async function copyTextFromSelector(selector) {
+  const target = document.querySelector(selector);
+  if (!target) {
+    msg.textContent = '오류: 복사 대상 요소를 찾지 못했습니다.';
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(target.textContent || '');
+    msg.textContent = '복사되었습니다.';
+  } catch (e) {
+    msg.textContent = '오류: 복사에 실패했습니다.';
+  }
+}
+
+document.addEventListener('click', async (event) => {
+  const actionEl = event.target.closest('[data-action]');
+  if (!actionEl) return;
+  if (actionEl.dataset.stopPropagation === '1') event.stopPropagation();
+  event.preventDefault();
+
+  let args = [];
+  try {
+    args = actionEl.dataset.args ? JSON.parse(actionEl.dataset.args) : [];
+  } catch (e) {
+    msg.textContent = '오류: action args 파싱에 실패했습니다.';
+    return;
+  }
+
+  const fn = globalThis[actionEl.dataset.action];
+  if (typeof fn !== 'function') {
+    msg.textContent = '오류: action handler를 찾지 못했습니다.';
+    return;
+  }
+
+  try {
+    await fn(...args);
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+});
 
 document.querySelectorAll('nav button[data-view]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('nav button[data-view]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     const view = btn.dataset.view;
-    if (view === 'today') loadTickets('RECEIVED', true);
+    if (view === 'home') loadModulePlaceholder(MODULE_PLACEHOLDERS.home.title, MODULE_PLACEHOLDERS.home.description, MODULE_PLACEHOLDERS.home.outline);
+    else if (view === 'today') loadTickets('RECEIVED', true);
     else if (view === 'progress') loadTickets('IN_PROGRESS', false);
     else if (view === 'done') loadTickets('COMPLETED', false);
-    else if (view === 'search') loadSearch();
+    else if (view === 'customers') loadCustomerHome();
+    else if (view === 'products') loadModulePlaceholder(MODULE_PLACEHOLDERS.products.title, MODULE_PLACEHOLDERS.products.description, MODULE_PLACEHOLDERS.products.outline);
+    else if (view === 'quotes') loadModulePlaceholder(MODULE_PLACEHOLDERS.quotes.title, MODULE_PLACEHOLDERS.quotes.description, MODULE_PLACEHOLDERS.quotes.outline);
+    else if (view === 'contracts') loadModulePlaceholder(MODULE_PLACEHOLDERS.contracts.title, MODULE_PLACEHOLDERS.contracts.description, MODULE_PLACEHOLDERS.contracts.outline);
     else if (view === 'outreach') loadOutreach();
     else if (view === 'warranty') loadWarranty();
+    else if (view === 'careplan') loadModulePlaceholder(MODULE_PLACEHOLDERS.careplan.title, MODULE_PLACEHOLDERS.careplan.description, MODULE_PLACEHOLDERS.careplan.outline);
+    else if (view === 'accounting') loadModulePlaceholder(MODULE_PLACEHOLDERS.accounting.title, MODULE_PLACEHOLDERS.accounting.description, MODULE_PLACEHOLDERS.accounting.outline);
+    else if (view === 'messages') loadModulePlaceholder(MODULE_PLACEHOLDERS.messages.title, MODULE_PLACEHOLDERS.messages.description, MODULE_PLACEHOLDERS.messages.outline);
+    else if (view === 'todos') loadModulePlaceholder(MODULE_PLACEHOLDERS.todos.title, MODULE_PLACEHOLDERS.todos.description, MODULE_PLACEHOLDERS.todos.outline);
+    else if (view === 'files') loadModulePlaceholder(MODULE_PLACEHOLDERS.files.title, MODULE_PLACEHOLDERS.files.description, MODULE_PLACEHOLDERS.files.outline);
+    else if (view === 'reports') loadModulePlaceholder(MODULE_PLACEHOLDERS.reports.title, MODULE_PLACEHOLDERS.reports.description, MODULE_PLACEHOLDERS.reports.outline);
+    else if (view === 'settings') loadModulePlaceholder(MODULE_PLACEHOLDERS.settings.title, MODULE_PLACEHOLDERS.settings.description, MODULE_PLACEHOLDERS.settings.outline);
+    else if (view === 'newcustomer') loadNewCustomerForm();
     else if (view === 'new') loadNewTicketForm();
     else if (view === 'newpart') loadNewPartSaleForm();
     else if (view === 'newsale') loadNewSaleForm();

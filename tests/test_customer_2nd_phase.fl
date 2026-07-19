@@ -1,0 +1,110 @@
+(load "/root/apps/bigwash-contract/src/washcare.fl")
+
+(if (= DB "/root/apps/bigwash-contract/db/contracts.sqlite")
+  (error "test_customer_2nd_phase.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
+
+(db_exec DB "DELETE FROM customer_followups WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
+(db_exec DB "DELETE FROM customer_tasks WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
+(db_exec DB "DELETE FROM customer_contacts WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
+(db_exec DB "DELETE FROM consultations WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
+(db_exec DB "DELETE FROM quotes WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
+(db_exec DB "DELETE FROM part_sales WHERE site_id IN (SELECT id FROM sites WHERE name IN ('고객2차테스트 현장', '고객2차테스트 비교현장'))" [])
+(db_exec DB "DELETE FROM service_tickets WHERE site_id IN (SELECT id FROM sites WHERE name IN ('고객2차테스트 현장', '고객2차테스트 비교현장'))" [])
+(db_exec DB "DELETE FROM equipment WHERE serial_number = 'SERIAL-CUSTOMER2-001'" [])
+(db_exec DB "DELETE FROM sites WHERE name IN ('고객2차테스트 현장', '고객2차테스트 비교현장')" [])
+(db_exec DB "DELETE FROM contracts WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
+(db_exec DB "DELETE FROM customers WHERE name LIKE '고객2차테스트 %'" [])
+
+(let [customer (create-customer "고객2차테스트 기본" "010-8888-9999" "" "2차 테스트" "CUSTOMER" "서울")
+      customer-id (get customer :id)
+      other-customer (create-customer "고객2차테스트 비교" "010-7777-9999" "" "비교 고객" "CUSTOMER" "부산")
+      other-customer-id (get other-customer :id)
+      site (create-site customer-id "고객2차테스트 현장" "서울 강서구" "02-1234-5678")
+      site-id (get site :id)
+      other-site (create-site other-customer-id "고객2차테스트 비교현장" "부산 해운대구" "051-123-4567")
+      other-site-id (get other-site :id)
+      equipment (create-equipment site-id nil "세차기" "BW-500" "SERIAL-CUSTOMER2-001" "2026-07-01" "2027-07-01")
+      contact (create-customer-contact customer-id "홍길동" "대표" "운영" "010-0000-0001" "owner@example.com" "OWNER" 1 "ACTIVE" "주담당")
+      task (create-customer-task customer-id "정기 연락" "2026-07-20T09:00" "HIGH" "월요일 오전")
+      followup (create-customer-followup customer-id "INSTALL_CHECK" "2026-07-21T10:00" "PHONE" "설치 점검 예정" "좋아요" "2026-07-28T10:00")
+      contract-main-row (do
+                          (db_exec DB "INSERT INTO contracts (number, status, client_id, amount, customer_id) VALUES (?, ?, ?, ?, ?)"
+                                   ["CUST2-MAIN-001" "DRAFT" 9001 150000 customer-id])
+                          (first (db_query DB "SELECT * FROM contracts WHERE number = ?" ["CUST2-MAIN-001"])))
+      contract-other-row (do
+                           (db_exec DB "INSERT INTO contracts (number, status, client_id, amount, customer_id) VALUES (?, ?, ?, ?, ?)"
+                                    ["CUST2-OTHER-001" "DRAFT" 9002 99000 other-customer-id])
+                           (first (db_query DB "SELECT * FROM contracts WHERE number = ?" ["CUST2-OTHER-001"])))
+      ticket-main (create-service-ticket site-id (get equipment :id) "메인고객 증상" "NORMAL" "PHONE" "2026-07-20T11:00")
+      ticket-other (create-service-ticket other-site-id nil "비교고객 증상" "LOW" "PHONE" "2026-07-20T12:00")
+      sale-main (create-part-sale site-id (get equipment :id) nil "노즐" 2 12000 "STORE")
+      sale-other (create-part-sale other-site-id nil nil "필터" 1 5000 "STORE")
+      quote (create-quote customer-id "고객2차 견적" 275000 "2026-07-31" "견적 메모")
+      invalid-quote-transition
+        (try
+          (do
+            (update-quote-status (get quote :id) "APPROVED")
+            false)
+          (catch [e] true))]
+
+  (let [sites (list-customer-sites customer-id)
+        customer-equipment (list-customer-equipment customer-id)
+        customer-contracts (list-customer-contracts customer-id)
+        customer-tickets (list-customer-tickets customer-id)
+        customer-sales (list-customer-part-sales customer-id)
+        customer-quotes (list-customer-quotes customer-id)
+        contacts (list-customer-contacts customer-id)
+        tasks (list-customer-tasks customer-id)
+        followups (list-customer-followups customer-id)]
+    (assert (= (length sites) 1) "고객별 현장 목록 조회가 가능해야 한다")
+    (assert (= (get (first sites) :id) site-id) "생성한 현장이 고객에 연결돼야 한다")
+    (assert (= (length customer-equipment) 1) "고객별 장비 목록 조회가 가능해야 한다")
+    (assert (= (get (first customer-equipment) :id) (get equipment :id)) "장비가 고객 현장을 통해 조회돼야 한다")
+    (assert (= (length customer-contracts) 1) "고객별 계약 목록 조회가 가능해야 한다")
+    (assert (= (get (first customer-contracts) :id) (get contract-main-row :id)) "다른 고객 계약이 섞이면 안 된다")
+    (assert (= (length customer-tickets) 1) "고객별 출장 목록 조회가 가능해야 한다")
+    (assert (= (get (first customer-tickets) :id) (get ticket-main :id)) "다른 고객 출장 기록이 섞이면 안 된다")
+    (assert (= (length customer-sales) 1) "고객별 판매 목록 조회가 가능해야 한다")
+    (assert (= (get (first customer-sales) :id) (get sale-main :id)) "다른 고객 판매 기록이 섞이면 안 된다")
+    (assert (= (length customer-quotes) 1) "고객별 견적 목록 조회가 가능해야 한다")
+    (assert (= (get (first customer-quotes) :id) (get quote :id)) "견적이 고객에 연결돼야 한다")
+    (assert (= (length contacts) 1) "담당자 생성/조회가 가능해야 한다")
+    (assert (= (get (first contacts) :id) (get contact :id)) "담당자가 고객에 연결돼야 한다")
+    (assert (= (length tasks) 1) "할 일 생성/조회가 가능해야 한다")
+    (assert (= (get (first tasks) :id) (get task :id)) "할 일이 고객에 연결돼야 한다")
+    (assert (= (length followups) 1) "사후관리 생성/조회가 가능해야 한다")
+    (assert (= (get (first followups) :id) (get followup :id)) "사후관리가 고객에 연결돼야 한다")
+    (assert (not (= (get (first customer-contracts) :id) (get contract-other-row :id))) "비교 고객 계약은 포함되면 안 된다")
+    (assert (not (= (get (first customer-tickets) :id) (get ticket-other :id))) "비교 고객 출장은 포함되면 안 된다")
+    (assert (not (= (get (first customer-sales) :id) (get sale-other :id))) "비교 고객 판매는 포함되면 안 된다")
+    (assert invalid-quote-transition "잘못된 견적 상태 전이는 거부해야 한다"))
+
+  (update-quote-status (get quote :id) "SENT")
+  (update-quote-status (get quote :id) "REVIEWING")
+  (update-quote-status (get quote :id) "APPROVED")
+  (let [approved-quote (first (db_query DB "SELECT status, sent_at FROM quotes WHERE id = ?" [(get quote :id)]))]
+    (assert (= (get approved-quote :status) "APPROVED") "견적 상태가 APPROVED까지 전이돼야 한다")
+    (assert (not (nil? (get approved-quote :sent_at))) "SENT 전이 시 sent_at이 기록돼야 한다"))
+
+  (let [converted-quote (convert-quote-to-contract (get quote :id))
+        quote-contract-id (get converted-quote :contract_id)
+        converted-contract (first (db_query DB "SELECT * FROM contracts WHERE id = ?" [quote-contract-id]))
+        customer-contracts-after (list-customer-contracts customer-id)]
+    (assert (= (get converted-quote :status) "CONVERTED") "승인된 견적은 계약 전환 시 CONVERTED가 돼야 한다")
+    (assert (not (nil? quote-contract-id)) "견적 전환 후 contract_id가 저장돼야 한다")
+    (assert (= (get converted-contract :customer_id) customer-id) "생성된 계약은 같은 고객에 연결돼야 한다")
+    (assert (= (get converted-contract :amount) 275000) "생성된 계약 금액은 견적 금액을 따라야 한다")
+    (assert (= (length customer-contracts-after) 2) "견적 전환 후 고객 계약 목록에 새 계약이 추가돼야 한다")
+    (assert (> (length (filter (fn [contract-row] (= (get contract-row :id) quote-contract-id)) customer-contracts-after)) 0)
+      "전환된 계약이 고객 계약 목록에 보여야 한다"))
+
+  (complete-customer-task (get task :id))
+  (complete-customer-followup (get followup :id))
+
+  (let [completed-task (first (db_query DB "SELECT status, completed_at FROM customer_tasks WHERE id = ?" [(get task :id)]))
+        completed-followup (first (db_query DB "SELECT completed_at FROM customer_followups WHERE id = ?" [(get followup :id)]))]
+    (assert (= (get completed-task :status) "DONE") "할 일 완료 처리 시 status가 DONE이어야 한다")
+    (assert (not (nil? (get completed-task :completed_at))) "할 일 완료 처리 시 completed_at이 기록돼야 한다")
+    (assert (not (nil? (get completed-followup :completed_at))) "사후관리 완료 처리 시 completed_at이 기록돼야 한다")))
+
+(println "✓ Customer 2nd phase tests passed")

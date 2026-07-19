@@ -1,0 +1,74 @@
+(load "/root/apps/bigwash-contract/src/washcare.fl")
+
+(if (= DB "/root/apps/bigwash-contract/db/contracts.sqlite")
+  (error "test_customer_consultation.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
+
+(db_exec DB "DELETE FROM consultations WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '상담테스트 %')" [])
+(db_exec DB "DELETE FROM customers WHERE name LIKE '상담테스트 %'" [])
+
+(let [base-customer (create-customer "상담테스트 기본" "010-1111-9999" "consult@example.com" "첫 문의 메모" "LEAD" "서울 강남")
+      default-customer (create-customer "상담테스트 기본값" "010-1234-5678" "" "두 번째 메모" nil "부산 해운대")
+      invalid-customer-type
+        (try
+          (do
+            (create-customer "상담테스트 잘못된구분" "010-0000-0000" "" "" "INVALID" nil)
+            false)
+          (catch [e] true))
+      base-id (get base-customer :id)
+      default-id (get default-customer :id)]
+
+  (assert (= (get base-customer :customer_type) "LEAD") "명시한 customer_type이 저장돼야 한다")
+  (assert (= (get base-customer :address) "서울 강남") "주소가 저장돼야 한다")
+  (assert (= (get default-customer :customer_type) "LEAD") "customer_type 생략 시 LEAD가 기본값이어야 한다")
+  (assert invalid-customer-type "잘못된 customer_type은 거부해야 한다")
+
+  (let [search-phone (search-customers "1111" nil)
+        search-address (search-customers "해운대" nil)
+        search-memo (search-customers "첫 문의" nil)]
+    (assert (> (length (filter (fn [c] (= (get c :id) base-id)) search-phone)) 0) "전화번호 일부로 검색돼야 한다")
+    (assert (> (length (filter (fn [c] (= (get c :id) default-id)) search-address)) 0) "주소로 검색돼야 한다")
+    (assert (> (length (filter (fn [c] (= (get c :id) base-id)) search-memo)) 0) "메모로 검색돼야 한다"))
+
+  (let [today-date (get (first (db_query DB "SELECT date('now') AS value" [])) :value)
+        today-datetime (str today-date "T09:00:00")
+        future-date (get (first (db_query DB "SELECT date('now', '+3 days') AS value" [])) :value)
+        future-datetime (str future-date "T11:00:00")
+        call1 (create-consultation base-id today-datetime "PHONE" "전화 상담 기록" "CALLBACK" today-date)
+        call2 (create-consultation base-id future-datetime "KAKAO" "카카오 후속 상담" "NONE" future-date)
+        call3 (create-consultation default-id today-datetime "SMS" "견적 예정 상담" "QUOTE" nil)
+        invalid-method
+          (try
+            (do
+              (create-consultation base-id today-datetime "FAX" "잘못된 방법" "NONE" nil)
+              false)
+            (catch [e] true))
+        invalid-next-action
+          (try
+            (do
+              (create-consultation base-id today-datetime "PHONE" "잘못된 다음조치" "BAD" nil)
+              false)
+            (catch [e] true))]
+
+    (let [consultations (list-customer-consultations base-id)]
+      (assert (= (length consultations) 2) "고객별 상담 기록 조회가 가능해야 한다")
+      (assert (= (get (first consultations) :customer_id) base-id) "상담 기록은 고객에 연결돼야 한다"))
+
+    (let [followups (list-followups-today)
+          pending (list-pending-next-actions)]
+      (assert (> (length (filter (fn [c] (= (get c :id) (get call1 :id))) followups)) 0) "오늘 다시 연락할 상담이 due 목록에 나와야 한다")
+      (assert (= (length (filter (fn [c] (= (get c :id) (get call2 :id))) followups)) 0) "미래 follow-up은 오늘 목록에 나오면 안 된다")
+      (assert (> (length (filter (fn [c] (= (get c :id) (get call3 :id))) pending)) 0) "다음 조치가 남은 상담이 pending 목록에 나와야 한다")
+      (assert (= (length (filter (fn [c] (= (get c :id) (get call2 :id))) pending)) 0) "next_action이 NONE이면 pending 목록에 나오면 안 된다"))
+
+    (complete-consultation (get call1 :id))
+    (let [followups-after (list-followups-today)
+          pending-after (list-pending-next-actions)
+          completed-row (first (db_query DB "SELECT completed_at FROM consultations WHERE id = ?" [(get call1 :id)]))]
+      (assert (not (nil? (get completed-row :completed_at))) "완료 처리 시 completed_at이 기록돼야 한다")
+      (assert (= (length (filter (fn [c] (= (get c :id) (get call1 :id))) followups-after)) 0) "완료된 상담은 due 목록에서 빠져야 한다")
+      (assert (= (length (filter (fn [c] (= (get c :id) (get call1 :id))) pending-after)) 0) "완료된 상담은 pending 목록에서 빠져야 한다"))
+
+    (assert invalid-method "잘못된 상담 방법은 거부해야 한다")
+    (assert invalid-next-action "잘못된 다음 조치는 거부해야 한다")))
+
+(println "✓ Customer consultation tests passed")

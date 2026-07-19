@@ -3,7 +3,7 @@
 (define DB
   (let [override (env-get "BIGWASH_DB_PATH")]
     (if (or (nil? override) (str-blank? override))
-      "/root/apps/bigwash-contract/db/contracts.sqlite"
+      "/home/kim/kim/bigwash-contract/db/contracts.sqlite"
       override)))
 
 ;;; Initialize database
