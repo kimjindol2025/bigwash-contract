@@ -22,6 +22,10 @@
 (defn handle-get-new-contract [$req]
   (server_html (render-new-contract)))
 
+;;; GET /review/phase0 — 검수 트리 페이지
+(defn handle-get-phase0-review [$req]
+  (server_html (render-phase0-review-tree)))
+
 ;;; POST /api/contracts — 계약서 생성
 (defn handle-post-contract [$req]
   (try
@@ -45,6 +49,7 @@
 ;;; 라우트 등록
 (server_get    "/"              "handle-get-dashboard")
 (server_get    "/contract/new"  "handle-get-new-contract")
+(server_get    "/review/phase0" "handle-get-phase0-review")
 (server_post   "/api/contracts" "handle-post-contract")
 (server_get    "/api/contracts" "handle-get-contracts")
 
