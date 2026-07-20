@@ -308,6 +308,33 @@
         FOREIGN KEY(contract_id) REFERENCES contracts(id)
       )" [])
 
+    ;; 2026-07-21 추가 (4주차): 연간관리(CarePlan). site_id 앵커 — equipment/
+    ;; part_sales/outreach_touches와 동일하게 현장 단위로 소비되는 개념이라
+    ;; customer_id가 아니라 site_id에 건다(docs/09 4주차 준비 메모). 결제 상태
+    ;; 컬럼(payment_status)은 PaymentOrder 도입 전이라 넣지 않는다 — price_snapshot은
+    ;; 가입 시점 참고용 스냅샷일 뿐 청구 원장이 아니다.
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS care_plans (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        plan_code TEXT NOT NULL CHECK (plan_code IN ('TRIAL_90', 'BASIC_360', 'FIELD_790')),
+        status TEXT NOT NULL DEFAULT 'ACTIVE'
+          CHECK (status IN ('ACTIVE', 'CANCELLED', 'RENEWED')),
+        starts_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL,
+        price_snapshot INTEGER NOT NULL CHECK (price_snapshot >= 0),
+        included_visits INTEGER NOT NULL DEFAULT 0 CHECK (included_visits >= 0),
+        used_visits INTEGER NOT NULL DEFAULT 0
+          CHECK (used_visits >= 0 AND used_visits <= included_visits),
+        next_inspection_at TEXT,
+        renewed_from_id INTEGER,
+        memo TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id),
+        FOREIGN KEY(renewed_from_id) REFERENCES care_plans(id)
+      )" [])
+
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_contracts_customer_id ON contracts(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_sites_customer_id ON sites(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_equipment_site_id ON equipment(site_id)" [])
@@ -327,6 +354,10 @@
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_customer_tasks_customer_id ON customer_tasks(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_customer_followups_customer_id ON customer_followups(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_quotes_customer_id ON quotes(customer_id)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_care_plans_site_id ON care_plans(site_id)" [])
+    ;; 만료 임박/파생 effective_status 조회가 status+ends_at 조합을 쓴다
+    ;; (2~3주차 idx_tickets_status_scheduled와 동일한 이유).
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_care_plans_status_ends_at ON care_plans(status, ends_at)" [])
     (db_exec DB
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_sites_public_token_hash
        ON sites(public_token_hash) WHERE public_token_hash IS NOT NULL" [])))

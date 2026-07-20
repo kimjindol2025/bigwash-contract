@@ -919,6 +919,222 @@
      :inspection_due {:count (count-ops-weekly-inspection-due start-date end-date-exclusive)
                        :items (list-ops-weekly-inspection-due start-date end-date-exclusive)}}))
 
+;; ---- 연간관리 CarePlan (4주차, docs/09 §5 — site_id 앵커, payment_status 없음) ----
+;;
+;; 확정 규칙(Codex, 2026-07-21):
+;;  - plan_code 3종: TRIAL_90(90일)/BASIC_360(365일)/FIELD_790(365일).
+;;    포함 방문 기본값 0/0/2, 가격 스냅샷 기본값 99000/360000/790000원(가입 시
+;;    override 허용, 음수 금지).
+;;  - 종료일은 시작일 포함 계산: ends_at = starts_at + (기간일수 - 1).
+;;  - 저장 status는 ACTIVE/CANCELLED/RENEWED 세 가지뿐이고 시간 경과로 자동
+;;    전이하지 않는다(이 저장소의 다른 상태 머신과 동일 원칙 — quotes도
+;;    valid_until이 지나도 자동 EXPIRED 안 됨). "만료됨"은 응답 조립 시
+;;    effective_status로만 파생한다(with-effective-status).
+;;  - 하드 삭제 없음. 같은 site_id에 겹치는 비취소(ACTIVE/RENEWED) 기간은
+;;    트랜잭션 내에서 거부. 갱신은 기존 ACTIVE를 RENEWED로 바꾸고 새 행을
+;;    삽입하는 방식(quotes→contracts 전환과 동일 오케스트레이션 패턴).
+;;  - used_visits는 자동 차감 없이 PUT으로 절대값을 받는다(재시도 멱등).
+
+(defn valid-plan-code? [plan-code]
+  (or (= plan-code "TRIAL_90") (= plan-code "BASIC_360") (= plan-code "FIELD_790")))
+
+(defn careplan-plan-defaults [plan-code]
+  (cond
+    [(= plan-code "TRIAL_90") {:days 90 :visits 0 :price 99000}]
+    [(= plan-code "BASIC_360") {:days 365 :visits 0 :price 360000}]
+    [(= plan-code "FIELD_790") {:days 365 :visits 2 :price 790000}]
+    [true (error "plan_code must be one of TRIAL_90, BASIC_360, FIELD_790")]))
+
+(defn careplan-today []
+  (get (first (db_query DB "SELECT date('now', '+9 hours') AS v" [])) :v))
+
+;; 시작일 포함 계산: 90일 플랜이면 starts_at 당일이 1일째라 +89일이 마지막날.
+(defn careplan-ends-at [starts-at days]
+  (get (first (db_query DB "SELECT date(?, '+' || ? || ' days') AS v" [starts-at (- days 1)])) :v))
+
+;; 저장된 status는 그대로 두고, ACTIVE인데 종료일이 지났으면 응답에서만
+;; EXPIRED로 보여준다 — 배치 없이 항상 최신 상태를 보장하는 파생 필드.
+(defn with-effective-status [row today]
+  (assoc row :effective_status
+    (if (and (= (get row :status) "ACTIVE") (< (get row :ends_at) today))
+      "EXPIRED"
+      (get row :status))))
+
+(defn get-careplan [id]
+  (let [row (first (db_query DB "SELECT * FROM care_plans WHERE id = ?" [id]))]
+    (if (nil? row) nil (with-effective-status row (careplan-today)))))
+
+(defn list-site-careplans [site-id]
+  (let [today (careplan-today)]
+    (map (fn [row] (with-effective-status row today))
+         (db_query DB
+           "SELECT * FROM care_plans WHERE site_id = ? ORDER BY starts_at DESC, id DESC"
+           [site-id]))))
+
+(defn list-customer-careplans [customer-id]
+  (let [today (careplan-today)]
+    (map (fn [row] (with-effective-status row today))
+         (db_query DB
+           "SELECT cp.* FROM care_plans cp
+            JOIN sites s ON s.id = cp.site_id
+            WHERE s.customer_id = ?
+            ORDER BY cp.starts_at DESC, cp.id DESC"
+           [customer-id]))))
+
+;; 겹침 판정: 비취소(ACTIVE/RENEWED) 기존 행 중 [starts-at, ends-at]과 날짜
+;; 구간이 하나라도 겹치면 true. RENEWED도 막는 이유는 갱신으로 이미 닫힌
+;; 기간이라도 그 날짜 구간 자체는 여전히 "그 시점에 유효했던 계약"이라
+;; 다른 신규 가입과 겹치면 안 되기 때문(취소만 진짜 무효).
+(defn site-has-overlapping-careplan? [site-id starts-at ends-at]
+  (> (get (first (db_query DB
+          "SELECT COUNT(*) AS c FROM care_plans
+           WHERE site_id = ? AND status <> 'CANCELLED'
+             AND starts_at <= ? AND ends_at >= ?"
+          [site-id ends-at starts-at])) :c) 0))
+
+(defn create-care-plan [site-id plan-code starts-at price-override included-visits-override next-inspection-at memo]
+  (if (nil? (find-site site-id))
+    (error "Site not found"))
+  (let [resolved-starts-at (if (or (nil? starts-at) (str-blank? starts-at)) (careplan-today) starts-at)
+        defaults (careplan-plan-defaults plan-code)
+        days (get defaults :days)
+        price-raw (if (nil? price-override) nil (str price-override))
+        visits-raw (if (nil? included-visits-override) nil (str included-visits-override))
+        price (if (nil? price-override) (get defaults :price) (int price-raw))
+        included-visits (if (nil? included-visits-override) (get defaults :visits) (int visits-raw))
+        ends-at (careplan-ends-at resolved-starts-at days)]
+    (if (not (valid-calendar-date? resolved-starts-at))
+      (error "starts_at must be a valid YYYY-MM-DD date"))
+    (if (and (not (nil? next-inspection-at)) (not (valid-calendar-date? next-inspection-at)))
+      (error "next_inspection_at must be a valid YYYY-MM-DD date"))
+    (if (and (not (nil? price-override)) (not (regex_match price-raw "^[0-9]+$")))
+      (error "price_snapshot must be a non-negative integer"))
+    (if (and (not (nil? included-visits-override)) (not (regex_match visits-raw "^[0-9]+$")))
+      (error "included_visits must be a non-negative integer"))
+    (if (< price 0) (error "price_snapshot must not be negative"))
+    (if (< included-visits 0) (error "included_visits must not be negative"))
+    (db_exec DB "BEGIN TRANSACTION" [])
+    (try
+      (do
+        (if (site-has-overlapping-careplan? site-id resolved-starts-at ends-at)
+          (error "Site already has an overlapping non-cancelled care plan for this period"))
+        (db_exec DB
+          "INSERT INTO care_plans
+           (site_id, plan_code, status, starts_at, ends_at, price_snapshot, included_visits, used_visits, next_inspection_at, memo)
+           VALUES (?, ?, 'ACTIVE', ?, ?, ?, ?, 0, ?, ?)"
+          [site-id plan-code resolved-starts-at ends-at price included-visits next-inspection-at memo])
+        (let [new-id (inserted-id "care_plans")]
+          (db_exec DB "COMMIT" [])
+          (get-careplan new-id)))
+      (catch [e]
+        (do
+          (try (db_exec DB "ROLLBACK" []) (catch [re] false))
+          (error (str e)))))))
+
+;; used_visits는 절대값으로만 받는다(재시도해도 같은 값을 다시 보내면 결과가
+;; 동일 — 자동 차감이 없으므로 그 자체로 멱등). 누락된 필드(nil)는 기존 값을
+;; 유지한다(COALESCE) — memo/next_inspection_at도 동일 원칙.
+(defn update-care-plan [id used-visits next-inspection-at memo]
+  (let [rows (db_query DB "SELECT * FROM care_plans WHERE id = ?" [id])]
+    (if (= (length rows) 0) (error "Care plan not found"))
+    (let [current (first rows)
+          status (get current :status)
+          included-visits (get current :included_visits)
+          used-raw (if (nil? used-visits) nil (str used-visits))
+          resolved-used-visits (if (nil? used-visits) (get current :used_visits) (int used-raw))]
+      (if (not (= status "ACTIVE"))
+        (error "Only ACTIVE care plans can be updated"))
+      (if (and (not (nil? used-visits)) (not (regex_match used-raw "^[0-9]+$")))
+        (error "used_visits must be a non-negative integer"))
+      (if (or (< resolved-used-visits 0) (> resolved-used-visits included-visits))
+        (error (str "used_visits must be between 0 and " included-visits)))
+      (if (and (not (nil? next-inspection-at)) (not (valid-calendar-date? next-inspection-at)))
+        (error "next_inspection_at must be a valid YYYY-MM-DD date"))
+      (db_exec DB "BEGIN TRANSACTION" [])
+      (try
+        (do
+          (db_exec DB
+            "UPDATE care_plans
+             SET used_visits = ?, next_inspection_at = COALESCE(?, next_inspection_at),
+                 memo = COALESCE(?, memo), updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?"
+            [resolved-used-visits next-inspection-at memo id])
+          (db_exec DB "COMMIT" [])
+          (get-careplan id))
+        (catch [e]
+          (do
+            (try (db_exec DB "ROLLBACK" []) (catch [rollback-error] false))
+            (error (str e))))))))
+
+(defn cancel-care-plan [id memo]
+  (let [rows (db_query DB "SELECT * FROM care_plans WHERE id = ?" [id])]
+    (if (= (length rows) 0) (error "Care plan not found"))
+    (if (not (= (get (first rows) :status) "ACTIVE"))
+      (error "Only ACTIVE care plans can be cancelled"))
+    (db_exec DB "BEGIN TRANSACTION" [])
+    (try
+      (do
+        (db_exec DB
+          "UPDATE care_plans
+           SET status = 'CANCELLED', memo = COALESCE(?, memo), updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?"
+          [memo id])
+        (db_exec DB "COMMIT" [])
+        (get-careplan id))
+      (catch [e]
+        (do
+          (try (db_exec DB "ROLLBACK" []) (catch [rollback-error] false))
+          (error (str e)))))))
+
+(defn renew-care-plan [id plan-code-override starts-at-override price-override included-visits-override]
+  (let [rows (db_query DB "SELECT * FROM care_plans WHERE id = ?" [id])]
+    (if (= (length rows) 0) (error "Care plan not found"))
+    (let [old (first rows)
+          plan-code (if (nil? plan-code-override) (get old :plan_code) plan-code-override)
+          resolved-starts-at (if (or (nil? starts-at-override) (str-blank? starts-at-override))
+                               (get (first (db_query DB "SELECT date(?, '+1 day') AS v" [(get old :ends_at)])) :v)
+                               starts-at-override)
+          defaults (careplan-plan-defaults plan-code)
+          days (get defaults :days)
+          price-raw (if (nil? price-override) nil (str price-override))
+          visits-raw (if (nil? included-visits-override) nil (str included-visits-override))
+          price (if (nil? price-override) (get defaults :price) (int price-raw))
+          included-visits (if (nil? included-visits-override) (get defaults :visits) (int visits-raw))
+          ends-at (careplan-ends-at resolved-starts-at days)]
+      (if (not (= (get old :status) "ACTIVE"))
+        (error "Only ACTIVE care plans can be renewed"))
+      (if (not (valid-calendar-date? resolved-starts-at))
+        (error "starts_at must be a valid YYYY-MM-DD date"))
+      (if (and (not (nil? price-override)) (not (regex_match price-raw "^[0-9]+$")))
+        (error "price_snapshot must be a non-negative integer"))
+      (if (and (not (nil? included-visits-override)) (not (regex_match visits-raw "^[0-9]+$")))
+        (error "included_visits must be a non-negative integer"))
+      (if (< price 0) (error "price_snapshot must not be negative"))
+      (if (< included-visits 0) (error "included_visits must not be negative"))
+      (if (site-has-overlapping-careplan? (get old :site_id) resolved-starts-at ends-at)
+        (error "Site already has an overlapping non-cancelled care plan for this period"))
+      (db_exec DB "BEGIN TRANSACTION" [])
+      (try
+        (do
+          (db_exec DB
+            "UPDATE care_plans SET status = 'RENEWED', updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND status = 'ACTIVE'"
+            [id])
+          (if (= (get (first (db_query DB "SELECT changes() AS changed" [])) :changed) 0)
+            (error "Only ACTIVE care plans can be renewed"))
+          (db_exec DB
+            "INSERT INTO care_plans
+             (site_id, plan_code, status, starts_at, ends_at, price_snapshot, included_visits, used_visits, renewed_from_id, memo)
+             VALUES (?, ?, 'ACTIVE', ?, ?, ?, ?, 0, ?, ?)"
+            [(get old :site_id) plan-code resolved-starts-at ends-at price included-visits id (get old :memo)])
+          (let [new-id (inserted-id "care_plans")]
+            (db_exec DB "COMMIT" [])
+            (get-careplan new-id)))
+      (catch [e]
+        (do
+          (try (db_exec DB "ROLLBACK" []) (catch [re] false))
+          (error (str e))))))))
+
 ;; ---- 상담 관리 (고객관리 1차) ----
 
 (defn valid-consultation-method? [method]

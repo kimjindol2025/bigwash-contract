@@ -47,7 +47,7 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 
 ## 내부 엔드포인트
 
-**이 표는 전체 내부 API 46개(정적 `/care/admin`, 공개 `/care/status/:token`·
+**이 표는 전체 내부 API 51개(정적 `/care/admin`, 공개 `/care/status/:token`·
 `/care/site-status/:token` 제외)를 `src/washcare-api.fl`의 `server_get`/
 `server_post`/`server_put` 등록과 1:1 대조해 채운 것이다. 각 요청/응답
 스키마의 기계 판독용 정본은 `docs/openapi-washcare.yaml`이고, 아래 표와
@@ -102,10 +102,16 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | GET | `/care/warranty-expiring?days=N` | 보증 만료 임박 장비 목록, 기본 30일. ACTIVE 장비만 대상(2026-07-21 2주차 — RETIRED/REPAIR 제외) | O |
 | GET | `/care/ops-summary?warranty_days=N` | 운영 대시보드 집계 — 지연·일정미정·오늘방문·보증임박 4개 섹션 (2026-07-21 2주차 추가) | O |
 | GET | `/care/ops-weekly?as_of=YYYY-MM-DD` | 주간 운영 보고 — 미처리 A/S·다음 주 방문·보증 만료 기반 점검 대상 (2026-07-21 3주차 추가). `as_of` 생략 시 Seoul 오늘 | O |
+| POST | `/care/care-plans` | 연간관리(CarePlan) 가입 생성 (2026-07-21 4주차 추가) | O |
+| GET | `/care/care-plans?site_id=X` 또는 `?customer_id=X` | 현장별 또는 고객별(현장 조인) CarePlan 목록 (2026-07-21 4주차 추가) | O |
+| GET | `/care/care-plans/:id` | CarePlan 상세 조회, `effective_status` 파생 포함 (2026-07-21 4주차 추가) | O |
+| PUT | `/care/care-plans/:id` | 사용 방문 수(`used_visits`)·`next_inspection_at`·메모 수정 (2026-07-21 4주차 추가) | O |
+| PUT | `/care/care-plans/:id/cancel` | CarePlan 취소 (2026-07-21 4주차 추가) | O |
+| POST | `/care/care-plans/:id/renew` | CarePlan 갱신 — 기존 ACTIVE를 RENEWED로 전환 후 신규 행 생성 (2026-07-21 4주차 추가) | O |
 
-위 45개(내부 API, `/care/admin` 제외) + 아래 "공개 엔드포인트" 절의
+위 51개(내부 API, `/care/admin` 제외) + 아래 "공개 엔드포인트" 절의
 `/care/status/:token`, `/care/site-status/:token` 2개를 더하면
-`openapi-washcare.yaml`의 전체 operation 47개와 정확히 일치한다
+`openapi-washcare.yaml`의 전체 operation 53개와 정확히 일치한다
 (`/care/admin`, 루트 `/`는 정적 페이지라 양쪽 문서 모두 API 스펙에서 제외).
 
 ### POST /care/customers
@@ -457,6 +463,130 @@ API 변경으로 추가). 개발 단계 인증은 기존과 동일하게 fail-op
 ```
 
 응답 400: `{ok: false, error: "as_of must be a valid YYYY-MM-DD date"}`
+
+## CarePlan (연간관리, 4주차)
+
+`docs/09-implementation-schedule.md` 4~5주차, `docs/01` §8, `docs/05` §19,
+`docs/07` §8. **백엔드만 완료됐고 Admin UI 연동은 아직 없다**(5주차 예정 —
+아래 "Admin UI" 절의 `careplan` 메뉴는 여전히 placeholder). `site_id`에 걸리며
+(`docs/01` 원본 데이터모델과 동일 — equipment/part_sales/outreach_touches와
+같은 현장 단위 앵커), `payment_status`/PG 연동은 넣지 않는다(`PaymentOrder`
+도입 전, docs/02 Phase2 원칙).
+
+### 공통 개념
+
+- **plan_code 3종**(고정, 신규 코드 추가 없음):
+
+  | plan_code | 기간 | 포함 방문(`included_visits` 기본값) | 가격 스냅샷(`price_snapshot` 기본값) |
+  |---|---|---|---|
+  | `TRIAL_90` | 90일 | 0 | 99,000원 |
+  | `BASIC_360` | 365일 | 0 | 360,000원 |
+  | `FIELD_790` | 365일 | 2 | 790,000원 |
+
+  가입(`POST`)·갱신(`renew`) 시 `price_snapshot`/`included_visits`를 요청
+  본문으로 override할 수 있다 — 둘 다 **0 이상의 정수**만 허용(소수·음수·
+  숫자가 아닌 문자열은 400). override를 생략하면 위 표의 기본값을 쓴다.
+- **기간 계산**: `ends_at`은 **시작일 포함** 계산이다 —
+  `ends_at = starts_at + (기간일수 - 1)`. 예: `TRIAL_90`이 `2026-01-01`에
+  시작하면 `ends_at`은 `2026-03-31`(90일째, 시작일 자신이 1일째).
+- **`starts_at`/`next_inspection_at`**: 둘 다 `YYYY-MM-DD` 형식과 실제
+  존재하는 날짜(윤년 아닌 해의 2월 29일 등은 SQLite `date()`가 다음 달로
+  조용히 정규화하므로, 원문과 재비교하는 round-trip 검증으로 걸러낸다)를
+  모두 만족해야 한다. `starts_at` 생략 시 서버의 Seoul "오늘"로 채워진다.
+  `next_inspection_at`은 nullable — 아직 다음 점검일이 안 정해졌으면 생략.
+- **저장 status vs `effective_status`**: DB에는 `ACTIVE`/`CANCELLED`/
+  `RENEWED` 세 가지만 저장되고, 시간 경과로 자동 전이하지 않는다(이 저장소의
+  다른 상태 머신과 동일 원칙 — `quotes.valid_until`이 지나도 자동으로
+  `EXPIRED`가 안 되는 것과 같음). 모든 응답에는 파생 필드 `effective_status`가
+  추가로 붙는데, **`status`가 `ACTIVE`이고 `ends_at`이 Seoul 기준 오늘보다
+  과거면 `EXPIRED`**로 보여주고, 그 외에는 `status`를 그대로 반영한다
+  (`CANCELLED`/`RENEWED`는 종료일과 무관하게 절대 `EXPIRED`로 바뀌지 않음).
+- **하드 삭제 없음.** 같은 `site_id`에 대해 **취소되지 않은(`ACTIVE` 또는
+  `RENEWED`) 기존 행과 날짜 구간이 겹치면**(양끝 포함) 신규 생성·갱신 모두
+  트랜잭션 내에서 거부한다. `CANCELLED`인 행의 기간은 겹침 판정에서 제외된다
+  — 취소된 기간은 다시 그 날짜로 새로 가입할 수 있다.
+- **`used_visits`는 자동 차감이 없다.** `PUT`으로 항상 **절대값**을 보내며,
+  같은 값으로 재시도해도 결과가 같다(멱등). 증가뿐 아니라 오입력을 바로잡는
+  감소도 허용한다 — 다만 `0 <= used_visits <= included_visits` 범위를 벗어나면
+  400.
+- **`update`(`PUT`)·`cancel`·`renew`는 전부 대상 플랜이 `ACTIVE` 상태일 때만
+  허용된다.** `CANCELLED`/`RENEWED` 플랜을 수정·재취소·재갱신하려 하면 400.
+- `site_id`/`customer_id`/`:id` 경로·쿼리 값은 양의 정수만 허용(그 외 400).
+- 미수금 키·PG 연동은 어디에도 없다.
+
+### POST /care/care-plans
+
+요청: `{site_id, plan_code, starts_at, price_snapshot, included_visits, next_inspection_at, memo}`
+
+- `site_id`(필수, 양의 정수) — 존재하지 않으면 400 `"Site not found"`.
+- `plan_code`(필수) — `TRIAL_90`|`BASIC_360`|`FIELD_790` 외 값은 400.
+- `starts_at`(선택, 생략 시 Seoul 오늘), `price_snapshot`/`included_visits`
+  (선택, 생략 시 plan_code 기본값), `next_inspection_at`(선택),
+  `memo`(선택).
+
+응답 200: `{ok: true, data: {...care_plans row, effective_status}}` — 생성
+직후이므로 `status`는 항상 `ACTIVE`.
+
+응답 400: 위 검증 실패 전부(`site` 없음, `plan_code` 오류, 날짜 형식·실존
+오류, 가격/횟수 음수·소수, **겹치는 비취소 기간 존재**).
+
+### GET /care/care-plans?site_id=X 또는 ?customer_id=X
+
+`site_id` 또는 `customer_id` 중 하나가 필수(둘 다 없으면 400). `site_id`가
+있으면 그 현장의 CarePlan만, 없고 `customer_id`만 있으면 그 고객의 모든
+현장을 조인해 반환한다(고객 상세 "연간관리 여부" 요약이 이 경로를 쓸
+예정 — 5주차). 정렬은 `starts_at DESC, id DESC`.
+
+응답 200: `{ok: true, data: [{...care_plans row, effective_status}, ...]}`
+
+### GET /care/care-plans/:id
+
+응답 200: `{ok: true, data: {...care_plans row, effective_status}}`
+
+응답 404: `{ok: false, error: "Care plan not found"}`
+
+### PUT /care/care-plans/:id
+
+요청: `{used_visits, next_inspection_at, memo}` — 셋 다 선택, 생략한 필드는
+기존 값을 유지한다(COALESCE). `used_visits`는 절대값(0..included_visits,
+증가·감소 모두 허용, 재시도 멱등).
+
+응답 200: `{ok: true, data: {...갱신된 row, effective_status}}`
+
+응답 404: 존재하지 않는 `id`.
+응답 400: 대상이 `ACTIVE`가 아니거나(`"Only ACTIVE care plans can be updated"`),
+`used_visits`가 범위를 벗어나거나, `next_inspection_at`이 유효하지 않은 날짜.
+
+### PUT /care/care-plans/:id/cancel
+
+요청: `{memo}`(선택 — 취소 사유, 생략 시 기존 memo 유지).
+
+응답 200: `{ok: true, data: {...status:"CANCELLED"인 row, effective_status:"CANCELLED"}}`
+
+응답 404: 존재하지 않는 `id`.
+응답 400: 대상이 `ACTIVE`가 아니면(`"Only ACTIVE care plans can be cancelled"`).
+
+### POST /care/care-plans/:id/renew
+
+기존 `ACTIVE` 플랜을 `RENEWED`로 바꾸고 새 `ACTIVE` 행을 하나의 트랜잭션으로
+생성한다(`quotes`→`contracts` 전환과 동일한 오케스트레이션 패턴 — 실패 시
+`ROLLBACK`). 새 행의 `renewed_from_id`가 원본을 가리킨다.
+
+요청: `{plan_code, starts_at, price_snapshot, included_visits}` — 전부 선택.
+
+- `plan_code` 생략 시 원본과 동일한 코드를 재사용.
+- `starts_at` 생략 시 **원본의 `ends_at` 다음날**로 자동 계산된다 — 원본이
+  아직 만료 전(조기 갱신)이어도 항상 원본 종료일 기준이라 "오늘" 기준으로
+  계산할 때 생길 수 있는 조기 갱신 시 기간 겹침이 발생하지 않는다.
+- `price_snapshot`/`included_visits` 생략 시 (재사용/변경된) `plan_code`의
+  기본값을 쓴다 — 원본 값을 그대로 물려받지 않는다. 새 행의 `used_visits`는
+  항상 0에서 다시 시작한다.
+
+응답 200: `{ok: true, data: {...새로 생성된 ACTIVE row, effective_status:"ACTIVE"}}`
+
+응답 404: 존재하지 않는 `id`.
+응답 400: 대상이 `ACTIVE`가 아니거나(`"Only ACTIVE care plans can be renewed"`),
+계산된 신규 기간이 다른 비취소 플랜과 겹치는 경우 등.
 
 ## Admin UI (MVP)
 

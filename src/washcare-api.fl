@@ -39,6 +39,18 @@
   (let [real-ip (server_req_header req "x-real-ip")]
     (if (or (nil? real-ip) (str-blank? real-ip)) "unknown" real-ip)))
 
+(defn parse-int-param [value field-name]
+  (let [raw (str value)]
+    (cond
+      [(or (nil? value) (str-blank? raw)) nil]
+      [(not (regex_match raw "^[0-9]+$"))
+       (error (str field-name " must be an integer"))]
+      [true
+       (let [parsed (int raw)]
+         (if (<= parsed 0)
+           (error (str field-name " must be greater than 0"))
+           parsed))])))
+
 (defn handle-create-customer [req]
   (if (internal-authorized? req)
     (try
@@ -543,6 +555,93 @@
         (server_status 400 {:ok false :error "as_of must be a valid YYYY-MM-DD date"})))
     (unauthorized)))
 
+;; 2026-07-21 추가 (4주차): 연간관리 CarePlan CRUD + 취소/갱신.
+(defn handle-create-careplan [req]
+  (if (internal-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-care-plan
+                              (parse-int-param (get body :site_id) "site_id")
+                              (get body :plan_code)
+                              (get body :starts_at)
+                              (get body :price_snapshot)
+                              (get body :included_visits)
+                              (get body :next_inspection_at)
+                              (get body :memo))}))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
+(defn handle-list-careplans [req]
+  (if (internal-authorized? req)
+    (try
+      (let [site-id (parse-int-param (server_req_query req "site_id") "site_id")
+            customer-id (parse-int-param (server_req_query req "customer_id") "customer_id")]
+        (if (not (nil? site-id))
+          (server_json {:ok true :data (list-site-careplans site-id)})
+          (if (not (nil? customer-id))
+            (server_json {:ok true :data (list-customer-careplans customer-id)})
+            (server_status 400 {:ok false :error "site_id or customer_id is required"}))))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
+(defn handle-careplan-detail [req]
+  (if (internal-authorized? req)
+    (let [plan (get-careplan (parse-int-param (server_req_param req "id") "id"))]
+      (if (nil? plan)
+        (server_status 404 {:ok false :error "Care plan not found"})
+        (server_json {:ok true :data plan})))
+    (unauthorized)))
+
+(defn handle-update-careplan [req]
+  (if (internal-authorized? req)
+    (let [id (parse-int-param (server_req_param req "id") "id")]
+      (if (nil? (get-careplan id))
+        (server_status 404 {:ok false :error "Care plan not found"})
+        (try
+          (let [body (server_req_json req)]
+            (server_json {:ok true
+                          :data (update-care-plan
+                                  id
+                                  (get body :used_visits)
+                                  (get body :next_inspection_at)
+                                  (get body :memo))}))
+          (catch [e]
+            (server_status 400 {:ok false :error (str e)})))))
+    (unauthorized)))
+
+(defn handle-cancel-careplan [req]
+  (if (internal-authorized? req)
+    (let [id (parse-int-param (server_req_param req "id") "id")]
+      (if (nil? (get-careplan id))
+        (server_status 404 {:ok false :error "Care plan not found"})
+        (try
+          (let [body (server_req_json req)]
+            (server_json {:ok true :data (cancel-care-plan id (get body :memo))}))
+          (catch [e]
+            (server_status 400 {:ok false :error (str e)})))))
+    (unauthorized)))
+
+(defn handle-renew-careplan [req]
+  (if (internal-authorized? req)
+    (let [id (parse-int-param (server_req_param req "id") "id")]
+      (if (nil? (get-careplan id))
+        (server_status 404 {:ok false :error "Care plan not found"})
+        (try
+          (let [body (server_req_json req)]
+            (server_json {:ok true
+                          :data (renew-care-plan
+                                  id
+                                  (get body :plan_code)
+                                  (get body :starts_at)
+                                  (get body :price_snapshot)
+                                  (get body :included_visits))}))
+          (catch [e]
+            (server_status 400 {:ok false :error (str e)})))))
+    (unauthorized)))
+
 (server_post "/care/customers" "handle-create-customer")
 (server_get  "/care/customers" "handle-search-customers")
 (server_get  "/care/customers/:id" "handle-customer-detail")
@@ -590,6 +689,12 @@
 (server_get  "/care/warranty-expiring" "handle-warranty-expiring")
 (server_get  "/care/ops-summary" "handle-ops-summary")
 (server_get  "/care/ops-weekly" "handle-ops-weekly")
+(server_post "/care/care-plans" "handle-create-careplan")
+(server_get  "/care/care-plans" "handle-list-careplans")
+(server_get  "/care/care-plans/:id" "handle-careplan-detail")
+(server_put  "/care/care-plans/:id" "handle-update-careplan")
+(server_put  "/care/care-plans/:id/cancel" "handle-cancel-careplan")
+(server_post "/care/care-plans/:id/renew" "handle-renew-careplan")
 (server_get  "/care/admin" "handle-admin-page")
 (server_get  "/" "handle-root")
 

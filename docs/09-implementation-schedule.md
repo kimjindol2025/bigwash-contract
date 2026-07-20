@@ -39,7 +39,7 @@
 | 1주차 | 07-21(화) ~ 07-27(월) | 문서 정합 + 개발 공개정책 + 에러계약 기준 | P1-3, P1-4, P1-5, P0-3 정책화 |
 | 2주차 | 07-28(화) ~ 08-03(월) | 지연 A/S·일정 미정·오늘 방문·점검임박 운영집계 — ✅ 완료 | P0-1 (미수금 제외) |
 | 3주차 | 08-04(화) ~ 08-10(월) | 주간 운영보고와 Admin 연결 — ✅ 완료 | P0-2 |
-| 4~5주차 | 08-11(화) ~ 08-24(월) | CarePlan 데이터/API/UI | P1-1 |
+| 4~5주차 | 08-11(화) ~ 08-24(월) | CarePlan 데이터/API/UI — 4주차 백엔드 ✅ / 5주차 UI 미착수 | P1-1 |
 | 6주차 | 08-25(화) ~ 08-31(월) | 회귀·운영 파일럿 및 다음 게이트 | 전체 회귀 + 게이트 결정 |
 
 각 주차 상세는 아래 2~6장. 모든 주차는 공통 항목(목표/범위/산출물/선행조건/완료기준/
@@ -300,7 +300,7 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
 
 ---
 
-## 5. 4~5주차 (08-11 화 ~ 08-24 월) — CarePlan 데이터/API/UI
+## 5. 4~5주차 (08-11 화 ~ 08-24 월) — CarePlan 데이터/API/UI — 4주차 백엔드 ✅ 완료(2026-07-21) / 5주차 UI 미착수
 
 ### 목표
 
@@ -308,64 +308,81 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
 (P1-1). Admin `careplan` placeholder를 실 데이터로 대체하고 고객 상세에
 "연간관리 여부" 요약을 표시한다.
 
-### 범위 (4주차: 백엔드 / 5주차: UI+연동)
+### 범위 (4주차: 백엔드 — 완료 / 5주차: UI+연동 — 미착수)
 
-4주차:
-- `care_plans` 테이블 신설(`phase1-db.fl`) — 상품 유형(36만/79만/90일),
-  `starts_at`/`ends_at`, 가격 스냅샷, `included_visits`, `used_visits`, 계약 상태.
-  결제 상태는 PaymentOrder 도입 전 CarePlan에 중복 저장하지 않는다.
-- CRUD API (`POST/GET/PUT /care/care-plans` 등, 정확한 경로는 4주차 착수 시
-  기존 라우트 명명 규칙과 맞춰 확정)
-- 백엔드 테스트
+4주차 — ✅ 완료:
+- `care_plans` 테이블 신설(`phase1-db.fl`), `site_id` 앵커. `plan_code`
+  3종 확정: `TRIAL_90`(90일·포함방문 0·99,000원) / `BASIC_360`(365일·0·
+  360,000원) / `FIELD_790`(365일·2·790,000원, 가입 시 override 가능).
+  `starts_at`/`ends_at`(시작일 포함 계산)·`price_snapshot`·
+  `included_visits`·`used_visits`·`next_inspection_at`·`status`
+  (`ACTIVE`/`CANCELLED`/`RENEWED`, 응답에는 파생 `effective_status` 추가).
+  `payment_status` 컬럼 없음(PaymentOrder 도입 전 원칙 그대로).
+- CRUD API 6개 확정: `POST/GET /care/care-plans`,
+  `GET/PUT /care/care-plans/:id`, `PUT /care/care-plans/:id/cancel`,
+  `POST /care/care-plans/:id/renew`. 같은 현장에 겹치는 비취소 기간은
+  트랜잭션에서 거부, `update`/`cancel`/`renew`는 `ACTIVE`만 허용, 404/400
+  계약 확정.
+- 백엔드 테스트(`tests/test_careplan.fl`) 완료.
 
-5주차:
+5주차 — 미착수(다음 스프린트):
 - Admin UI: `careplan` placeholder 대체 — 가입/조회/갱신 화면
 - 고객 상세 페이지에 "연간관리 여부"·플랜명·잔여 출장 횟수 요약 표시
   (`docs/05` §8.1 상단 요약 확장)
 - 출장 접수 시 연간관리 가입 여부 확인(참고 표시만, 자동 할인 적용 로직은
   이번 범위 아님 — `docs/05` §19 "자동 확인" 중 표시까지만)
 
-### 산출물
+### 산출물 — 4주차분 전부 반영됨
 
-- `phase1-db.fl` 스키마 변경 (마이그레이션 포함, `scripts/migrate-phase1.sh`
-  패턴 참고 — 운영 DB 직접 변경 전 백업 필수)
-- `washcare.fl`/`washcare-api.fl` CarePlan 도메인 로직·라우트
-- `washcare-admin.html` careplan 화면 + 고객 상세 요약 확장
-- `docs/04-washcare-api.md`에 신규 엔드포인트 문서화
+- `phase1-db.fl`에 `care_plans` 테이블 + 인덱스 2개(`site_id`,
+  `status`+`ends_at`) — 신규 테이블의 순수 추가라 `CREATE TABLE/INDEX IF
+  NOT EXISTS`만으로 충분했고 `scripts/migrate-phase1.sh`(레거시 client_id
+  백필용 1회성 스크립트)는 쓰지 않았다. 운영 DB 실행은 하지 않았다.
+- `washcare.fl`/`washcare-api.fl` CarePlan 도메인 로직·6개 라우트
+- `docs/04-washcare-api.md`에 신규 엔드포인트 문서화(이 갱신 포함)
+- (미착수) `washcare-admin.html` careplan 화면 + 고객 상세 요약 확장 — 5주차
 
-### 선행조건
+### 선행조건 — 해소됨
 
-- 상품 유형·포함 방문 횟수·갱신일 필드를 Codex 팀장이 확정(`docs/01` §5의
-  36만/79만/90일 가격 가설과 매핑) — **늦어도 4주차 착수 전 확정 필요.**
-  1~3주차 진행 중 병행 확정 가능
+- 상품 유형·포함 방문 횟수·가격을 Codex가 확정: 위 "범위" 절 표(3종 기간/
+  방문/가격)와 정확히 일치, `docs/04-washcare-api.md` "CarePlan" 절에 상세
 
 ### 완료기준 (DoD)
 
-- CarePlan CRUD 동작 + 고객 상세에 "연간관리 여부" 표시 + 테스트 통과
-  (gap review P1-1 검증 기준 그대로)
-- 신규 테이블에 대해 `migrate-phase1.sh`류 마이그레이션 스크립트 또는 동등한
-  안전한 백업 절차 존재
+4주차(완료):
+- CarePlan CRUD·취소·갱신 API 동작 + `tests/test_careplan.fl` 통과
+  (3종 기본값, 날짜/윤년 검증, 가격·횟수 검증, 고객/현장 격리, 중복기간
+  거부, 수정 멱등, 취소, 갱신 트랜잭션과 `effective_status` 검증)
+- 기존 9종 테스트 + 신규 1종 총 10종 회귀 전부 PASS
 
-### 테스트
+5주차(미착수, 그대로 유지):
+- Admin `careplan` placeholder 대체 + 고객 상세 "연간관리 여부" 표시 —
+  아직 구현되지 않음(`MODULE_PLACEHOLDERS.careplan`이 여전히 placeholder)
 
-- 신규 `tests/test_careplan.fl` — CRUD, 만료 임박 조회, 잔여 횟수 계산,
-  고객 격리(다른 고객 CarePlan 미노출) 검증
+### 테스트 — 완료
+
+- `tests/test_careplan.fl` — plan_code 3종 기본값(기간/방문/가격),
+  날짜 형식·실존 검증(윤년 포함), 가격·횟수 음수/범위 검증, 고객·현장
+  격리, 겹치는 기간 거부(취소 시 겹침 해제 포함), 수정 멱등(증가·감소
+  모두)과 COALESCE 보존, 취소, 갱신 트랜잭션과 `effective_status` 파생
+  전부 검증. `site_id`/`customer_id`로 항상 스코프돼 2~3주차 전역집계
+  테스트와 달리 격리 DB 하드 가드는 필수는 아니지만 동일 관례로 사용.
 
 ### 담당 흐름
 
-- **Codex**: 상품 유형·가격 필드 확정, 마이그레이션 안전성 검수
-- **Claude**: 스키마·API·UI 구현, 테스트, 문서화
+- **Codex**: 상품 유형·가격 필드 확정(완료), 계약 보충 확인(겹침 판정
+  범위·조기 갱신 계산·used_visits 감소 허용 — 전부 기존 구현과 일치 확인됨)
+- **Claude**: 스키마·API 구현, 테스트, 문서화(4주차 완료) / UI 구현(5주차 예정)
 - **Cursor**: 데이터 모델 설계 리뷰(기존 `quotes`/`contracts` 패턴과의 일관성),
-  UX 검토(고객 상세 요약 배치)
+  UX 검토(고객 상세 요약 배치) — 5주차 착수 시 진행
 
 ### 위험·중단조건
 
-- 상품 유형/가격 확정이 지연되면 4주차 착수를 그대로 지연시키고 1~3주차
-  버퍼로 흡수 — 전체 로드맵이 밀릴 위험이 있으므로 지연 발생 시 즉시 Codex에
-  조기 에스컬레이션
-- 운영 DB(`db/contracts.sqlite`) 마이그레이션은 반드시 백업 후 진행하며,
-  이 작업 지시(`db/contracts.sqlite`, `.gitignore`, `orca.yaml` 미변경
-  원칙)와 충돌하지 않도록 스키마 변경은 별도 마이그레이션 스크립트로만 수행
+- 4주차 위험(가격/상품유형 확정 지연)은 해소됨 — 지연 없이 진행 완료
+- 운영 DB(`db/contracts.sqlite`) 마이그레이션 원칙은 5주차에도 그대로
+  유지: 실 스키마 변경이 필요해지면 백업 후 진행하며, 이 작업 지시
+  (`db/contracts.sqlite`, `.gitignore`, `orca.yaml` 미변경 원칙)와 충돌하지
+  않게 별도 마이그레이션 절차로만 수행한다
 
 ---
 

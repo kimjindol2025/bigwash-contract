@@ -3,8 +3,8 @@ info:
   title: WashCare Phase 1 API
   description: >
     대한이엔지 장비 안심관리(WashCare) Phase 1 API. 실측 검증일 2026-07-16,
-    라우트 동기화 2026-07-21(docs/09 1~3주차, src/washcare-api.fl 라우트 전수 대조 —
-    `/care/ops-weekly` 포함 시 JSON API 47개).
+    라우트 동기화 2026-07-21(docs/09 1~4주차, src/washcare-api.fl 라우트 전수 대조 —
+    `/care/care-plans*` 포함 시 JSON API 53개).
     상세 설명은 04-washcare-api.md 참조. 정적 Admin UI(`GET /care/admin`)와
     루트 리다이렉트(`GET /`)는 JSON API가 아니므로 이 스펙에서 명시적으로
     제외한다 — Admin UI 설명은 04-washcare-api.md의 "Admin UI (MVP)" 절 참조.
@@ -910,6 +910,201 @@ paths:
         "400": { description: "as_of must be a valid YYYY-MM-DD date" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /care/care-plans:
+    post:
+      summary: "연간관리(CarePlan) 가입 생성 (4주차, 2026-07-21 추가)"
+      description: >
+        site_id 앵커. plan_code TRIAL_90(90일)/BASIC_360(365일)/FIELD_790(365일)
+        중 하나이며 기본 가격(99000/360000/790000원)·기본 포함방문(0/0/2)을
+        갖는다. price_snapshot/included_visits는 0 이상 정수로만 override
+        가능(소수·음수 400). ends_at은 starts_at 포함 계산
+        (starts_at + 기간일수 - 1). 같은 site_id에 겹치는 비취소(ACTIVE/
+        RENEWED) 기간이 있으면 트랜잭션 내에서 거부. payment_status/PG
+        연동 없음(PaymentOrder 도입 전).
+      security: [{ApiKeyAuth: []}, {}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, plan_code]
+              properties:
+                site_id: { type: integer }
+                plan_code: { type: string, enum: [TRIAL_90, BASIC_360, FIELD_790] }
+                starts_at: { type: string, format: date, description: "생략 시 Seoul 오늘" }
+                price_snapshot: { type: integer, minimum: 0, description: "생략 시 plan_code 기본값" }
+                included_visits: { type: integer, minimum: 0, description: "생략 시 plan_code 기본값" }
+                next_inspection_at: { type: string, format: date, nullable: true }
+                memo: { type: string, nullable: true }
+      responses:
+        "200":
+          description: "생성됨. status는 항상 ACTIVE."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/CarePlanRow" }
+        "400": { description: "Site not found | plan_code 오류 | 날짜/가격/횟수 검증 실패 | 겹치는 비취소 기간 존재" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    get:
+      summary: "현장별 또는 고객별 CarePlan 목록 (4주차, 2026-07-21 추가)"
+      security: [{ApiKeyAuth: []}, {}]
+      parameters:
+        - name: site_id
+          in: query
+          required: false
+          schema: { type: integer }
+          description: "site_id 또는 customer_id 중 하나 필수"
+        - name: customer_id
+          in: query
+          required: false
+          schema: { type: integer }
+          description: "현장 조인으로 고객의 모든 CarePlan 반환"
+      responses:
+        "200":
+          description: "목록 (starts_at DESC, id DESC)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { type: array, items: { $ref: "#/components/schemas/CarePlanRow" } }
+        "400": { description: "site_id or customer_id is required" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/care-plans/{id}:
+    get:
+      summary: "CarePlan 상세 조회 (4주차, 2026-07-21 추가)"
+      security: [{ApiKeyAuth: []}, {}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: "effective_status 파생 필드 포함"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/CarePlanRow" }
+        "404": { description: "Care plan not found" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: "used_visits(절대값)·next_inspection_at·memo 수정 (4주차, 2026-07-21 추가)"
+      description: >
+        used_visits는 자동 차감 없이 항상 절대값을 받는다(재시도 멱등,
+        증가·감소 모두 허용 — 오입력 정정 목적). 0..included_visits 범위를
+        벗어나면 400. 대상 CarePlan이 ACTIVE가 아니면 400.
+      security: [{ApiKeyAuth: []}, {}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                used_visits: { type: integer, minimum: 0 }
+                next_inspection_at: { type: string, format: date, nullable: true }
+                memo: { type: string, nullable: true }
+      responses:
+        "200":
+          description: "갱신됨"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/CarePlanRow" }
+        "404": { description: "Care plan not found" }
+        "400": { description: "Only ACTIVE care plans can be updated | used_visits 범위 초과 | next_inspection_at 오류" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/care-plans/{id}/cancel:
+    put:
+      summary: "CarePlan 취소 (4주차, 2026-07-21 추가)"
+      security: [{ApiKeyAuth: []}, {}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                memo: { type: string, nullable: true, description: "생략 시 기존 memo 유지" }
+      responses:
+        "200":
+          description: "status=CANCELLED로 갱신됨(하드 삭제 없음)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/CarePlanRow" }
+        "404": { description: "Care plan not found" }
+        "400": { description: "Only ACTIVE care plans can be cancelled" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/care-plans/{id}/renew:
+    post:
+      summary: "CarePlan 갱신 — 기존 ACTIVE를 RENEWED로, 신규 행 생성 (4주차, 2026-07-21 추가)"
+      description: >
+        quotes→contracts 전환과 동일한 트랜잭션 오케스트레이션(BEGIN/COMMIT/
+        ROLLBACK). starts_at 생략 시 원본 ends_at 다음날로 계산해 조기
+        갱신이라도 항상 원본 종료일 기준이라 겹치지 않는다. plan_code 생략
+        시 원본 코드를 재사용하되 price_snapshot/included_visits는 원본 값이
+        아니라 (재사용/변경된) plan_code의 기본값을 새로 적용하며, 새 행의
+        used_visits는 0부터 다시 시작한다.
+      security: [{ApiKeyAuth: []}, {}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan_code: { type: string, enum: [TRIAL_90, BASIC_360, FIELD_790], description: "생략 시 원본과 동일" }
+                starts_at: { type: string, format: date, description: "생략 시 원본 ends_at 다음날" }
+                price_snapshot: { type: integer, minimum: 0 }
+                included_visits: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: "새로 생성된 ACTIVE CarePlan (renewed_from_id로 원본 연결)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/CarePlanRow" }
+        "404": { description: "Care plan not found" }
+        "400": { description: "Only ACTIVE care plans can be renewed | 겹치는 비취소 기간 존재" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /care/site-status/{token}:
     get:
       summary: "장비관리 링크 공개 조회 (인증 없음, 고객용, 티켓과 무관하게 지속됨)"
@@ -1009,3 +1204,25 @@ components:
         site_id: { type: integer }
         site_name: { type: string }
         contact_phone: { type: string }
+    CarePlanRow:
+      type: object
+      description: >
+        /care/care-plans* 응답 원소. effective_status는 저장되지 않는 파생
+        필드 — status가 ACTIVE이고 ends_at이 지났을 때만 EXPIRED로 보여준다
+        (CANCELLED/RENEWED는 절대 EXPIRED로 바뀌지 않음).
+      properties:
+        id: { type: integer }
+        site_id: { type: integer }
+        plan_code: { type: string, enum: [TRIAL_90, BASIC_360, FIELD_790] }
+        status: { type: string, enum: [ACTIVE, CANCELLED, RENEWED], description: "DB에 저장되는 값 — 시간 경과로 자동 전이하지 않음" }
+        effective_status: { type: string, enum: [ACTIVE, CANCELLED, RENEWED, EXPIRED], description: "응답 조립 시 파생되는 값(저장 안 됨)" }
+        starts_at: { type: string, format: date }
+        ends_at: { type: string, format: date, description: "starts_at 포함 계산 (starts_at + 기간일수 - 1)" }
+        price_snapshot: { type: integer, minimum: 0 }
+        included_visits: { type: integer, minimum: 0 }
+        used_visits: { type: integer, minimum: 0, description: "0..included_visits, PUT으로만 절대값 갱신" }
+        next_inspection_at: { type: string, format: date, nullable: true }
+        renewed_from_id: { type: integer, nullable: true, description: "갱신으로 생성된 행이면 원본 CarePlan id" }
+        memo: { type: string, nullable: true }
+        created_at: { type: string }
+        updated_at: { type: string }

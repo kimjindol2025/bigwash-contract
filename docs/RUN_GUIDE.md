@@ -55,7 +55,7 @@ FREELANG_BOOTSTRAP=/home/kim/kim/freelang-v11/bootstrap.js ./scripts/migrate-pha
 
 FreeLang v11 실행기는 병렬 프로세스 간 공유 상태가 충돌할 수 있으므로 아래 테스트를
 동시에 실행하지 않는다. 각 테스트는 서로 다른 임시 DB를 사용한다.
-전체 9개 테스트 파일(`tests/test_*.fl`) 목록:
+전체 10개 테스트 파일(`tests/test_*.fl`) 목록:
 
 ```bash
 BIGWASH_DB_PATH=/tmp/bigwash-contract-test.sqlite \
@@ -71,11 +71,13 @@ BIGWASH_DB_PATH=/tmp/bigwash-part-sales-test.sqlite \
   node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_part_sales_outreach.fl
 ```
 
-아래 5개는 격리된 `BIGWASH_DB_PATH`가 없으면 테스트 자체가 즉시 에러로
+아래 6개는 격리된 `BIGWASH_DB_PATH`가 없으면 테스트 자체가 즉시 에러로
 거부한다(운영 DB 오염 방지 가드, 코드에 하드코딩됨) — 위 4개처럼 "권장"이
 아니라 **필수**다. `test_ops_summary.fl` / `test_ops_weekly.fl`은 운영 집계가
 `site_id`/`customer_id`로 스코프되지 않고 테이블 전체를 세므로,
 공유 DB에 실행하면 카운트 단정 자체가 무의미해져 격리가 특히 더 중요하다.
+`test_careplan.fl`은 CarePlan 자체는 `site_id`/`customer_id`로 스코프되지만
+동일한 안전 관례로 같은 가드를 둔다.
 
 ```bash
 BIGWASH_DB_PATH=/tmp/bigwash-customer-2nd-test.sqlite \
@@ -92,6 +94,9 @@ BIGWASH_DB_PATH=/tmp/bigwash-ops-summary-test.sqlite \
 
 BIGWASH_DB_PATH=/tmp/bigwash-ops-weekly-test.sqlite \
   node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_ops_weekly.fl
+
+BIGWASH_DB_PATH=/tmp/bigwash-careplan-test.sqlite \
+  node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_careplan.fl
 ```
 
 이미 같은 이름의 임시 DB가 있으면 삭제하거나 새 경로를 사용한다.
@@ -125,13 +130,14 @@ node /home/kim/kim/freelang-v11/bootstrap.js run src/washcare-api.fl
 
 키를 설정한 경우 내부 요청에는 `x-api-key` 헤더가 필요하다.
 
-내부 API는 47개 라우트(정적 Admin UI·루트 리다이렉트 제외, 2026-07-21 3주차
-`/care/ops-weekly` 반영)로 늘어나 이 문서에 개별 나열하지 않는다 — **전체
+내부 API는 51개 라우트(정적 Admin UI·루트 리다이렉트 제외, 2026-07-21 4주차
+`/care/care-plans*` 반영)로 늘어나 이 문서에 개별 나열하지 않는다 — **전체
 라우트 목록과 요청/응답 스키마는 `docs/openapi-washcare.yaml`(기계 판독용)과
 `docs/04-washcare-api.md`(설명)가 정본**이다. 기동 확인용 스모크 예시만 남긴다:
 
 - `POST /care/tickets` — 응답의 `public_token`은 고객에게 전달한 뒤 별도 저장하지 않는다
 - `PUT /care/tickets/:id/status`
+- `POST /care/care-plans` — 연간관리 가입(site_id 앵커, plan_code 3종)
 - `GET /care/ops-summary?warranty_days=30` — 운영 대시보드 집계(지연·일정미정·
   오늘방문·보증임박), Asia/Seoul 기준
 - `GET /care/ops-weekly?as_of=YYYY-MM-DD` — 주간 운영 보고(미처리·다음 주 방문·

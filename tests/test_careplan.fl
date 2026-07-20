@@ -1,0 +1,245 @@
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+(load (str REPO-ROOT "/src/washcare.fl"))
+
+;; care_plans는 site_id/customer_id로 스코프되지만 생성·수정·취소·갱신을
+;; 실제 수행하므로 운영 DB에서는 절대 실행하지 않는다.
+(if (= DB (str REPO-ROOT "/db/contracts.sqlite"))
+  (error "test_careplan.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
+
+;; 재실행 가능하도록 이 테스트 픽스처만 먼저 지운다.
+(db_exec DB
+  "DELETE FROM care_plans WHERE site_id IN
+   (SELECT id FROM sites WHERE name LIKE 'CarePlan테스트%')" [])
+(db_exec DB "DELETE FROM sites WHERE name LIKE 'CarePlan테스트%'" [])
+(db_exec DB "DELETE FROM customers WHERE name LIKE 'CarePlan테스트%'" [])
+
+(defn count-care-plans []
+  (get (first (db_query DB "SELECT COUNT(*) AS count FROM care_plans" [])) :count))
+
+(defn has-id? [items target-id]
+  (> (length (filter (fn [row] (= (get row :id) target-id)) items)) 0))
+
+;; ---- 0. phase1 init 멱등 + 행수 불변 ----
+;; init-phase1-db를 반복 실행해도 care_plans의 행 수는 변하면 안 된다.
+(let [plan-count-before (count-care-plans)]
+  (init-phase1-db)
+  (let [plan-count-after-first (count-care-plans)]
+    (assert (= plan-count-after-first plan-count-before) "init-phase1-db 1회 실행 후 care_plans 행 수는 불변이어야 한다")
+    (init-phase1-db)
+    (let [plan-count-after-second (count-care-plans)]
+      (assert (= plan-count-after-second plan-count-after-first) "init-phase1-db 2회 실행 후 care_plans 행 수는 불변이어야 한다"))))
+
+;; ---- 0-1. SQL 인젝션성 site/customer 파라미터는 데이터 노출 없이 빈 결과/실패 ----
+(let [injection-list-result (list-site-careplans "0 OR 1=1")]
+  (assert (= (length injection-list-result) 0) "site_id에 SQL 유사 문자열을 넣어도 목록은 노출 없이 빈 결과여야 한다"))
+
+(let [customer-a (create-customer "CarePlan테스트 점주A" "010-9200-0001" "" "" nil nil)
+      customer-a-id (get customer-a :id)
+      site-a (create-site customer-a-id "CarePlan테스트 세차장A" "서울시 CP구" "02-9200-0001")
+      site-a-id (get site-a :id)
+      customer-b (create-customer "CarePlan테스트 점주B" "010-9200-0002" "" "" nil nil)
+      customer-b-id (get customer-b :id)
+      site-b (create-site customer-b-id "CarePlan테스트 세차장B" "서울시 CP구" "02-9200-0002")
+      site-b-id (get site-b :id)]
+
+  ;; ---- 1. plan_code 3종 기본값(기간/포함방문/가격), 연속 비겹침 구간으로 site-a에 순차 생성 ----
+  (let [trial (create-care-plan site-a-id "TRIAL_90" "2026-01-01" nil nil nil nil)
+        basic (create-care-plan site-a-id "BASIC_360" "2026-04-01" nil nil nil nil)
+        field (create-care-plan site-a-id "FIELD_790" "2027-04-01" nil nil nil nil)]
+    (assert (= (get trial :ends_at) "2026-03-31") "TRIAL_90 90일 종료일은 시작일 포함 계산으로 2026-03-31이어야 한다")
+    (assert (= (get trial :included_visits) 0) "TRIAL_90 기본 포함 방문은 0이어야 한다")
+    (assert (= (get trial :price_snapshot) 99000) "TRIAL_90 기본 가격은 99000이어야 한다")
+
+    (assert (= (get basic :ends_at) "2027-03-31") "BASIC_360 365일 종료일은 2027-03-31이어야 한다")
+    (assert (= (get basic :included_visits) 0) "BASIC_360 기본 포함 방문은 0이어야 한다")
+    (assert (= (get basic :price_snapshot) 360000) "BASIC_360 기본 가격은 360000이어야 한다")
+
+    (assert (= (get field :ends_at) "2028-03-30") "FIELD_790 365일 종료일은(2028년 윤년 보정 포함) 2028-03-30이어야 한다")
+    (assert (= (get field :included_visits) 2) "FIELD_790 기본 포함 방문은 2여야 한다")
+    (assert (= (get field :price_snapshot) 790000) "FIELD_790 기본 가격은 790000이어야 한다")
+
+    ;; 가격 override 허용
+    (let [overridden (create-care-plan site-a-id "TRIAL_90" "2028-04-01" 50000 1 nil nil)]
+      (assert (= (get overridden :price_snapshot) 50000) "가입 시 가격 override가 반영돼야 한다")
+      (assert (= (get overridden :included_visits) 1) "가입 시 포함 방문 override가 반영돼야 한다")))
+
+  ;; ---- 2. 날짜 경계/윤년 ----
+  ;; 2026년은 평년 — 2월 29일은 존재하지 않는 날짜라 거부돼야 한다.
+  (let [non-leap-rejected
+          (try (do (create-care-plan site-b-id "TRIAL_90" "2026-02-29" nil nil nil nil) false)
+               (catch [e] true))]
+    (assert non-leap-rejected "2026-02-29(평년)은 존재하지 않는 날짜라 거부해야 한다"))
+  ;; 2028년은 윤년 — 2월 29일이 유효한 시작일이어야 하고, 종료일 계산도 정확해야 한다.
+  (let [leap-plan (create-care-plan site-b-id "TRIAL_90" "2028-02-29" nil nil nil nil)]
+    (assert (= (get leap-plan :starts_at) "2028-02-29") "윤년 2028-02-29는 유효한 시작일이어야 한다")
+    (assert (= (get leap-plan :ends_at) "2028-05-28") "윤년 시작일 기준 90일(시작일 포함) 종료일은 2028-05-28이어야 한다")
+    (cancel-care-plan (get leap-plan :id) nil))
+  (let [malformed-rejected
+          (try (do (create-care-plan site-b-id "TRIAL_90" "not-a-date" nil nil nil nil) false)
+               (catch [e] true))
+        out-of-range-rejected
+          (try (do (create-care-plan site-b-id "TRIAL_90" "2026-13-45" nil nil nil nil) false)
+               (catch [e] true))]
+    (assert malformed-rejected "형식이 아닌 문자열은 거부해야 한다")
+    (assert out-of-range-rejected "월/일 범위를 벗어난 날짜는 거부해야 한다"))
+
+  ;; ---- 3. 가격·횟수 검증 ----
+  (let [negative-price-rejected
+          (try (do (create-care-plan site-b-id "TRIAL_90" "2029-01-01" -1 nil nil nil) false)
+               (catch [e] true))
+        negative-visits-rejected
+          (try (do (create-care-plan site-b-id "TRIAL_90" "2029-02-01" nil -1 nil nil) false)
+               (catch [e] true))
+        decimal-price-rejected
+          (try (do (create-care-plan site-b-id "TRIAL_90" "2029-03-01" 1000.5 nil nil nil) false)
+               (catch [e] true))
+        nonint-next-inspection-rejected
+          (try (do (create-care-plan site-b-id "TRIAL_90" "2029-03-02" nil nil 3.14 nil) false)
+               (catch [e] true))]
+    (assert negative-price-rejected "price_snapshot 음수는 거부해야 한다")
+    (assert negative-visits-rejected "included_visits 음수는 거부해야 한다")
+    (assert decimal-price-rejected "price_snapshot는 소수 입력이 거부되어야 한다")
+    (assert nonint-next-inspection-rejected "next_inspection_at은 실존 날짜 ISO 문자열만 허용되어야 한다"))
+
+  ;; ---- 4. 고객/현장 격리 ----
+  (let [plan-a (create-care-plan site-a-id "TRIAL_90" "2029-04-01" nil nil nil nil)
+        plan-b (create-care-plan site-b-id "TRIAL_90" "2029-04-01" nil nil nil nil)
+        site-a-list (list-site-careplans site-a-id)
+        site-b-list (list-site-careplans site-b-id)
+        customer-a-list (list-customer-careplans customer-a-id)
+        customer-b-list (list-customer-careplans customer-b-id)
+        ghost-site-list (list-site-careplans 9999999)]
+    (assert (has-id? site-a-list (get plan-a :id)) "현장A 목록에 현장A 플랜이 있어야 한다")
+    (assert (not (has-id? site-a-list (get plan-b :id))) "현장A 목록에 현장B 플랜이 섞이면 안 된다")
+    (assert (has-id? site-b-list (get plan-b :id)) "현장B 목록에 현장B 플랜이 있어야 한다")
+    (assert (not (has-id? site-b-list (get plan-a :id))) "현장B 목록에 현장A 플랜이 섞이면 안 된다")
+    (assert (has-id? customer-a-list (get plan-a :id)) "고객A 목록에 고객A(현장A) 플랜이 있어야 한다")
+    (assert (not (has-id? customer-a-list (get plan-b :id))) "고객A 목록에 고객B 플랜이 섞이면 안 된다")
+    (assert (has-id? customer-b-list (get plan-b :id)) "고객B 목록에 고객B(현장B) 플랜이 있어야 한다")
+    (assert (not (has-id? customer-b-list (get plan-a :id))) "고객B 목록에 고객A 플랜이 섞이면 안 된다")
+    (assert (= (length ghost-site-list) 0) "존재하지 않는 site_id 조회는 빈 목록이어야 한다"))
+
+  ;; ---- 4-1. 존재하지 않는 plan_id와 SQL 인젝션-like ID로 조회/수정/갱신/취소 ----
+  (let [missing-id 999999
+        missing-plan (get-careplan missing-id)
+        missing-update
+          (try (do (update-care-plan missing-id 1 nil nil) false)
+               (catch [e] true))
+        missing-renew
+          (try (do (renew-care-plan missing-id nil nil nil nil) false)
+               (catch [e] true))
+        missing-cancel
+          (try (do (cancel-care-plan missing-id nil) false)
+               (catch [e] true))
+        string-id-update
+          (try (do (update-care-plan "1 OR 1=1" 1 nil nil) false)
+               (catch [e] true))]
+    (assert (nil? missing-plan) "존재하지 않는 plan id 조회는 nil이어야 한다")
+    (assert missing-update "존재하지 않는 plan id로 수정은 실패해야 한다")
+    (assert missing-renew "존재하지 않는 plan id로 갱신은 실패해야 한다")
+    (assert missing-cancel "존재하지 않는 plan id로 취소는 실패해야 한다")
+    (assert string-id-update "SQL 인젝션 유사 문자열 id로 갱신 시도는 실패해야 한다"))
+
+  ;; ---- 5. 중복 기간 거부(같은 현장, 비취소만 차단) ----
+  (let [base (create-care-plan site-a-id "TRIAL_90" "2030-01-01" nil nil nil nil)
+        overlap-rejected
+          (try (do (create-care-plan site-a-id "TRIAL_90" "2030-03-01" nil nil nil nil) false)
+               (catch [e] true))
+        adjacent-ok (create-care-plan site-a-id "TRIAL_90" "2030-04-01" nil nil nil nil)]
+    (assert overlap-rejected "겹치는 기간(2030-03-01 시작, base는 2030-03-31까지)은 거부해야 한다")
+    (assert (= (get adjacent-ok :status) "ACTIVE") "겹치지 않는 인접 기간(base 종료 다음날부터)은 허용해야 한다")
+    ;; 취소된 플랜의 기간은 겹침 판정에서 제외돼야 한다 — base·adjacent-ok를 모두
+    ;; 취소해 site-a의 이 구간을 완전히 "비취소 플랜 없음" 상태로 만든 뒤 재검증한다.
+    (cancel-care-plan (get base :id) nil)
+    (cancel-care-plan (get adjacent-ok :id) nil)
+    (let [reuse-after-cancel (create-care-plan site-a-id "BASIC_360" "2030-01-15" nil nil nil nil)]
+      (assert (= (get reuse-after-cancel :status) "ACTIVE")
+              "취소된 플랜들과 겹치는 기간이라도 비취소 플랜이 남아있지 않으면 신규 생성을 허용해야 한다")
+      (cancel-care-plan (get reuse-after-cancel :id) nil)))
+
+  ;; ---- 6. 수정 멱등 + COALESCE 보존 ----
+  (let [target (create-care-plan site-b-id "FIELD_790" "2031-01-01" nil nil nil nil)
+        after-1 (update-care-plan (get target :id) 1 "2031-06-01" "첫 메모")
+        after-1-retry (update-care-plan (get target :id) 1 "2031-06-01" "첫 메모")]
+    (assert (= (get after-1 :used_visits) 1) "used_visits가 1로 반영돼야 한다")
+    (assert (= (get after-1-retry :used_visits) 1) "같은 값으로 재시도해도 결과가 동일해야 한다(멱등)")
+    (assert (= (get after-1-retry :memo) "첫 메모") "재시도 후에도 메모가 유지돼야 한다")
+    (let [memo-preserved (update-care-plan (get target :id) 2 nil nil)]
+      (assert (= (get memo-preserved :used_visits) 2) "used_visits만 갱신돼도 반영돼야 한다")
+      (assert (= (get memo-preserved :memo) "첫 메모") "memo를 생략하면 기존 값이 보존돼야 한다(COALESCE)")
+      (assert (= (get memo-preserved :next_inspection_at) "2031-06-01") "next_inspection_at을 생략하면 기존 값이 보존돼야 한다"))
+    ;; 오입력 정정: 절대값 PUT은 증가뿐 아니라 감소도 허용해야 한다(0..included 범위 내라면).
+    (let [corrected-down (update-care-plan (get target :id) 0 nil nil)]
+      (assert (= (get corrected-down :used_visits) 0) "used_visits는 오입력 정정을 위해 감소도 허용해야 한다"))
+    (let [over-limit-rejected
+            (try (do (update-care-plan (get target :id) 3 nil nil) false)
+                 (catch [e] true))]
+      (assert over-limit-rejected "included_visits(2)를 넘는 used_visits는 거부해야 한다"))
+    (let [non-integer-rejected
+            (try (do (update-care-plan (get target :id) "abc" nil nil) false)
+                 (catch [e] true))
+          negative-rejected
+            (try (do (update-care-plan (get target :id) -1 nil nil) false)
+                 (catch [e] true))]
+      (assert non-integer-rejected "문자 used_visits는 거부해야 한다")
+      (assert negative-rejected "음수 used_visits는 거부해야 한다")))
+
+  ;; ---- 7. 취소 ----
+  (let [target (create-care-plan site-a-id "TRIAL_90" "2032-01-01" nil nil nil nil)
+        cancelled (cancel-care-plan (get target :id) "테스트 취소")]
+    (assert (= (get cancelled :status) "CANCELLED") "취소 후 status는 CANCELLED여야 한다")
+    (assert (= (get cancelled :memo) "테스트 취소") "취소 사유가 memo에 반영돼야 한다")
+    (let [re-cancel-rejected
+            (try (do (cancel-care-plan (get target :id) nil) false)
+                 (catch [e] true))]
+      (assert re-cancel-rejected "이미 취소된 플랜은 다시 취소할 수 없어야 한다"))
+    ;; UPDATE는 ACTIVE만 허용되어야 한다
+    (let [cancel-update-rejected
+            (try (do (update-care-plan (get target :id) 0 nil nil) false)
+                 (catch [e] true))]
+      (assert cancel-update-rejected "취소된 플랜은 UPDATE 대상이 될 수 없어야 한다")))
+
+  ;; ---- 7-1. 갱신 원자성 ----
+  ;; 원본 갱신은 기존 ACTIVE 상태만 가능하고, 갱신 실패 시 새 행이 생기거나 원본 상태가 바뀌면 안 된다.
+  (let [blocked-original (create-care-plan site-a-id "TRIAL_90" "2050-01-01" nil nil nil nil)
+        blocker (create-care-plan site-a-id "TRIAL_90" "2050-04-01" nil nil nil nil)
+        before-count (count-care-plans)
+        renew-failed
+          (try (do (renew-care-plan (get blocked-original :id) nil nil nil nil) false)
+               (catch [e] true))
+        after-original (get-careplan (get blocked-original :id))
+        after-count (count-care-plans)]
+    (assert renew-failed "겹치는 ACTIVE 플랜이 있어 갱신은 실패해야 한다")
+    (assert (= (get after-original :status) "ACTIVE") "갱신 실패 시 원본 플랜 status는 ACTIVE로 유지되어야 한다")
+    (assert (= before-count after-count) "갱신 실패 시 care_plans 행 수는 증가하지 않아야 한다")
+    (cancel-care-plan (get blocked-original :id) nil)
+    (cancel-care-plan (get blocker :id) nil))
+
+  ;; ---- 8. 갱신 트랜잭션 + effective_status 파생 ----
+  (let [original (create-care-plan site-b-id "BASIC_360" "2033-01-01" nil nil nil nil)
+        renewed (renew-care-plan (get original :id) nil nil nil nil)
+        original-after (get-careplan (get original :id))]
+    (assert (= (get original-after :status) "RENEWED") "갱신 후 원본 플랜 status는 RENEWED여야 한다")
+    (assert (= (get renewed :status) "ACTIVE") "갱신으로 생성된 새 플랜은 ACTIVE여야 한다")
+    (assert (= (get renewed :renewed_from_id) (get original :id)) "새 플랜의 renewed_from_id가 원본을 가리켜야 한다")
+    (assert (= (get renewed :starts_at) "2034-01-01") "갱신 기본 시작일은 원본 종료일(2033-12-31) 다음날이어야 한다")
+    (assert (= (get renewed :used_visits) 0) "갱신된 새 플랜의 used_visits는 0으로 시작해야 한다")
+    (assert (not (= (get original-after :status) "ACTIVE")) "갱신된 원본은 ACTIVE가 아니어야 한다(재시도 동시성·이중갱신 리스크 방지)")
+    (let [rerenew-rejected
+            (try (do (renew-care-plan (get original :id) nil nil nil nil) false)
+                 (catch [e] true))]
+      (assert rerenew-rejected "이미 RENEWED된 플랜은 다시 갱신할 수 없어야 한다(ACTIVE만 허용)")))
+
+  ;; effective_status: ACTIVE + 종료일 과거 → EXPIRED, ACTIVE + 종료일 미래 → ACTIVE,
+  ;; CANCELLED/RENEWED는 종료일과 무관하게 그대로 노출.
+  (let [expired-plan (create-care-plan site-a-id "TRIAL_90" "2020-01-01" nil nil nil nil)
+        future-plan (create-care-plan site-a-id "TRIAL_90" "2099-01-01" nil nil nil nil)]
+    (assert (= (get expired-plan :effective_status) "EXPIRED") "종료일이 지난 ACTIVE 플랜의 effective_status는 EXPIRED여야 한다")
+    (assert (= (get expired-plan :status) "ACTIVE") "저장된 status 자체는 배치 없이 ACTIVE로 남아 있어야 한다(파생만 EXPIRED)")
+    (assert (= (get future-plan :effective_status) "ACTIVE") "종료일이 미래인 ACTIVE 플랜의 effective_status는 ACTIVE여야 한다")
+    (let [cancelled (cancel-care-plan (get expired-plan :id) nil)]
+      (assert (= (get cancelled :effective_status) "CANCELLED") "CANCELLED는 종료일이 지나도 EXPIRED로 바뀌면 안 된다"))))
+
+(println "✓ CarePlan tests passed")

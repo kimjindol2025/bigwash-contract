@@ -35,6 +35,12 @@
 - **주간 운영 보고**(3주차, 2026-07-21 추가) — `GET /care/ops-weekly`로 미처리
   A/S·다음 ISO 주 방문·보증 만료 기반 점검 대상 집계. Admin `통계·보고서`에
   연동. 미수금은 포함하지 않음(`docs/04`, `docs/09`)
+- **연간관리 CarePlan**(4주차 백엔드, 2026-07-21 추가) — `site_id` 단위 가입
+  (`TRIAL_90`/`BASIC_360`/`FIELD_790`, 시작일 포함 기간 계산), 조회·수정·
+  취소·갱신 API 6종. 같은 현장의 겹치는 비취소 기간은 거부, 저장 status는
+  자동 만료되지 않고 응답의 `effective_status`로만 파생. `payment_status`/
+  PG 연동 없음(`docs/04`). **Admin UI 연동은 아직 없음**(5주차 예정 —
+  `careplan` 메뉴는 여전히 placeholder)
 - Admin UI (`/care/admin`) — 홈(운영 대시보드), 통계·보고서(주간 보고),
   오늘접수/진행중/완료/고객검색/홍보대상/보증임박, 접수생성, 부품판매, 판매등록,
   상태변경, 상세조회
@@ -54,11 +60,12 @@
 │   ├── washcare.fl            # WashCare 도메인 로직
 │   ├── washcare-api.fl         # WashCare HTTP API (포트 40101)
 │   └── washcare-admin.html     # WashCare Admin UI (정적 HTML+JS)
-├── tests/                  # 테스트 9종 (test_contract.fl, test_phase1_migration.fl,
+├── tests/                  # 테스트 10종 (test_contract.fl, test_phase1_migration.fl,
 │                           #   test_washcare.fl, test_part_sales_outreach.fl,
 │                           #   test_sales_flow.fl, test_customer_consultation.fl,
 │                           #   test_customer_2nd_phase.fl, test_ops_summary.fl,
-│                           #   test_ops_weekly.fl — 실행 방법은 docs/RUN_GUIDE.md)
+│                           #   test_ops_weekly.fl, test_careplan.fl —
+│                           #   실행 방법은 docs/RUN_GUIDE.md)
 ├── docs/                   # 문서 (제품기획, 아키텍처, API 문서, OpenAPI 스펙)
 └── db/                     # SQLite 데이터베이스
 ```
