@@ -1,4 +1,7 @@
-(load "/root/kim/bigwash-contract/src/washcare.fl")
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+(load (str REPO-ROOT "/src/washcare.fl"))
 
 ;; db/contracts.sqlite는 테스트 간 리셋되지 않는 공유 파일이라, 이 테스트가 쓰는
 ;; 고정 식별자(serial_number 등)가 이전 실행에서 남아있으면 UNIQUE 제약에 걸린다.

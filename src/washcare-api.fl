@@ -1,12 +1,17 @@
 ;;; BigWash Care Phase 1 HTTP API
 
-(load "/root/kim/bigwash-contract/src/washcare.fl")
+;; 배포 위치(노드)에 따라 절대경로가 달라지므로 PWD 기준으로 계산한다.
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+
+(load (str REPO-ROOT "/src/washcare.fl"))
 
 (define CARE-PORT
   (let [override (env-get "BIGWASH_CARE_PORT")]
     (if (or (nil? override) (str-blank? override)) 40101 (int override))))
 
-(define ADMIN-HTML (file_read "/root/kim/bigwash-contract/src/washcare-admin.html"))
+(define ADMIN-HTML (file_read (str REPO-ROOT "/src/washcare-admin.html")))
 
 ;; BIGWASH_INTERNAL_API_KEY 미설정 시 내부 엔드포인트가 전부 무인증으로 열린다
 ;; (docs/04-washcare-api.md — 로그인 시스템 전 임시 운영 모드, 2026-07-19 명시적 결정).

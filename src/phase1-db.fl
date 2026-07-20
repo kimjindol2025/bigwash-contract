@@ -1,6 +1,11 @@
 ;;; BigWash Care Phase 1 schema and bounded legacy migration
 
-(load "/root/kim/bigwash-contract/src/db.fl")
+;; 배포 위치(노드)에 따라 절대경로가 달라지므로 PWD 기준으로 계산한다.
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+
+(load (str REPO-ROOT "/src/db.fl"))
 
 ;;; 레거시 client_id NOT NULL 컬럼용 임시 롤백 섀도우.
 ;;; 검증된 레거시 ID는 보존하고, 신규 고객은 음수 Customer.id를 쓴다.

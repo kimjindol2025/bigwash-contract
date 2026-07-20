@@ -1,6 +1,9 @@
-(load "/root/kim/bigwash-contract/src/washcare.fl")
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+(load (str REPO-ROOT "/src/washcare.fl"))
 
-(if (= DB "/root/kim/bigwash-contract/db/contracts.sqlite")
+(if (= DB (str REPO-ROOT "/db/contracts.sqlite"))
   (error "test_customer_consultation.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
 
 (db_exec DB "DELETE FROM consultations WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '상담테스트 %')" [])

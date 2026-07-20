@@ -3,7 +3,10 @@
 (define DB
   (let [override (env-get "BIGWASH_DB_PATH")]
     (if (or (nil? override) (str-blank? override))
-      "/root/kim/bigwash-contract/db/contracts.sqlite"
+      ;; 배포 위치(노드)에 따라 절대경로가 달라지므로 PWD 기준으로 계산한다.
+      (let [root (env-get "BIGWASH_REPO_ROOT")]
+        (str (if (or (nil? root) (str-blank? root)) (env-get "PWD") root)
+             "/db/contracts.sqlite"))
       override)))
 
 ;;; Initialize database

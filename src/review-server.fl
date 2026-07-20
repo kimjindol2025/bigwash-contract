@@ -1,8 +1,13 @@
 ;;; Phase 0 Review Tree Standalone Server
 
-(load "/root/kim/bigwash-contract/src/ui.fl")
+;; 배포 위치(노드)에 따라 절대경로가 달라지므로 PWD 기준으로 계산한다.
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
 
-(define REVIEW-STYLES (file_read "/root/kim/bigwash-contract/public/styles.css"))
+(load (str REPO-ROOT "/src/ui.fl"))
+
+(define REVIEW-STYLES (file_read (str REPO-ROOT "/public/styles.css")))
 
 (define REVIEW-PAGE
   (str

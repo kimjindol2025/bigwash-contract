@@ -1,4 +1,7 @@
-(load "/root/kim/bigwash-contract/src/contract.fl")
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+(load (str REPO-ROOT "/src/contract.fl"))
 
 (println "--- Contract Test Start ---")
 

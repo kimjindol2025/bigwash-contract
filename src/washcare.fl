@@ -1,6 +1,11 @@
 ;;; BigWash Care Phase 1 domain operations
 
-(load "/root/kim/bigwash-contract/src/phase1-db.fl")
+;; 배포 위치(노드)에 따라 절대경로가 달라지므로 PWD 기준으로 계산한다.
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+
+(load (str REPO-ROOT "/src/phase1-db.fl"))
 
 (define TICKET-RECEIVED "RECEIVED")
 (define TICKET-SCHEDULED "SCHEDULED")

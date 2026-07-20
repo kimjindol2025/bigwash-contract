@@ -1,8 +1,16 @@
 ;;; BigWash Contract Server
 
-(load "/root/kim/bigwash-contract/src/db.fl")
-(load "/root/kim/bigwash-contract/src/contract.fl")
-(load "/root/kim/bigwash-contract/src/pages.fl")
+;; 이 저장소는 노드마다 경로가 다르다(/root/kim/... vs /home/kim/kim/...).
+;; load는 entry 파일 기준 절대경로가 아니면 엉뚱한 곳을 찾으므로, 배포 위치와
+;; 무관하게 항상 저장소 루트에서 실행한다는 전제로 PWD를 기준 삼는다.
+;; BIGWASH_REPO_ROOT를 명시하면 그쪽을 우선한다(pm2 등 PWD가 안 잡히는 환경용).
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+
+(load (str REPO-ROOT "/src/db.fl"))
+(load (str REPO-ROOT "/src/contract.fl"))
+(load (str REPO-ROOT "/src/pages.fl"))
 
 ;;; 테스트 데이터
 (define sample-contracts [
