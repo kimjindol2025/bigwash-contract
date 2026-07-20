@@ -312,6 +312,9 @@
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_sites_customer_id ON sites(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_equipment_site_id ON equipment(site_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_tickets_site_status ON service_tickets(site_id, status)" [])
+    ;; 2026-07-21 추가: 운영 대시보드 집계(지연·일정미정·오늘방문)가 status+scheduled_at
+    ;; 조합으로 조회하므로(docs/09 2주차) 전용 인덱스를 둔다.
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_tickets_status_scheduled ON service_tickets(status, scheduled_at)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_visits_ticket_id ON service_visits(ticket_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_link_logs_token_time ON link_access_logs(token_identifier, accessed_at)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_link_logs_ip_time ON link_access_logs(ip_address, accessed_at)" [])

@@ -521,6 +521,28 @@
         (server_status 400 {:ok false :error "days must be an integer between 0 and 3650"})))
     (unauthorized)))
 
+;; 2026-07-21 추가: 운영 대시보드 집계(2주차, docs/09 §3) — 지연·일정미정·오늘방문·
+;; 보증임박 4개 섹션. 미수금은 PaymentOrder 정의 전이라 포함하지 않는다(docs/09 0장).
+(defn handle-ops-summary [req]
+  (if (internal-authorized? req)
+    (try
+      (server_json {:ok true
+                    :data (get-ops-summary (server_req_query req "warranty_days"))})
+      (catch [e]
+        (server_status 400 {:ok false :error "warranty_days must be an integer between 0 and 3650"})))
+    (unauthorized)))
+
+;; 2026-07-21 추가: 주간 운영보고(3주차, docs/09 §4) — 미처리 A/S·다음 주 방문·
+;; 점검 대상 3개 섹션. 미수금은 이번 로드맵 원칙상 응답에 넣지 않는다.
+(defn handle-ops-weekly [req]
+  (if (internal-authorized? req)
+    (try
+      (server_json {:ok true
+                    :data (get-ops-weekly (server_req_query req "as_of"))})
+      (catch [e]
+        (server_status 400 {:ok false :error "as_of must be a valid YYYY-MM-DD date"})))
+    (unauthorized)))
+
 (server_post "/care/customers" "handle-create-customer")
 (server_get  "/care/customers" "handle-search-customers")
 (server_get  "/care/customers/:id" "handle-customer-detail")
@@ -566,6 +588,8 @@
 (server_post "/care/sites/:id/link/revoke" "handle-revoke-site-link")
 (server_post "/care/sites/:id/link/reissue" "handle-reissue-site-link")
 (server_get  "/care/warranty-expiring" "handle-warranty-expiring")
+(server_get  "/care/ops-summary" "handle-ops-summary")
+(server_get  "/care/ops-weekly" "handle-ops-weekly")
 (server_get  "/care/admin" "handle-admin-page")
 (server_get  "/" "handle-root")
 

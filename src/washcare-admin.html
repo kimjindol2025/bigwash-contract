@@ -49,6 +49,9 @@
   .stat-card { border-radius:18px; padding:22px; color:#FFFFFF; min-height:140px; display:flex; flex-direction:column; justify-content:space-between; }
   .stat-card-red { background:#E85454; }
   .stat-card-purple { background:#6C4CE0; }
+  .stat-card-amber { background:#D9891F; }
+  .stat-card-blue { background:#2E7FC1; }
+  .stat-card { cursor:pointer; }
   .stat-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
   .stat-card-label { font-size:12px; font-weight:700; opacity:.84; letter-spacing:.2px; }
   .stat-card-icon { width:34px; height:34px; border-radius:9999px; background:rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:800; }
@@ -185,7 +188,8 @@ async function api(method, path, body) {
 }
 
 function badge(status) {
-  return `<span class="badge b-${status}">${status}</span>`;
+  const safe = escapeHtml(status || '');
+  return `<span class="badge b-${safe}">${safe}</span>`;
 }
 
 function escapeHtml(value) {
@@ -361,23 +365,6 @@ function emptyStateRow(colspan, title = '없음', description = '표시할 데�
 }
 
 const MODULE_PLACEHOLDERS = {
-  home: {
-    title: '홈',
-    description: '오늘 무엇부터 처리해야 하는지 한눈에 보는 요약 화면입니다.',
-    outline: [
-      '오늘의 업무',
-      '신규 문의',
-      '오늘 출장',
-      '견적 대기',
-      '계약 진행',
-      '입금 예정',
-      '미수금',
-      '사후관리',
-      '연간관리 만료',
-      '최근 고객 활동',
-      '매출 요약'
-    ]
-  },
   products: {
     title: '상품·판매',
     description: '상품, 재고, 주문, 판매 흐름을 한 모듈로 묶는 자리입니다.',
@@ -463,12 +450,11 @@ const MODULE_PLACEHOLDERS = {
   },
   reports: {
     title: '통계·보고서',
-    description: '운영 지표와 매출 현황을 요약 보고서로 모아보는 자리입니다.',
+    description: '주간 운영 보고(GET /care/ops-weekly). 미수금은 PaymentOrder/입금원장 도입 후 제공하며 현재 보고에 포함하지 않습니다.',
     outline: [
-      '일간/주간/월간/연간 보고',
-      '고객현황 / 상담전환율 / 견적승인율 / 계약현황 / 출장현황',
-      '상품매출 / 서비스매출 / 연간관리현황',
-      '미수금현황 / 고객별매출 / 지역별현황'
+      '미처리 A/S',
+      '다음 주 방문 예정',
+      '보증 만료 기반 점검 대상'
     ]
   },
   settings: {
@@ -524,12 +510,12 @@ function consultationRow(c) {
 
 function ticketRow(t) {
   return `<tr ${actionAttrs('showDetail', [t.id])}>
-    <td>#${t.id}</td>
-    <td>${t.site_name || ''}</td>
-    <td>${t.symptom || ''}</td>
-    <td>${t.priority || ''}</td>
+    <td>#${escapeHtml(t.id)}</td>
+    <td>${escapeHtml(t.site_name || '')}</td>
+    <td>${escapeHtml(t.symptom || '')}</td>
+    <td>${escapeHtml(t.priority || '')}</td>
     <td>${badge(t.status)}</td>
-    <td>${t.scheduled_at || '-'}</td>
+    <td>${escapeHtml(t.scheduled_at || '-')}</td>
   </tr>`;
 }
 
@@ -1350,17 +1336,156 @@ async function createPartSale() {
   } catch (e) { msg.textContent = '오류: ' + e.message; }
 }
 
+const OPS_CARDS = [
+  { key: 'overdue', label: '지연 A/S', cls: 'stat-card-red', note: '예정 시각이 지났는데 아직 접수·일정 상태' },
+  { key: 'unscheduled', label: '일정 미정', cls: 'stat-card-amber', note: '방문 예정일이 아직 없는 접수·일정 상태' },
+  { key: 'visits_today', label: '오늘 방문', cls: 'stat-card-purple', note: '오늘(Asia/Seoul) 방문 예정, 완료·취소 제외' },
+  { key: 'warranty_expiring', label: '보증 임박', cls: 'stat-card-blue', note: '가동 중(ACTIVE) 장비 중 보증 만료 임박' }
+];
+
+function opsTicketTableHtml(items) {
+  const rows = (items || []).map(ticketRow).join('');
+  return `<table><thead><tr>
+    <th>ID</th><th>사업장</th><th>증상</th><th>우선순위</th><th>상태</th><th>예정일</th>
+  </tr></thead><tbody>${rows || emptyStateRow(6, '없음', '해당 조건의 티켓이 없습니다.')}</tbody></table>`;
+}
+
+function opsWarrantyTableHtml(items) {
+  const rows = (items || []).map(e => `<tr>
+    <td>${escapeHtml(e.site_name || '')}</td><td>${escapeHtml(e.contact_phone || '')}</td>
+    <td>${escapeHtml(e.model || '')}</td><td>${escapeHtml(e.category || '')}</td><td>${escapeHtml(e.warranty_ends_at || '')}</td>
+    <td><button class="ghost" ${actionAttrs('quickOutreach', [e.site_id, e.id], { stopPropagation: true })}>교체제안 접촉 예약</button></td>
+  </tr>`).join('');
+  return `<table><thead><tr>
+    <th>사업장</th><th>연락처</th><th>모델</th><th>종류</th><th>보증만료일</th><th></th>
+  </tr></thead><tbody>${rows || emptyStateRow(6, '없음', '보증 만료 임박 장비가 없습니다.')}</tbody></table>`;
+}
+
+async function loadOpsSummary() {
+  msg.textContent = '불러오는 중...';
+  try {
+    const res = await api('GET', '/care/ops-summary?warranty_days=30');
+    msg.textContent = '';
+    const d = res.data;
+
+    const cardsHtml = OPS_CARDS.map(c => `<div class="stat-card ${c.cls}" ${actionAttrs('scrollToOpsSection', [c.key])}>
+      <div class="stat-card-top">
+        <span class="stat-card-label">${escapeHtml(c.label)}</span>
+        <span class="stat-card-icon">${d[c.key].count}</span>
+      </div>
+      <div class="stat-card-value">${d[c.key].count}건</div>
+      <div class="stat-card-note">${escapeHtml(c.note)}</div>
+    </div>`).join('');
+
+    content.innerHTML = `<div class="row" style="justify-content:space-between; align-items:center;">
+      <h2 style="margin:0;">운영 대시보드</h2>
+      <span style="color:#8B979B; font-size:12.5px;">기준시각 ${escapeHtml(d.as_of)} (${escapeHtml(d.timezone)})</span>
+    </div>
+    <div class="stat-grid">${cardsHtml}</div>
+    <div class="panel" id="ops-overdue" style="margin-top:16px;">
+      <h2>지연 A/S (${d.overdue.count}건)${opsListCapNote(d.overdue)}</h2>
+      ${opsTicketTableHtml(d.overdue.items)}
+    </div>
+    <div class="panel" id="ops-unscheduled" style="margin-top:16px;">
+      <h2>일정 미정 (${d.unscheduled.count}건)${opsListCapNote(d.unscheduled)}</h2>
+      ${opsTicketTableHtml(d.unscheduled.items)}
+    </div>
+    <div class="panel" id="ops-visits_today" style="margin-top:16px;">
+      <h2>오늘 방문 예정 (${d.visits_today.count}건)${opsListCapNote(d.visits_today)}</h2>
+      ${opsTicketTableHtml(d.visits_today.items)}
+    </div>
+    <div class="panel" id="ops-warranty_expiring" style="margin-top:16px;">
+      <h2>보증 임박 — ${escapeHtml(d.warranty_expiring.days)}일 이내 (${d.warranty_expiring.count}건)${opsListCapNote(d.warranty_expiring)}</h2>
+      ${opsWarrantyTableHtml(d.warranty_expiring.items)}
+    </div>`;
+  } catch (e) { msg.textContent = '오류: ' + e.message; }
+}
+
+function opsListCapNote(section) {
+  const count = Number(section && section.count || 0);
+  const shown = (section && section.items && section.items.length) || 0;
+  if (count > shown) {
+    return ` <span style="color:#8B979B; font-size:12.5px; font-weight:500;">(목록 ${shown}건만 표시)</span>`;
+  }
+  return '';
+}
+
+function scrollToOpsSection(key) {
+  const el = document.getElementById('ops-' + key);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+const OPS_WEEKLY_CARDS = [
+  { key: 'unprocessed', label: '미처리 A/S', cls: 'stat-card-red', note: '완료·취소가 아닌 열린 티켓 전체(접수·일정·진행중 포함)' },
+  { key: 'visits_next_week', label: '다음 주 방문', cls: 'stat-card-purple', note: '다음 ISO 주(월~일, Asia/Seoul) 방문 예정' },
+  { key: 'inspection_due', label: '점검 대상', cls: 'stat-card-blue', note: '보증 만료 기반 점검 대상(ACTIVE, 다음 주 만료)' }
+];
+
+async function loadOpsWeekly() {
+  msg.textContent = '불러오는 중...';
+  try {
+    const res = await api('GET', '/care/ops-weekly');
+    msg.textContent = '';
+    const d = res.data || {};
+    const week = d.week || {};
+
+    const cardsHtml = OPS_WEEKLY_CARDS.map(c => {
+      const section = d[c.key] || { count: 0, items: [] };
+      return `<div class="stat-card ${c.cls}" ${actionAttrs('scrollToOpsSection', [c.key])}>
+      <div class="stat-card-top">
+        <span class="stat-card-label">${escapeHtml(c.label)}</span>
+        <span class="stat-card-icon">${Number(section.count) || 0}</span>
+      </div>
+      <div class="stat-card-value">${Number(section.count) || 0}건</div>
+      <div class="stat-card-note">${escapeHtml(c.note)}</div>
+    </div>`;
+    }).join('');
+
+    const weekLabel = week.label || '-';
+    const weekRange = (week.start_date && week.end_date)
+      ? `${week.start_date} ~ ${week.end_date}`
+      : '-';
+
+    content.innerHTML = `<div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
+      <div>
+        <h2 style="margin:0;">주간 운영 보고</h2>
+        <p style="margin:6px 0 0; color:#8B979B; font-size:13px;">
+          ${escapeHtml(weekLabel)}
+          · ${escapeHtml(weekRange)}
+          · 기준 ${escapeHtml(d.as_of || '-')} (${escapeHtml(d.timezone || 'Asia/Seoul')})
+        </p>
+      </div>
+    </div>
+    <p style="margin:12px 0 0; color:#64748b; font-size:12.5px; line-height:1.5;">
+      미수금은 PaymentOrder/입금원장 도입 후 제공하며 현재 보고에 포함하지 않습니다.
+    </p>
+    <div class="stat-grid">${cardsHtml}</div>
+    <div class="panel" id="ops-unprocessed" style="margin-top:16px;">
+      <h2>미처리 A/S (${Number((d.unprocessed && d.unprocessed.count) || 0)}건)${opsListCapNote(d.unprocessed)}</h2>
+      ${opsTicketTableHtml(d.unprocessed && d.unprocessed.items)}
+    </div>
+    <div class="panel" id="ops-visits_next_week" style="margin-top:16px;">
+      <h2>다음 주 방문 예정 (${Number((d.visits_next_week && d.visits_next_week.count) || 0)}건)${opsListCapNote(d.visits_next_week)}</h2>
+      ${opsTicketTableHtml(d.visits_next_week && d.visits_next_week.items)}
+    </div>
+    <div class="panel" id="ops-inspection_due" style="margin-top:16px;">
+      <h2>보증 만료 기반 점검 대상 (${Number((d.inspection_due && d.inspection_due.count) || 0)}건)${opsListCapNote(d.inspection_due)}</h2>
+      ${opsWarrantyTableHtml(d.inspection_due && d.inspection_due.items)}
+    </div>`;
+  } catch (e) { msg.textContent = '오류: ' + e.message; }
+}
+
 async function loadWarranty() {
   msg.textContent = '불러오는 중...';
   try {
     const res = await api('GET', '/care/warranty-expiring?days=30');
     msg.textContent = '';
     const rows = res.data.map(e => `<tr>
-      <td>${e.site_name}</td><td>${e.contact_phone || ''}</td>
-      <td>${e.model}</td><td>${e.category}</td><td>${e.warranty_ends_at}</td>
-      <td><button class="ghost" ${actionAttrs('quickOutreach', [e.site_id, e.id])}>교체제안 접촉 예약</button></td>
+      <td>${escapeHtml(e.site_name || '')}</td><td>${escapeHtml(e.contact_phone || '')}</td>
+      <td>${escapeHtml(e.model || '')}</td><td>${escapeHtml(e.category || '')}</td><td>${escapeHtml(e.warranty_ends_at || '')}</td>
+      <td><button class="ghost" ${actionAttrs('quickOutreach', [e.site_id, e.id], { stopPropagation: true })}>교체제안 접촉 예약</button></td>
     </tr>`).join('');
-    content.innerHTML = `<p style="color:#94a3b8">30일 이내 보증 만료 — 재구매·교체판매 제안 대상</p>
+    content.innerHTML = `<p style="color:#94a3b8">30일 이내 보증 만료(ACTIVE) — 재구매·교체판매 제안 대상</p>
     <table><thead><tr>
       <th>사업장</th><th>연락처</th><th>모델</th><th>종류</th><th>보증만료일</th><th></th>
     </tr></thead><tbody>${rows || emptyStateRow(6, '보증 임박 대상 없음', '30일 이내 보증 만료 예정 장비가 없습니다.')}</tbody></table>`;
@@ -1480,7 +1605,7 @@ document.querySelectorAll('nav button[data-view]').forEach(btn => {
     document.querySelectorAll('nav button[data-view]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     const view = btn.dataset.view;
-    if (view === 'home') loadModulePlaceholder(MODULE_PLACEHOLDERS.home.title, MODULE_PLACEHOLDERS.home.description, MODULE_PLACEHOLDERS.home.outline);
+    if (view === 'home') loadOpsSummary();
     else if (view === 'today') loadTickets('RECEIVED', true);
     else if (view === 'progress') loadTickets('IN_PROGRESS', false);
     else if (view === 'done') loadTickets('COMPLETED', false);
@@ -1495,7 +1620,7 @@ document.querySelectorAll('nav button[data-view]').forEach(btn => {
     else if (view === 'messages') loadModulePlaceholder(MODULE_PLACEHOLDERS.messages.title, MODULE_PLACEHOLDERS.messages.description, MODULE_PLACEHOLDERS.messages.outline);
     else if (view === 'todos') loadModulePlaceholder(MODULE_PLACEHOLDERS.todos.title, MODULE_PLACEHOLDERS.todos.description, MODULE_PLACEHOLDERS.todos.outline);
     else if (view === 'files') loadModulePlaceholder(MODULE_PLACEHOLDERS.files.title, MODULE_PLACEHOLDERS.files.description, MODULE_PLACEHOLDERS.files.outline);
-    else if (view === 'reports') loadModulePlaceholder(MODULE_PLACEHOLDERS.reports.title, MODULE_PLACEHOLDERS.reports.description, MODULE_PLACEHOLDERS.reports.outline);
+    else if (view === 'reports') loadOpsWeekly();
     else if (view === 'settings') loadModulePlaceholder(MODULE_PLACEHOLDERS.settings.title, MODULE_PLACEHOLDERS.settings.description, MODULE_PLACEHOLDERS.settings.outline);
     else if (view === 'newcustomer') loadNewCustomerForm();
     else if (view === 'new') loadNewTicketForm();

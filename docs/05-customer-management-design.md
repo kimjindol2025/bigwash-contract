@@ -603,39 +603,57 @@ customer_merge_history
 > 발생한 상담·판매·견적·계약·출장·결제·사후관리 기록을 하나의 시간선으로
 > 연결하고 다음 행동을 알려주는 회사 운영의 중심 시스템이다.
 
-## 32. 실제 구현 대조 (2026-07-20 기준)
+## 32. 실제 구현 대조 (2026-07-21 갱신)
 
 이 절만 코드 변경에 따라 갱신한다 — 위 1~31장은 목표 스펙 원문이므로 구현
 여부와 상관없이 고치지 않는다. 확인 기준은 **함수·라우트·테이블 존재
 여부**다(줄번호 아님 — 코드가 옮겨져도 이 절의 서술이 낡지 않도록).
+2026-07-20 버전은 타임라인·전화번호 정규화·견적/담당자 구현을 반영하지
+못한 채 낡아 있었다 — 이번 갱신에서 `grep`으로 실측 재대조했다
+(`docs/09-implementation-schedule.md` 1주차, gap review 근거).
 
 ### 30장 "1차" 항목별 현재 상태
 
 | 1차 항목 | 상태 | 근거 |
 |---|---|---|
 | 신규 고객 빠른 등록 | ✅ 구현됨 | `create-customer`(`src/washcare.fl`), `POST /care/customers`, Admin UI "+ 신규 고객 등록" |
-| 고객 검색 | ✅ 구현됨(부분) | `search-customers`(이름/전화/주소/메모 LIKE), `GET /care/customers?q=`. 4장이 요구하는 "하이픈 무관 검색"은 `LIKE '%q%'`라 부분 문자열은 되지만 자릿수 정규화(하이픈 제거 후 비교)는 안 됨 — 갭 |
+| 고객 검색 | ✅ 구현됨 | `search-customers`(이름/전화/주소/메모 LIKE), `GET /care/customers?q=&filter=`. 4장이 요구하는 "하이픈 무관 검색"도 `REPLACE(REPLACE(phone,'-',''),' ','') LIKE`로 구현됨(`washcare.fl` ~393-420) — 이전 버전이 "정규화 안 됨(갭)"으로 적었던 것은 오류, 이미 해소됨 |
 | 고객 상세 기본정보 | ✅ 구현됨(부분) | `GET /care/customers/:id`, Admin UI 고객 상세. 8.1절 "상단 요약"의 미수금·연간관리 여부는 미구현(해당 모듈 자체가 없음) |
 | 상담 기록 연결 | ✅ 구현됨 | `consultations` 테이블, `create-consultation`/`list-customer-consultations`/`complete-consultation`, 관련 라우트 7종 |
 | 다음 연락일 | ✅ 구현됨 | `list-followups-today`, `GET /care/consultations/due-today`, Admin UI "오늘 다시 연락할 고객" |
-| **고객 목록** | ✅ 구현됨(33장 8컬럼 기준) | `search-customers`가 33장에서 확정한 8컬럼(고객번호/고객명/사업장명/연락처/지역/구분/최근연락/다음연락)으로 확장됨, 전화번호 하이픈·공백 정규화 검색도 포함(`REPLACE(REPLACE(c.phone,'-',''),' ','')`), Admin UI 모바일 대응까지 완료 |
-| **고객 타임라인** | ✅ 구현됨(10장 원칙대로 전용 테이블 없이 UNION 조회) | `list-customer-timeline`(`src/washcare.fl`)이 `consultations`/`part_sales`/`quotes`/`contracts`/`service_tickets`/`customer_followups` 6개 테이블을 `UNION ALL`로 묶어 시간순 조회, `GET /care/timeline`, Admin UI 고객 상세 "타임라인" 탭 + 유형별 필터 칩. 10장 원문의 문자·카카오·이메일·입금·미수금·사진·문서·상태변경 이력은 해당 모듈(`notification_deliveries`/회계/`attachments`)이 아직 없어 갭으로 남음 |
+| **고객 목록** | ⏸ 부분 구현 | `loadCustomerHome`+`runCustomerSearch`(`washcare-admin.html`)가 빈 검색어+필터만으로 33장이 확정한 8컬럼(고객번호/고객명/사업장명/연락처/지역/구분/최근연락/다음연락)을 그대로 렌더해 사실상 전체 목록으로 쓸 수 있다. 다만 전용 메뉴·URL·자체 정렬 컨트롤은 없다 — 이전 버전의 "❌ 미구현"은 오류(P1-7, 전용 UX 완성은 별도 항목으로 남김) |
+| **고객 타임라인** | ✅ 구현됨(10장 원칙대로 전용 테이블 없이 UNION 조회) | `list-customer-timeline`(`src/washcare.fl`)이 `consultations`/`part_sales`/`quotes`/`contracts`/`service_tickets`/`customer_followups` 6개 테이블을 `UNION ALL`로 묶어 시간순 조회하고, `GET /care/timeline`과 Admin UI 유형별 필터를 제공한다(`tests/test_customer_2nd_phase.fl`). 문자·카카오·이메일·입금·미수금·사진·문서·상태변경 이력은 관련 모듈이 없어 후속 갭으로 남는다. |
 
-### 2차·3차 항목
+### 2차·3차 항목 재대조
 
-`docs/05` v1의 24장 갭 분석과 동일 — 장비(`equipment`)·출장(`service_tickets`)은
-이미 Phase 1로 구현됨, 견적(`quotes`)·계약금 세분화·연간관리(`care_plans`)·
-미수금 원장(`payment_orders`)·문자발송(`notification_deliveries`)·사진문서
-(`attachments`)·담당자(`customer_contacts`)·현장 확장·중복병합은 전부 미구현.
+30장 2~3차 목록 중 실제로는 이미 구현된 항목이 있어 아래로 정정한다 —
+`docs/05` v1의 24장 갭 분석을 그대로 따르지 않는다.
+
+| 항목 | 상태 | 근거 |
+|---|---|---|
+| 장비(`equipment`) | ✅ 구현됨 | Phase 1, `GET/POST /care/equipment` |
+| 출장(`service_tickets`) | ✅ 구현됨 | Phase 1 |
+| 견적(`quotes`) | ✅ 구현됨 | `quotes` 테이블, `POST/GET /care/quotes`, `PUT /care/quotes/:id/status`, `POST /care/quotes/:id/convert`, Admin 고객 상세 견적 탭 |
+| 담당자(`customer_contacts`) | ✅ 구현됨 | `customer_contacts` 테이블, `POST/GET /care/customer-contacts`, Admin 고객 상세 담당자 탭 |
+| 고객 할 일(`customer_tasks`) | ✅ 구현됨 | `customer_tasks` 테이블, `POST/GET /care/customer-tasks`, `PUT /care/customer-tasks/:id/complete` |
+| 사후관리(`customer_followups`) | ✅ 구현됨 | `customer_followups` 테이블, `POST/GET /care/customer-followups`, `PUT /care/customer-followups/:id/complete` |
+| 계약금 세분화 | ❌ 미구현 | `contracts.status` 단일 필드만, 계약금/중도금/잔금 세분화 없음 |
+| 연간관리(`care_plans`) | ❌ 미구현 | 테이블 없음 — `docs/09-implementation-schedule.md` 4~5주차 예정 |
+| 미수금 원장(`payment_orders`) | ❌ 미구현 | 테이블 없음 — `docs/09` 원칙상 PaymentOrder 정의 후 착수 |
+| 문자발송(`notification_deliveries`) | ❌ 미구현 | 테이블·라우트 없음 |
+| 사진문서(`attachments`) | ❌ 미구현 | 테이블·라우트 없음 |
+| 현장 확장 | ⏸ 부분 | `sites` 기본 필드만, 12장이 요구하는 담당자·주차·출입 등 확장 필드는 없음 |
+| 중복병합 | ❌ 미구현 | `customer_merge_history` 등 없음 |
+
 자세한 컬럼·테이블 설계는 이 문서 v1의 대응 장(현재 이 문서에도 6~28장으로
 같은 내용이 재구성돼 있음)을 그대로 따른다 — 다시 쓰지 않는다.
 
 ### 다음 단계
 
-사용자가 이미 지정: **고객 목록 페이지 하나만 화면 단위로 확정.** 4장의
-표시 항목·필터·검색 항목을 기준으로, 실제 API(`GET /care/customers`
-확장 또는 신규 `GET /care/customers/list` 등)와 Admin UI 화면을 다음 계획
-단계에서 설계한다 — 이 문서는 그 설계의 입력 스펙 역할만 한다.
+고객 목록 페이지의 전용 UX(전용 메뉴/URL, 정렬 컨트롤)는 33장 계약과 대조해
+별도로 마무리한다. 그 외 남은 항목의 우선순위는
+`docs/09-implementation-schedule.md`(6주 로드맵)를 따른다 — 이 절은 그
+로드맵의 입력 근거 역할만 한다.
 
 ## 33. 1차 고객 목록 컬럼 확정 (2026-07-20)
 
@@ -654,7 +672,7 @@ customer_merge_history
 | 지역 | `customers.address` 파싱 | 저장된 주소 앞부분(시/도)만 잘라 표시. 파싱 실패 시 address 원문 노출. 별도 입력 필드 신설 안 함 |
 | 고객 유형 | `customers.customer_type` | 기존 4종(LEAD/CUSTOMER/SERVICE/VENDOR) 그대로. 6장의 8종 세부 유형은 이번 범위 아님 |
 | 최근 연락일 | `consultations` 최신 레코드 | customer_id 기준 최신 상담일 |
-| 다음 관리일 | `consultations.next_followup_at` | 기존 `list-followups-today` 로직 재사용 |
+| 다음 관리일 | `consultations.next_contact_at` | 기존 `list-followups-today` 로직 재사용. `next_followup_at`은 별개 테이블 `customer_followups`의 컬럼이므로 혼동 주의(`phase1-db.fl`) |
 
 ### 제외 (4개, 2~3차로 명시적 연기)
 

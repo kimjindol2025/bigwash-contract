@@ -1,3 +1,7 @@
 db/backups/
 *.sqlite-wal
 *.sqlite-shm
+frontend/node_modules/
+frontend/.next/
+.env
+.env.local

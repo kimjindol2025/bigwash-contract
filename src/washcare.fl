@@ -653,6 +653,9 @@
       {:site_id site-id :site_public_token raw-token})))
 
 ;; ---- 보증 만료 임박 (판매 관리 대시보드용, 재구매·교체판매 트리거 후보) ----
+;; 2026-07-21: 운영집계(ops-summary)와 공유하는 로직이라 ACTIVE 장비만 대상으로
+;; 좁혔다(RETIRED/REPAIR 장비는 재구매 제안 대상이 아님 — docs/09 2주차 확정 규칙).
+;; 목록은 다른 운영 목록과 동일하게 최대 50건으로 캡한다.
 (defn list-warranty-expiring [days]
   (let [window-days (bounded-days days 30 "days")]
     (db_query DB
@@ -660,11 +663,261 @@
               s.id AS site_id, s.name AS site_name, s.contact_phone
        FROM equipment e
        JOIN sites s ON s.id = e.site_id
-       WHERE e.warranty_ends_at IS NOT NULL
-         AND date(e.warranty_ends_at) >= date('now')
-         AND date(e.warranty_ends_at) <= date('now', ?)
-       ORDER BY e.warranty_ends_at"
+       WHERE e.status = 'ACTIVE'
+         AND e.warranty_ends_at IS NOT NULL
+         AND date(e.warranty_ends_at) >= date('now', '+9 hours')
+         AND date(e.warranty_ends_at) <= date('now', '+9 hours', ?)
+       ORDER BY e.warranty_ends_at
+       LIMIT 50"
       [(str "+" window-days " days")])))
+
+(defn count-warranty-expiring [days]
+  (let [window-days (bounded-days days 30 "days")]
+    (get (first (db_query DB
+      "SELECT COUNT(*) AS c
+       FROM equipment e
+       WHERE e.status = 'ACTIVE'
+         AND e.warranty_ends_at IS NOT NULL
+         AND date(e.warranty_ends_at) >= date('now', '+9 hours')
+         AND date(e.warranty_ends_at) <= date('now', '+9 hours', ?)"
+      [(str "+" window-days " days")])) :c)))
+
+;; ---- 운영 대시보드 집계 (2주차, docs/09 §3 — 미수금 제외, 담당자 배정 컬럼 없음) ----
+;;
+;; 확정 규칙(Codex, 2026-07-21):
+;;  - overdue(지연): scheduled_at 있고 status IN (RECEIVED,SCHEDULED)이며
+;;    Seoul 기준 현재시각보다 과거(strict <, 동일 시각은 지연 아님)
+;;  - unscheduled(일정 미정): scheduled_at 없고 status IN (RECEIVED,SCHEDULED).
+;;    "담당자 미배정"이 아니다 — service_tickets에 담당자 컬럼이 없고
+;;    service_visits.technician은 방문 완료 후에만 존재하는 사후 이력이라
+;;    배정 여부를 나타낼 수 없다(신규 컬럼 도입 전까지 이 명칭·정의를 쓰지 않는다).
+;;  - visits_today(오늘 방문): Seoul 오늘 날짜의 scheduled_at(예정), 완료/취소 제외.
+;;    service_visits(방문 완료 이력)는 여기 쓰지 않는다 — "오늘 나갈 일"이지
+;;    "오늘 끝난 일"이 아니다.
+;;  - warranty_expiring: 위 list-warranty-expiring/count-warranty-expiring 재사용
+;;    (이미 ACTIVE 필터 적용됨).
+;; 모든 "지금"은 (datetime|date)('now', '+9 hours')로 Seoul 달력을 근사한다 —
+;; SQLite 기본 now()는 UTC라서 보정 없이는 자정 근처 티켓이 하루 어긋난다.
+
+(defn count-ops-overdue []
+  (get (first (db_query DB
+    "SELECT COUNT(*) AS c
+     FROM service_tickets t
+     WHERE t.status IN ('RECEIVED', 'SCHEDULED')
+       AND t.scheduled_at IS NOT NULL AND trim(t.scheduled_at) <> ''
+       AND datetime(t.scheduled_at) < datetime('now', '+9 hours')"
+    [])) :c))
+
+(defn list-ops-overdue []
+  (db_query DB
+    "SELECT t.id, t.site_id, t.symptom, t.priority, t.status, t.scheduled_at,
+            s.name AS site_name, s.contact_phone
+     FROM service_tickets t
+     JOIN sites s ON s.id = t.site_id
+     WHERE t.status IN ('RECEIVED', 'SCHEDULED')
+       AND t.scheduled_at IS NOT NULL AND trim(t.scheduled_at) <> ''
+       AND datetime(t.scheduled_at) < datetime('now', '+9 hours')
+     ORDER BY t.scheduled_at ASC, t.id ASC
+     LIMIT 50"
+    []))
+
+(defn count-ops-unscheduled []
+  (get (first (db_query DB
+    "SELECT COUNT(*) AS c
+     FROM service_tickets t
+     WHERE t.status IN ('RECEIVED', 'SCHEDULED')
+       AND (t.scheduled_at IS NULL OR trim(t.scheduled_at) = '')"
+    [])) :c))
+
+(defn list-ops-unscheduled []
+  (db_query DB
+    "SELECT t.id, t.site_id, t.symptom, t.priority, t.status, t.scheduled_at,
+            s.name AS site_name, s.contact_phone
+     FROM service_tickets t
+     JOIN sites s ON s.id = t.site_id
+     WHERE t.status IN ('RECEIVED', 'SCHEDULED')
+       AND (t.scheduled_at IS NULL OR trim(t.scheduled_at) = '')
+     ORDER BY t.id DESC
+     LIMIT 50"
+    []))
+
+(defn count-ops-visits-today []
+  (get (first (db_query DB
+    "SELECT COUNT(*) AS c
+     FROM service_tickets t
+     WHERE t.status NOT IN ('COMPLETED', 'CANCELLED')
+       AND t.scheduled_at IS NOT NULL AND trim(t.scheduled_at) <> ''
+       AND date(t.scheduled_at) = date('now', '+9 hours')"
+    [])) :c))
+
+(defn list-ops-visits-today []
+  (db_query DB
+    "SELECT t.id, t.site_id, t.symptom, t.priority, t.status, t.scheduled_at,
+            s.name AS site_name, s.contact_phone
+     FROM service_tickets t
+     JOIN sites s ON s.id = t.site_id
+     WHERE t.status NOT IN ('COMPLETED', 'CANCELLED')
+       AND t.scheduled_at IS NOT NULL AND trim(t.scheduled_at) <> ''
+       AND date(t.scheduled_at) = date('now', '+9 hours')
+     ORDER BY t.scheduled_at ASC, t.id ASC
+     LIMIT 50"
+    []))
+
+(defn ops-summary-as-of []
+  (str-replace
+    (get (first (db_query DB "SELECT datetime('now', '+9 hours') AS as_of" [])) :as_of)
+    " " "T"))
+
+(defn get-ops-summary [warranty-days]
+  (let [window-days (bounded-days warranty-days 30 "warranty_days")]
+    {:as_of (str (ops-summary-as-of) "+09:00")
+     :timezone "Asia/Seoul"
+     :overdue {:count (count-ops-overdue) :items (list-ops-overdue)}
+     :unscheduled {:count (count-ops-unscheduled) :items (list-ops-unscheduled)}
+     :visits_today {:count (count-ops-visits-today) :items (list-ops-visits-today)}
+     :warranty_expiring {:count (count-warranty-expiring window-days)
+                          :days window-days
+                          :items (list-warranty-expiring window-days)}}))
+
+;; ---- 주간 운영보고 (3주차, docs/09 §4 — 미수금 제외, week/inspection_days 파라미터
+;; 없음, 신규 인덱스 없음. 2주차 (status,scheduled_at) 인덱스·상태 필터·Asia/Seoul
+;; 보정 관용구를 그대로 재사용) ----
+;;
+;; SQLite date()/strftime()는 ISO 8601 주차(%G/%V)를 지원하지 않으므로
+;; 월요일 계산 + "목요일 트릭"(어떤 주의 목요일은 항상 그 주의 ISO 연도에
+;; 속한다는 성질)으로 직접 계산한다 — 이렇게 하면 연말연초 경계
+;; (예: 2025-12-29~2026-01-04는 2026-W01, 2026년은 53주짜리 해)가 자동으로
+;; 맞아떨어진다.
+
+;; 날짜 문자열이 속한 주의 월요일. iso_dow = ((%w+6)%7)+1(월=1..일=7)이므로
+;; 월요일까지 되돌릴 일수는 (%w+6)%7.
+(defn iso-monday-of [date-str]
+  (get (first (db_query DB
+    "SELECT date(?, '-' || ((CAST(strftime('%w', ?) AS INTEGER) + 6) % 7) || ' days') AS v"
+    [date-str date-str])) :v))
+
+;; 월요일 날짜 → 그 주의 ISO 연도·주차. monday+3일(목요일)의 연도가 곧 ISO
+;; 연도이고, 그 목요일의 연중 일수(day-of-year)를 7로 나눈 몫+1이 주차다.
+(defn iso-year-week-of [monday-str]
+  (let [row (first (db_query DB
+              "SELECT strftime('%Y', date(?, '+3 days')) AS iso_year,
+                      ((CAST(strftime('%j', date(?, '+3 days')) AS INTEGER) - 1) / 7) + 1 AS iso_week"
+              [monday-str monday-str]))]
+    {:iso_year (int (get row :iso_year))
+     :iso_week (get row :iso_week)}))
+
+(defn iso-week-label [iso-year iso-week]
+  (str iso-year "-W" (if (< iso-week 10) (str "0" iso-week) (str iso-week))))
+
+;; as-of(YYYY-MM-DD, 이미 검증됨)가 속한 주의 "다음" ISO 주 정보.
+;; start_date/end_date는 둘 다 포함 경계(월요일~일요일).
+(defn next-iso-week-info [as-of]
+  (let [this-monday (iso-monday-of as-of)
+        next-monday (get (first (db_query DB "SELECT date(?, '+7 days') AS v" [this-monday])) :v)
+        yw (iso-year-week-of next-monday)
+        end-date (get (first (db_query DB "SELECT date(?, '+6 days') AS v" [next-monday])) :v)]
+    {:kind "next"
+     :iso_year (get yw :iso_year)
+     :iso_week (get yw :iso_week)
+     :label (iso-week-label (get yw :iso_year) (get yw :iso_week))
+     :start_date next-monday
+     :end_date end-date}))
+
+;; 형식(YYYY-MM-DD) + 실존 여부(round-trip: date(x)=x — SQLite는 2026-02-30
+;; 같은 값을 조용히 다음달로 정규화하므로 원문과 재비교해야 걸러진다)를
+;; 모두 만족해야 유효한 달력 날짜로 인정한다.
+(defn valid-calendar-date? [date-str]
+  (and (regex_match date-str "^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+       (= (get (first (db_query DB "SELECT date(?) = ? AS v" [date-str date-str])) :v) 1)))
+
+(defn resolve-ops-weekly-as-of [as-of]
+  (let [resolved (if (or (nil? as-of) (str-blank? as-of))
+                   (get (first (db_query DB "SELECT date('now', '+9 hours') AS v" [])) :v)
+                   as-of)]
+    (if (not (valid-calendar-date? resolved))
+      (error "as_of must be a valid YYYY-MM-DD date"))
+    resolved))
+
+;; 미처리 A/S: status만으로 판정하는 현재 상태 전체 스냅샷(생성일 필터 없음).
+;; COMPLETED/CANCELLED만 제외하므로 RECEIVED/SCHEDULED/IN_PROGRESS 전부 포함.
+(defn count-ops-weekly-unprocessed []
+  (get (first (db_query DB
+    "SELECT COUNT(*) AS c FROM service_tickets WHERE status NOT IN ('COMPLETED', 'CANCELLED')"
+    [])) :c))
+
+(defn list-ops-weekly-unprocessed []
+  (db_query DB
+    "SELECT t.id, t.site_id, t.symptom, t.priority, t.status, t.scheduled_at,
+            s.name AS site_name, s.contact_phone
+     FROM service_tickets t
+     JOIN sites s ON s.id = t.site_id
+     WHERE t.status NOT IN ('COMPLETED', 'CANCELLED')
+     ORDER BY (t.scheduled_at IS NULL OR trim(t.scheduled_at) = ''), t.scheduled_at ASC, t.id ASC
+     LIMIT 50"
+    []))
+
+;; 다음 주 방문: [start-date, end-date-exclusive) 반열림 구간의 scheduled_at.
+;; service_visits(완료 이력)는 쓰지 않는다 — 아직 안 나간 예정 방문이다.
+(defn count-ops-weekly-visits [start-date end-date-exclusive]
+  (get (first (db_query DB
+    "SELECT COUNT(*) AS c
+     FROM service_tickets t
+     WHERE t.status NOT IN ('COMPLETED', 'CANCELLED')
+       AND t.scheduled_at IS NOT NULL AND trim(t.scheduled_at) <> ''
+       AND date(t.scheduled_at) >= ? AND date(t.scheduled_at) < ?"
+    [start-date end-date-exclusive])) :c))
+
+(defn list-ops-weekly-visits [start-date end-date-exclusive]
+  (db_query DB
+    "SELECT t.id, t.site_id, t.symptom, t.priority, t.status, t.scheduled_at,
+            s.name AS site_name, s.contact_phone
+     FROM service_tickets t
+     JOIN sites s ON s.id = t.site_id
+     WHERE t.status NOT IN ('COMPLETED', 'CANCELLED')
+       AND t.scheduled_at IS NOT NULL AND trim(t.scheduled_at) <> ''
+       AND date(t.scheduled_at) >= ? AND date(t.scheduled_at) < ?
+     ORDER BY t.scheduled_at ASC, t.id ASC
+     LIMIT 50"
+    [start-date end-date-exclusive]))
+
+;; 점검 대상: 다음 주 구간에 warranty_ends_at이 도래하는 ACTIVE 장비.
+;; service_visits.next_inspection_at(완료 이력의 다음 점검 예정)은 쓰지
+;; 않는다 — 2주차 warranty_expiring과 동일하게 보증만료를 점검 트리거로 쓴다.
+(defn count-ops-weekly-inspection-due [start-date end-date-exclusive]
+  (get (first (db_query DB
+    "SELECT COUNT(*) AS c
+     FROM equipment e
+     WHERE e.status = 'ACTIVE'
+       AND e.warranty_ends_at IS NOT NULL
+       AND date(e.warranty_ends_at) >= ? AND date(e.warranty_ends_at) < ?"
+    [start-date end-date-exclusive])) :c))
+
+(defn list-ops-weekly-inspection-due [start-date end-date-exclusive]
+  (db_query DB
+    "SELECT e.id, e.model, e.category, e.warranty_ends_at, e.status,
+            s.id AS site_id, s.name AS site_name, s.contact_phone
+     FROM equipment e
+     JOIN sites s ON s.id = e.site_id
+     WHERE e.status = 'ACTIVE'
+       AND e.warranty_ends_at IS NOT NULL
+       AND date(e.warranty_ends_at) >= ? AND date(e.warranty_ends_at) < ?
+     ORDER BY e.warranty_ends_at ASC, e.id ASC
+     LIMIT 50"
+    [start-date end-date-exclusive]))
+
+(defn get-ops-weekly [as-of]
+  (let [resolved-as-of (resolve-ops-weekly-as-of as-of)
+        week (next-iso-week-info resolved-as-of)
+        start-date (get week :start_date)
+        end-date-exclusive (get (first (db_query DB "SELECT date(?, '+7 days') AS v" [start-date])) :v)]
+    {:as_of resolved-as-of
+     :timezone "Asia/Seoul"
+     :week week
+     :unprocessed {:count (count-ops-weekly-unprocessed) :items (list-ops-weekly-unprocessed)}
+     :visits_next_week {:count (count-ops-weekly-visits start-date end-date-exclusive)
+                         :items (list-ops-weekly-visits start-date end-date-exclusive)}
+     :inspection_due {:count (count-ops-weekly-inspection-due start-date end-date-exclusive)
+                       :items (list-ops-weekly-inspection-due start-date end-date-exclusive)}}))
 
 ;; ---- 상담 관리 (고객관리 1차) ----
 

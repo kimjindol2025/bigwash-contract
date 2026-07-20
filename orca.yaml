@@ -1,0 +1,24 @@
+scripts:
+  setup: |
+    set -euo pipefail
+
+    cd "$ORCA_WORKTREE_PATH"
+
+    if [ -f frontend/package-lock.json ]; then
+      npm --prefix frontend ci
+    else
+      npm --prefix frontend install --no-package-lock
+    fi
+
+    for env_file in .env .env.local; do
+      if [ -f "$ORCA_ROOT_PATH/$env_file" ] &&
+         [ ! -f "$ORCA_WORKTREE_PATH/$env_file" ]; then
+        cp -p "$ORCA_ROOT_PATH/$env_file" "$ORCA_WORKTREE_PATH/$env_file"
+      fi
+    done
+
+    FREELANG_BOOTSTRAP="$(dirname "$ORCA_ROOT_PATH")/freelang-v11/bootstrap.js"
+
+    BIGWASH_REPO_ROOT="$ORCA_WORKTREE_PATH" \
+    BIGWASH_DB_PATH="$ORCA_WORKTREE_PATH/db/contracts.sqlite" \
+    node "$FREELANG_BOOTSTRAP" run "$ORCA_WORKTREE_PATH/src/phase1-db.fl"
