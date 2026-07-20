@@ -57,3 +57,18 @@
 BIGWASH_INTERNAL_API_KEY="<임의의 키>" node /root/kim/freelang-v11/bootstrap.js run src/washcare-api.fl
 # 관리자 UI: http://localhost:40101/care/admin (API 키를 페이지 상단에 입력)
 ```
+
+로컬 실행 시 저장소 절대경로가 노드마다 다르므로(`load`는 entry 파일 기준
+절대경로만 안전), `src/*.fl`의 `load`는 실행 시점 `PWD`로 저장소 루트를
+계산한다 — 반드시 저장소 루트에서 실행할 것. `PWD`가 안 잡히는 환경(pm2 등)
+에서는 `BIGWASH_REPO_ROOT`를 명시로 지정한다.
+
+### 배포 (2026-07-20~, node 25)
+
+- **운영 주소**: `https://care.dclub.kr` (node 25 `192.168.45.25:40101` →
+  node73 nginx 리버스 프록시, DNS Manager v2로 배포)
+- **프로세스**: node25에서 pm2 `washcare-api`로 상주(`pm2 save` 완료,
+  재부팅 생존). 설정은 저장소 밖 `~/pm2-configs/washcare-api.config.js`
+  (API 키 등 시크릿 포함이라 git에는 안 올림)
+- 배포 갱신: node25 `~/kim/bigwash-contract`에서 `git pull` 후
+  `pm2 restart washcare-api`
