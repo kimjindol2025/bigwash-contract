@@ -3,8 +3,9 @@ info:
   title: WashCare Phase 1 API
   description: >
     대한이엔지 장비 안심관리(WashCare) Phase 1 API. 실측 검증일 2026-07-16,
-    라우트 동기화 2026-07-21(docs/09 1~4주차, src/washcare-api.fl 라우트 전수 대조 —
-    `/care/care-plans*` 포함 시 JSON API 53개).
+    라우트 동기화 2026-07-21(docs/09 1~5주차, src/washcare-api.fl 라우트 전수 대조 —
+    `/care/care-plans*` 포함 시 JSON API 53개, 5주차는 GET /care/care-plans
+    무필터 응답 계약만 갱신되고 라우트 수는 변하지 않음).
     상세 설명은 04-washcare-api.md 참조. 정적 Admin UI(`GET /care/admin`)와
     루트 리다이렉트(`GET /`)는 JSON API가 아니므로 이 스펙에서 명시적으로
     제외한다 — Admin UI 설명은 04-washcare-api.md의 "Admin UI (MVP)" 절 참조.
@@ -950,22 +951,31 @@ paths:
         "400": { description: "Site not found | plan_code 오류 | 날짜/가격/횟수 검증 실패 | 겹치는 비취소 기간 존재" }
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
-      summary: "현장별 또는 고객별 CarePlan 목록 (4주차, 2026-07-21 추가)"
+      summary: "CarePlan 목록 — site_id/customer_id 둘 다 선택 (4주차, 2026-07-21 추가 / 5주차 무필터 확장)"
+      description: >
+        site_id/customer_id 둘 다 선택 파라미터다. site_id만 있으면 그
+        현장의 CarePlan만(무제한), customer_id만 있으면 그 고객의 모든
+        현장을 조인한 CarePlan을(무제한) 반환한다. 둘 다 생략하면 전체
+        CarePlan을 starts_at DESC, id DESC 기준 최신 50건까지만 반환한다
+        (Admin CarePlan 모듈의 "전체 가입 현황" 화면용, 5주차). 세 경로
+        모두 sites/customers를 JOIN해 customer_id/customer_name/site_name을
+        각 행에 채운다. site_id/customer_id에 정수가 아니거나 0 이하인
+        값을 주면 400 — 생략은 오류가 아니라 무필터 전체 목록으로 처리된다.
       security: [{ApiKeyAuth: []}, {}]
       parameters:
         - name: site_id
           in: query
           required: false
-          schema: { type: integer }
-          description: "site_id 또는 customer_id 중 하나 필수"
+          schema: { type: integer, minimum: 1 }
+          description: "선택. 있으면 이 현장의 CarePlan만(무제한) 반환. 정수가 아니거나 0 이하면 400"
         - name: customer_id
           in: query
           required: false
-          schema: { type: integer }
-          description: "현장 조인으로 고객의 모든 CarePlan 반환"
+          schema: { type: integer, minimum: 1 }
+          description: "선택. site_id 없이 이 값만 있으면 현장 조인으로 고객의 모든 CarePlan(무제한) 반환. 정수가 아니거나 0 이하면 400"
       responses:
         "200":
-          description: "목록 (starts_at DESC, id DESC)"
+          description: "목록 (starts_at DESC, id DESC). site_id/customer_id 둘 다 생략 시 최신 50건 cap"
           content:
             application/json:
               schema:
@@ -973,7 +983,7 @@ paths:
                 properties:
                   ok: { type: boolean }
                   data: { type: array, items: { $ref: "#/components/schemas/CarePlanRow" } }
-        "400": { description: "site_id or customer_id is required" }
+        "400": { description: "site_id must be an integer | site_id must be greater than 0 | customer_id에 대해서도 동일 — 값을 준 경우에만 발생, 생략은 오류 아님" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/care-plans/{id}:
@@ -1209,10 +1219,18 @@ components:
       description: >
         /care/care-plans* 응답 원소. effective_status는 저장되지 않는 파생
         필드 — status가 ACTIVE이고 ends_at이 지났을 때만 EXPIRED로 보여준다
-        (CANCELLED/RENEWED는 절대 EXPIRED로 바뀌지 않음).
+        (CANCELLED/RENEWED는 절대 EXPIRED로 바뀌지 않음). customer_id/
+        customer_name/site_name은 목록 전용 optional 필드다 — GET
+        /care/care-plans(site_id/customer_id 필터 여부와 무관하게 세 목록
+        경로 전부)의 응답에만 sites/customers를 JOIN해 채워지고, POST
+        생성·GET/PUT :id 단건 조회·수정·cancel·renew 응답(전부 `get-careplan`
+        경유, JOIN 없음)에는 나타나지 않는다.
       properties:
         id: { type: integer }
         site_id: { type: integer }
+        customer_id: { type: integer, nullable: true, description: "목록(GET /care/care-plans) 응답에서만 sites 조인으로 채워짐 — 단건/생성/수정/취소/갱신 응답에는 없음" }
+        customer_name: { type: string, nullable: true, description: "목록(GET /care/care-plans) 응답에서만 customers 조인으로 채워짐 — 단건/생성/수정/취소/갱신 응답에는 없음" }
+        site_name: { type: string, nullable: true, description: "목록(GET /care/care-plans) 응답에서만 sites 조인으로 채워짐 — 단건/생성/수정/취소/갱신 응답에는 없음" }
         plan_code: { type: string, enum: [TRIAL_90, BASIC_360, FIELD_790] }
         status: { type: string, enum: [ACTIVE, CANCELLED, RENEWED], description: "DB에 저장되는 값 — 시간 경과로 자동 전이하지 않음" }
         effective_status: { type: string, enum: [ACTIVE, CANCELLED, RENEWED, EXPIRED], description: "응답 조립 시 파생되는 값(저장 안 됨)" }

@@ -103,7 +103,7 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | GET | `/care/ops-summary?warranty_days=N` | 운영 대시보드 집계 — 지연·일정미정·오늘방문·보증임박 4개 섹션 (2026-07-21 2주차 추가) | O |
 | GET | `/care/ops-weekly?as_of=YYYY-MM-DD` | 주간 운영 보고 — 미처리 A/S·다음 주 방문·보증 만료 기반 점검 대상 (2026-07-21 3주차 추가). `as_of` 생략 시 Seoul 오늘 | O |
 | POST | `/care/care-plans` | 연간관리(CarePlan) 가입 생성 (2026-07-21 4주차 추가) | O |
-| GET | `/care/care-plans?site_id=X` 또는 `?customer_id=X` | 현장별 또는 고객별(현장 조인) CarePlan 목록 (2026-07-21 4주차 추가) | O |
+| GET | `/care/care-plans` | CarePlan 목록 — `site_id`/`customer_id` 둘 다 선택. 하나를 주면 그 스코프(무제한), 둘 다 생략하면 고객·현장명 조인 최신 50건 전체 목록 (2026-07-21 4주차 추가, 5주차 무필터 확장) | O |
 | GET | `/care/care-plans/:id` | CarePlan 상세 조회, `effective_status` 파생 포함 (2026-07-21 4주차 추가) | O |
 | PUT | `/care/care-plans/:id` | 사용 방문 수(`used_visits`)·`next_inspection_at`·메모 수정 (2026-07-21 4주차 추가) | O |
 | PUT | `/care/care-plans/:id/cancel` | CarePlan 취소 (2026-07-21 4주차 추가) | O |
@@ -464,14 +464,20 @@ API 변경으로 추가). 개발 단계 인증은 기존과 동일하게 fail-op
 
 응답 400: `{ok: false, error: "as_of must be a valid YYYY-MM-DD date"}`
 
-## CarePlan (연간관리, 4주차)
+## CarePlan (연간관리, 4~5주차)
 
 `docs/09-implementation-schedule.md` 4~5주차, `docs/01` §8, `docs/05` §19,
-`docs/07` §8. **백엔드만 완료됐고 Admin UI 연동은 아직 없다**(5주차 예정 —
-아래 "Admin UI" 절의 `careplan` 메뉴는 여전히 placeholder). `site_id`에 걸리며
-(`docs/01` 원본 데이터모델과 동일 — equipment/part_sales/outreach_touches와
-같은 현장 단위 앵커), `payment_status`/PG 연동은 넣지 않는다(`PaymentOrder`
-도입 전, docs/02 Phase2 원칙).
+`docs/07` §8. **백엔드(4주차)·Admin UI(5주차) 모두 완료됐다**(2026-07-21) —
+아래 "Admin UI" 절의 `careplan` 메뉴가 실 데이터 목록/가입/취소/갱신 화면으로
+동작하고, 고객 상세에 `연간관리` 탭과 상단 요약이 붙었으며, 새 A/S 접수
+폼에는 현장의 CarePlan 이용 현황을 안내만 하는 배너가 붙는다. `site_id`에
+걸리며(`docs/01` 원본 데이터모델과 동일 — equipment/part_sales/
+outreach_touches와 같은 현장 단위 앵커), `payment_status`/PG 연동·할인율
+계산·방문 자동차감·미수금 표시는 이번 범위에 없다(`PaymentOrder` 도입 전,
+docs/02 Phase2 원칙 — Admin UI도 이 원칙을 그대로 따라 화면에 할인·과금·
+자동차감 요소를 두지 않는다). **운영 배포·운영 DB 마이그레이션은 이번
+갱신에 포함되지 않는다** — `db/contracts.sqlite`는 로컬 개발 DB에만
+반영됐고 `scripts/migrate-phase1.sh` 등 운영 스크립트 실행은 하지 않았다.
 
 ### 공통 개념
 
@@ -530,14 +536,30 @@ API 변경으로 추가). 개발 단계 인증은 기존과 동일하게 fail-op
 응답 400: 위 검증 실패 전부(`site` 없음, `plan_code` 오류, 날짜 형식·실존
 오류, 가격/횟수 음수·소수, **겹치는 비취소 기간 존재**).
 
-### GET /care/care-plans?site_id=X 또는 ?customer_id=X
+### GET /care/care-plans
 
-`site_id` 또는 `customer_id` 중 하나가 필수(둘 다 없으면 400). `site_id`가
-있으면 그 현장의 CarePlan만, 없고 `customer_id`만 있으면 그 고객의 모든
-현장을 조인해 반환한다(고객 상세 "연간관리 여부" 요약이 이 경로를 쓸
-예정 — 5주차). 정렬은 `starts_at DESC, id DESC`.
+`site_id`/`customer_id` 둘 다 **선택**(5주차 확장, 2026-07-21) — 셋 중
+하나로 동작이 갈린다.
 
-응답 200: `{ok: true, data: [{...care_plans row, effective_status}, ...]}`
+| 조건 | 동작 | 캡 |
+|---|---|---|
+| `site_id`만 있음 | 그 현장의 CarePlan만(`list-site-careplans`) | 없음(무제한, 기존 계약 유지) |
+| `customer_id`만 있음 | 그 고객의 모든 현장을 조인한 CarePlan(`list-customer-careplans`) | 없음(무제한, 기존 계약 유지) |
+| 둘 다 없음 | 전체 CarePlan(`list-all-careplans`) — Admin CarePlan 모듈 "전체 가입 현황" | **최신 50건**(`starts_at DESC, id DESC` 기준, 2~3주차 ops-summary/ops-weekly/search-customers와 동일한 캡 관례) |
+
+세 경로 모두 `sites`/`customers`를 JOIN해 `customer_id`(현장의 소유
+고객)·`customer_name`·`site_name`을 응답 각 행에 채운다(호출부가 필터
+종류에 따라 응답 shape을 분기할 필요가 없도록 통일). 정렬은 세 경로 모두
+`starts_at DESC, id DESC`.
+
+`site_id`/`customer_id`에 정수가 아니거나 0 이하인 값을 주면(예:
+`site_id=abc`, `site_id=-1`) 400 — 값을 아예 생략하는 것과는 다르다(생략은
+무필터 전체 목록으로 처리됨).
+
+응답 200: `{ok: true, data: [{...care_plans row, effective_status, customer_id?, customer_name?, site_name?}, ...]}`
+
+응답 400: `{ok: false, error: "site_id must be an integer"}` 등 — `site_id`/
+`customer_id`가 정수가 아니거나 0 이하일 때만(생략은 오류가 아님).
 
 ### GET /care/care-plans/:id
 
@@ -593,7 +615,7 @@ API 변경으로 추가). 개발 단계 인증은 기존과 동일하게 fail-op
 `GET /care/admin` — 단일 정적 HTML(`src/washcare-admin.html`, 인라인 JS, 프레임워크 없음).
 
 - 메뉴: 홈(운영 대시보드) / 오늘 접수 / 진행중 / 완료 / 고객관리 / 홍보 대상 /
-  보증 임박 / + 고객 등록 / + 접수 생성 / + 부품판매 / + 판매 등록
+  보증 임박 / 연간관리 / + 고객 등록 / + 접수 생성 / + 부품판매 / + 판매 등록
 - **홈(운영 대시보드, 2026-07-21 2주차 추가)**: `GET /care/ops-summary` 기반
   카드 4개(지연 A/S·일정 미정·오늘 방문·보증 임박) + 각 카드 클릭 시 해당
   상세 목록(티켓/장비 테이블)으로 스크롤.
@@ -603,6 +625,20 @@ API 변경으로 추가). 개발 단계 인증은 기존과 동일하게 fail-op
   **「보증 만료 기반 점검 대상」**. 미수금은 설명 문장만 두고 카드·키·가짜
   값을 두지 않는다. 「담당자 미배정」 라벨 금지. 기존 `escapeHtml` /
   `actionAttrs` / CSP 인라인 핸들러 패턴 유지(`loadOpsWeekly`).
+- **연간관리(CarePlan, 2026-07-21 5주차 추가)**: `GET /care/care-plans`
+  무필터 최신 50건 전체 목록 + `effective_status` 클라이언트 필터(전체/
+  이용중/만료/취소/갱신됨) + 고객/현장/플랜/기간/가격/사용·잔여 방문/상태
+  표시. `site_id` + plan_code 3종 + 시작일 + 선택 가격/포함횟수/점검일/
+  memo 가입 폼(`POST /care/care-plans`). `ACTIVE` 행은 `used_visits`
+  절대값 정정 입력, `confirm()` 확인을 거치는 취소(`PUT .../cancel`)·
+  갱신(`POST .../renew`) 버튼을 제공하고, 가입/정정/취소/갱신은 공유
+  busy 플래그로 중복 제출을 막는다. 고객 상세에는 `연간관리` 탭(현장
+  select 기반 가입 폼 포함)과 상단 요약 칩("플랜명 / 잔여 N회"/"미가입")을 추가했고,
+  새 A/S 접수 폼은 `site_id` 변경 시 해당 현장의 ACTIVE 플랜·종료일·잔여
+  방문횟수를 `role="status"` 배너로 안내만 한다(요청 토큰으로 빠른 site_id
+  변경 시 응답 레이스를 막음). **할인·과금·방문 자동차감·접수 차단은
+  어디에도 없다** — 배너는 표시 전용이고 티켓 생성 로직은 CarePlan과
+  무관하게 그대로 동작한다.
 - 기능: 목록 조회, 상세 조회(방문·상태변경 이력 포함), 상태 변경(허용된 다음 상태만
   버튼으로 노출), 공개 링크 재발급 + 토큰 복사, 신규 접수 생성 + 발급된 토큰 복사,
   부품판매 등록, 홍보 대상 목록에서 긍정/부정/무응답 원클릭 기록(무응답=30일 후 재접촉,
@@ -610,7 +646,8 @@ API 변경으로 추가). 개발 단계 인증은 기존과 동일하게 fail-op
   장비관리 링크를 바로 복사), 보증 임박 목록에서 "교체제안 접촉 예약" 원클릭(3일 후),
   고객관리 홈에서 "오늘 다시 연락할 고객 / 최근 상담 고객 / 다음 조치 남은 고객" 3개
   리스트 조회, 고객 부분검색(이름/전화/주소/메모), 신규 고객 10초 등록, 고객 상세 내
-  상담 기록 등록/완료 처리
+  상담 기록 등록/완료 처리, 고객 상세 조회 시 요청 토큰 기반 identity guard로
+  느린 응답이 다른 고객 화면을 덮어쓰지 않게 방지(`viewCustomer`)
 - API 키는 페이지 상단 입력창에 입력 → `localStorage`에 저장 → 모든 호출에
   `x-api-key` 헤더로 사용. 페이지 자체(HTML/JS)는 인증 없이 열람 가능하다.
   데이터 호출은 `internal-authorized?`(`src/washcare-api.fl`)를 거치는데, 이

@@ -39,7 +39,7 @@
 | 1주차 | 07-21(화) ~ 07-27(월) | 문서 정합 + 개발 공개정책 + 에러계약 기준 | P1-3, P1-4, P1-5, P0-3 정책화 |
 | 2주차 | 07-28(화) ~ 08-03(월) | 지연 A/S·일정 미정·오늘 방문·점검임박 운영집계 — ✅ 완료 | P0-1 (미수금 제외) |
 | 3주차 | 08-04(화) ~ 08-10(월) | 주간 운영보고와 Admin 연결 — ✅ 완료 | P0-2 |
-| 4~5주차 | 08-11(화) ~ 08-24(월) | CarePlan 데이터/API/UI — 4주차 백엔드 ✅ / 5주차 UI 미착수 | P1-1 |
+| 4~5주차 | 08-11(화) ~ 08-24(월) | CarePlan 데이터/API/UI — 4주차 백엔드 ✅ / 5주차 UI ✅ 완료(2026-07-21) | P1-1 |
 | 6주차 | 08-25(화) ~ 08-31(월) | 회귀·운영 파일럿 및 다음 게이트 | 전체 회귀 + 게이트 결정 |
 
 각 주차 상세는 아래 2~6장. 모든 주차는 공통 항목(목표/범위/산출물/선행조건/완료기준/
@@ -300,15 +300,15 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
 
 ---
 
-## 5. 4~5주차 (08-11 화 ~ 08-24 월) — CarePlan 데이터/API/UI — 4주차 백엔드 ✅ 완료(2026-07-21) / 5주차 UI 미착수
+## 5. 4~5주차 (08-11 화 ~ 08-24 월) — CarePlan 데이터/API/UI — 4주차 백엔드 ✅ / 5주차 UI ✅ 완료(2026-07-21)
 
 ### 목표
 
 `docs/01` §8 `CarePlan`, `docs/05` §19, `docs/07` §8(연간관리)를 구현한다
 (P1-1). Admin `careplan` placeholder를 실 데이터로 대체하고 고객 상세에
-"연간관리 여부" 요약을 표시한다.
+"연간관리 여부" 요약을 표시한다. **4·5주차 모두 완료** — 아래 DoD 참조.
 
-### 범위 (4주차: 백엔드 — 완료 / 5주차: UI+연동 — 미착수)
+### 범위 (4주차: 백엔드 — 완료 / 5주차: UI+연동 — 완료)
 
 4주차 — ✅ 완료:
 - `care_plans` 테이블 신설(`phase1-db.fl`), `site_id` 앵커. `plan_code`
@@ -325,22 +325,43 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
   계약 확정.
 - 백엔드 테스트(`tests/test_careplan.fl`) 완료.
 
-5주차 — 미착수(다음 스프린트):
-- Admin UI: `careplan` placeholder 대체 — 가입/조회/갱신 화면
-- 고객 상세 페이지에 "연간관리 여부"·플랜명·잔여 출장 횟수 요약 표시
-  (`docs/05` §8.1 상단 요약 확장)
+5주차 — ✅ 완료(2026-07-21):
+- 백엔드 선행: `GET /care/care-plans`가 `site_id`/`customer_id` 둘 다
+  없어도 더 이상 400이 아니라 고객·현장명을 JOIN한 최신 50건 전체 목록을
+  반환하도록 확장(`list-all-careplans`, `src/washcare.fl`/
+  `washcare-api.fl`). `site_id`/`customer_id` 필터 목록은 기존처럼
+  무제한·격리 유지, 잘못된 정수는 여전히 400.
+- Admin UI: `careplan` placeholder 대체 — 무필터 전체 목록 + `effective_status`
+  클라이언트 필터 + 가입(site_id+plan_code 3종+시작일+선택 가격/포함횟수/
+  점검일/memo)/사용횟수 절대값 정정/`confirm()` 있는 취소·갱신 + 공유 busy
+  가드(`loadCarePlans`/`renderCarePlanHome`/`createCarePlan`/
+  `updateCarePlanUsedVisits`/`cancelCarePlan`/`renewCarePlan`,
+  `src/washcare-admin.html`)
+- 고객 상세 페이지에 "연간관리" 탭(현장 select 가입 폼 포함) + 상단 요약
+  칩("플랜명 / 잔여 N회"/"미가입") 표시(`docs/05` §8.1 상단 요약 확장). `viewCustomer`
+  요청에 요청 토큰 기반 identity guard를 추가해 느린 응답이 다른 고객
+  화면을 덮어쓰지 않게 막았다.
 - 출장 접수 시 연간관리 가입 여부 확인(참고 표시만, 자동 할인 적용 로직은
-  이번 범위 아님 — `docs/05` §19 "자동 확인" 중 표시까지만)
+  이번 범위 아님 — `docs/05` §19 "자동 확인" 중 표시까지만): 새 A/S 접수
+  폼에서 `site_id` 변경 시 해당 현장의 ACTIVE 플랜·종료일·잔여 방문횟수를
+  `role="status"` 배너로 안내. 요청 토큰으로 빠른 site_id 변경 시 응답
+  레이스를 막았고, 할인·과금·방문 자동차감·접수 차단은 어디에도 넣지 않았다.
+- 운영 배포·운영 DB 마이그레이션은 이번 범위에 없다 — 로컬 개발 DB
+  (`db/contracts.sqlite`)에만 반영, `scripts/migrate-phase1.sh` 등 운영
+  스크립트는 실행하지 않았다.
 
-### 산출물 — 4주차분 전부 반영됨
+### 산출물 — 4·5주차분 전부 반영됨
 
 - `phase1-db.fl`에 `care_plans` 테이블 + 인덱스 2개(`site_id`,
   `status`+`ends_at`) — 신규 테이블의 순수 추가라 `CREATE TABLE/INDEX IF
   NOT EXISTS`만으로 충분했고 `scripts/migrate-phase1.sh`(레거시 client_id
   백필용 1회성 스크립트)는 쓰지 않았다. 운영 DB 실행은 하지 않았다.
-- `washcare.fl`/`washcare-api.fl` CarePlan 도메인 로직·6개 라우트
-- `docs/04-washcare-api.md`에 신규 엔드포인트 문서화(이 갱신 포함)
-- (미착수) `washcare-admin.html` careplan 화면 + 고객 상세 요약 확장 — 5주차
+- `washcare.fl`/`washcare-api.fl` CarePlan 도메인 로직·6개 라우트(5주차에
+  `GET /care/care-plans` 무필터 응답 계약만 확장, 라우트 수는 그대로)
+- `docs/04-washcare-api.md`/`docs/openapi-washcare.yaml`에 신규 엔드포인트·
+  무필터 계약·`CarePlanRow` 목록 전용 optional 필드(`customer_id`/
+  `customer_name`/`site_name`) 문서화(이 갱신 포함)
+- `washcare-admin.html` careplan 화면 + 고객 상세 요약/탭 + 티켓 배너 확장(5주차)
 
 ### 선행조건 — 해소됨
 
@@ -355,9 +376,16 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
   거부, 수정 멱등, 취소, 갱신 트랜잭션과 `effective_status` 검증)
 - 기존 9종 테스트 + 신규 1종 총 10종 회귀 전부 PASS
 
-5주차(미착수, 그대로 유지):
-- Admin `careplan` placeholder 대체 + 고객 상세 "연간관리 여부" 표시 —
-  아직 구현되지 않음(`MODULE_PLACEHOLDERS.careplan`이 여전히 placeholder)
+5주차(완료, 2026-07-21):
+- Admin `careplan` placeholder 대체 + 고객 상세 "연간관리 여부" 표시 — 완료.
+  `MODULE_PLACEHOLDERS.careplan`은 정의는 남아 있지만 nav 배선이
+  `loadCarePlans()`로 교체돼 더 이상 호출되지 않는다
+- `GET /care/care-plans` 무필터 최신 50건 전체 목록 + 클라이언트
+  `effective_status` 필터, 가입/사용횟수 정정/취소·갱신(confirm)/busy 가드,
+  고객 상세 연간관리 탭+요약, 티켓 폼 CarePlan 안내 배너(표시 전용, 레이스
+  가드 포함) — 전부 실측 확인
+- 운영 배포·운영 DB 마이그레이션은 이번 DoD에 포함하지 않는다(범위 밖 —
+  위 "산출물"·"위험·중단조건" 참조)
 
 ### 테스트 — 완료
 
@@ -367,14 +395,20 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
   모두)과 COALESCE 보존, 취소, 갱신 트랜잭션과 `effective_status` 파생
   전부 검증. `site_id`/`customer_id`로 항상 스코프돼 2~3주차 전역집계
   테스트와 달리 격리 DB 하드 가드는 필수는 아니지만 동일 관례로 사용.
+  5주차 백엔드 선행분으로 무필터 전체 목록의 JOIN 필드(`customer_id`/
+  `customer_name`/`site_name`) 존재, 필터 목록 회귀 없음, 최신순 정렬 +
+  최대 50건 캡(51건 픽스처로 정확히 50건만 반환되는지) 검증을 같은 파일에
+  추가했다 — **새 테스트 파일을 만들지 않았으므로 `tests/test_*.fl` 총
+  개수는 여전히 10개**(`README.md`/`docs/RUN_GUIDE.md`와 동일).
 
 ### 담당 흐름
 
 - **Codex**: 상품 유형·가격 필드 확정(완료), 계약 보충 확인(겹침 판정
   범위·조기 갱신 계산·used_visits 감소 허용 — 전부 기존 구현과 일치 확인됨)
-- **Claude**: 스키마·API 구현, 테스트, 문서화(4주차 완료) / UI 구현(5주차 예정)
+- **Claude**: 스키마·API 구현, 테스트, 문서화(4주차 완료) / UI 구현·문서
+  동기화(5주차 완료)
 - **Cursor**: 데이터 모델 설계 리뷰(기존 `quotes`/`contracts` 패턴과의 일관성),
-  UX 검토(고객 상세 요약 배치) — 5주차 착수 시 진행
+  UX 검토(고객 상세 요약 배치) — 5주차 완료분 대조 필요 시 후속 리뷰
 
 ### 위험·중단조건
 
@@ -382,7 +416,9 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
 - 운영 DB(`db/contracts.sqlite`) 마이그레이션 원칙은 5주차에도 그대로
   유지: 실 스키마 변경이 필요해지면 백업 후 진행하며, 이 작업 지시
   (`db/contracts.sqlite`, `.gitignore`, `orca.yaml` 미변경 원칙)와 충돌하지
-  않게 별도 마이그레이션 절차로만 수행한다
+  않게 별도 마이그레이션 절차로만 수행한다. 5주차 UI 작업도 이 원칙을
+  그대로 따랐다 — **운영 배포·운영 DB 마이그레이션 실행 없음**, 로컬 개발
+  DB에만 반영됐다
 
 ---
 

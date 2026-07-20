@@ -59,6 +59,9 @@
   .stat-card-note { font-size:12px; opacity:.82; }
   .b-COMPLETED { background:#E8F7EF; color:#1C9A5B; }
   .b-CANCELLED { background:#FDEEEE; color:#D64545; }
+  .b-ACTIVE { background:#E8F7EF; color:#1C9A5B; }
+  .b-EXPIRED { background:#FFF4E5; color:#B4780A; }
+  .b-RENEWED { background:#E9F5FF; color:#226BA5; }
   .panel { background:#FFFFFF; border:1px solid #E7ECED; border-radius:14px; padding:24px; margin-top:0; }
   .placeholder-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; }
   .placeholder-card { background:#FBFAFE; border:1px solid #E6E0FA; border-left:4px solid #6C4CE0; border-radius:14px; padding:16px 16px 16px 14px; min-height:108px; }
@@ -312,6 +315,71 @@ function timelineTypeLabel(type) {
   }[type] || type || '-';
 }
 
+function carePlanCodeLabel(code) {
+  return {
+    TRIAL_90: 'TRIAL 90일',
+    BASIC_360: 'BASIC 36만원·365일',
+    FIELD_790: 'FIELD 79만원·365일',
+  }[code] || code || '-';
+}
+
+function carePlanEffectiveStatus(plan) {
+  return (plan && (plan.effective_status || plan.status)) || '-';
+}
+
+function carePlanStatusBadge(plan) {
+  return badge(carePlanEffectiveStatus(plan));
+}
+
+function carePlanRemainingVisits(plan) {
+  const included = Number(plan && plan.included_visits) || 0;
+  const used = Number(plan && plan.used_visits) || 0;
+  return included - used;
+}
+
+function parseIntegerValue(rawValue, options) {
+  const { fieldName, required = false, allowNegative = false, allowEmpty = false } = options;
+  const text = String(rawValue ?? '').trim();
+  if (text === '') {
+    if (allowEmpty) return null;
+    throw new Error(`${fieldName}는 필수입니다.`);
+  }
+  if (!/^-?\d+$/.test(text)) {
+    throw new Error(`${fieldName}는 정수만 허용합니다.`);
+  }
+  const value = Number(text);
+  if (!Number.isFinite(value) || !Number.isSafeInteger(value)) {
+    throw new Error(`${fieldName}는 유효한 정수가 아닙니다.`);
+  }
+  if (!allowNegative && value < 0) {
+    throw new Error(`${fieldName}는 0 이상 정수여야 합니다.`);
+  }
+  return value;
+}
+
+function parsePositiveInteger(rawValue, fieldName) {
+  const value = parseIntegerValue(rawValue, { fieldName, required: true, allowNegative: false });
+  if (value <= 0) throw new Error(`${fieldName}는 1 이상의 정수여야 합니다.`);
+  return value;
+}
+
+function parseNonNegativeInteger(rawValue, fieldName, allowEmpty = false) {
+  return parseIntegerValue(rawValue, { fieldName, required: !allowEmpty, allowNegative: false, allowEmpty });
+}
+
+function parseCarePlanOptionalInteger(rawValue, fieldName) {
+  return parseNonNegativeInteger(rawValue, fieldName, true);
+}
+
+function parseCarePlanUsedVisits(rawValue, includedVisits) {
+  const used = parseNonNegativeInteger(rawValue, '사용 횟수', false);
+  const included = parseNonNegativeInteger(includedVisits, '포함 방문횟수', true);
+  if (included != null && used > included) {
+    throw new Error('사용 횟수는 포함 방문횟수를 초과할 수 없습니다.');
+  }
+  return used;
+}
+
 const QUOTE_NEXT = {
   DRAFT: ['SENT'],
   SENT: ['REVIEWING', 'ON_HOLD', 'REJECTED'],
@@ -347,11 +415,25 @@ const TIMELINE_FILTERS = [
   ['FOLLOWUP', '사후관리'],
 ];
 
+const CAREPLAN_FILTERS = [
+  ['ALL', '전체'],
+  ['ACTIVE', '이용중'],
+  ['EXPIRED', '만료'],
+  ['CANCELLED', '취소'],
+  ['RENEWED', '갱신됨'],
+];
+
 let currentCustomerFilter = 'ALL';
 let currentCustomerTab = 'basic';
 let currentTimelineType = 'ALL';
 let currentCustomerId = null;
 let currentCustomerDetail = null;
+let customerDetailRequestToken = 0;
+let customerTimelineRequestToken = 0;
+let currentCarePlanFilter = 'ALL';
+let currentCarePlanRows = [];
+let carePlanBusy = false;
+let ticketCarePlanRequestToken = 0;
 
 function emptyState(title = '없음', description = '표시할 데이터가 아직 없습니다.') {
   return `<div class="empty-state">
@@ -498,6 +580,189 @@ function customerRow(c) {
   </tr>`;
 }
 
+function carePlanEnrollFormHtml(idPrefix, siteFieldHtml) {
+  return `<div class="panel" style="margin-top:16px;">
+    <h2>+ 연간관리 가입</h2>
+    ${siteFieldHtml}
+    <div class="row">
+      <div><label>플랜</label><select id="${idPrefix}-plan">
+        <option value="TRIAL_90">TRIAL 90일</option>
+        <option value="BASIC_360" selected>BASIC 36만원·365일</option>
+        <option value="FIELD_790">FIELD 79만원·365일</option>
+      </select></div>
+      <div><label>시작일</label><input id="${idPrefix}-starts" type="date" value="${toLocalDateInputValue()}"></div>
+    </div>
+    <div class="row">
+      <div><label>가격 (선택, 비우면 플랜 기본값)</label><input id="${idPrefix}-price" type="number" min="0"></div>
+      <div><label>포함 방문횟수 (선택, 비우면 플랜 기본값)</label><input id="${idPrefix}-visits" type="number" min="0"></div>
+      <div><label>다음 점검일 (선택)</label><input id="${idPrefix}-inspection" type="date"></div>
+    </div>
+    <div class="row"><div style="flex:1"><label>메모 (선택)</label><textarea id="${idPrefix}-memo" rows="3"></textarea></div></div>
+  </div>`;
+}
+
+function readCarePlanEnrollForm(idPrefix, siteId) {
+  const price = document.querySelector('#' + idPrefix + '-price').value;
+  const visits = document.querySelector('#' + idPrefix + '-visits').value;
+  return {
+    site_id: siteId,
+    plan_code: document.querySelector('#' + idPrefix + '-plan').value,
+    starts_at: document.querySelector('#' + idPrefix + '-starts').value || null,
+    price_snapshot: parseCarePlanOptionalInteger(price, '가격'),
+    included_visits: parseCarePlanOptionalInteger(visits, '포함 방문횟수'),
+    next_inspection_at: document.querySelector('#' + idPrefix + '-inspection').value || null,
+    memo: document.querySelector('#' + idPrefix + '-memo').value || null,
+  };
+}
+
+function readCarePlanUsedVisitsInput(inputId, includedVisits) {
+  const input = document.querySelector('#' + inputId);
+  if (!input) throw new Error('입력창을 찾을 수 없습니다.');
+  return parseCarePlanUsedVisits(input.value, includedVisits);
+}
+
+function carePlanRow(p) {
+  const actions = carePlanEffectiveStatus(p) === 'ACTIVE'
+    ? `<input type="number" min="0" max="${escapeHtml(String(p.included_visits ?? 0))}" value="${escapeHtml(String(p.used_visits ?? 0))}" id="cp-used-${p.id}" style="width:64px">
+       <button class="ghost" ${actionAttrs('updateCarePlanUsedVisits', [p.id])}>사용횟수 저장</button>
+       <button class="ghost" ${actionAttrs('renewCarePlan', [p.id])}>갱신</button>
+       <button class="ghost" ${actionAttrs('cancelCarePlan', [p.id])}>취소</button>`
+    : '-';
+  return `<tr>
+    <td>${escapeHtml(p.customer_name || '-')}</td>
+    <td>${escapeHtml(p.site_name || '-')}</td>
+    <td>${escapeHtml(carePlanCodeLabel(p.plan_code))}</td>
+    <td>${escapeHtml(p.starts_at || '-')} ~ ${escapeHtml(p.ends_at || '-')}</td>
+    <td>${escapeHtml(String(p.price_snapshot ?? '-'))}</td>
+    <td>${escapeHtml(String(p.used_visits ?? 0))}/${escapeHtml(String(p.included_visits ?? 0))} (잔여 ${escapeHtml(String(carePlanRemainingVisits(p)))})</td>
+    <td>${carePlanStatusBadge(p)}</td>
+    <td>${actions}</td>
+  </tr>`;
+}
+
+function renderCarePlanHome() {
+  const filtered = currentCarePlanFilter === 'ALL'
+    ? currentCarePlanRows
+    : currentCarePlanRows.filter(p => carePlanEffectiveStatus(p) === currentCarePlanFilter);
+  const rows = filtered.map(carePlanRow).join('');
+  content.innerHTML = `<div class="panel">
+    <div class="row" style="justify-content:space-between; align-items:center;">
+      <div>
+        <h2>연간관리</h2>
+        <p style="color:#8B979B; margin:0;">최근 가입 50건 · 할인/과금/자동차감·미수금 없음</p>
+      </div>
+    </div>
+    <div class="row" role="group" aria-label="연간관리 상태 필터">
+      ${CAREPLAN_FILTERS.map(([value, label]) => `<button class="${value === currentCarePlanFilter ? 'primary' : 'ghost'}" aria-pressed="${value === currentCarePlanFilter}" ${actionAttrs('setCarePlanFilter', [value])}>${escapeHtml(label)}</button>`).join('')}
+    </div>
+    <table><thead><tr>
+      <th>고객</th><th>현장</th><th>플랜</th><th>기간</th><th>가격</th><th>사용/포함(잔여)</th><th>상태</th><th>처리</th>
+    </tr></thead><tbody>${rows || emptyStateRow(8, '가입 없음', '조건에 맞는 연간관리 가입이 없습니다.')}</tbody></table>
+  </div>
+  ${carePlanEnrollFormHtml('cp-new', `<div class="row"><div><label>현장 ID</label><input id="cp-new-site" type="number" min="1"></div></div>`)}
+  <div class="row" style="margin-top:-4px;">
+    <button class="primary" ${actionAttrs('createCarePlan')}>가입 저장</button>
+  </div>`;
+}
+
+async function loadCarePlans() {
+  msg.textContent = '불러오는 중...';
+  try {
+    const res = await api('GET', '/care/care-plans');
+    msg.textContent = '';
+    currentCarePlanRows = res.data || [];
+    renderCarePlanHome();
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+    content.innerHTML = `<div class="panel"><h2>연간관리</h2>${emptyState('불러오지 못했습니다', e.message)}</div>`;
+  }
+}
+
+function setCarePlanFilter(filter) {
+  currentCarePlanFilter = filter;
+  renderCarePlanHome();
+}
+
+async function createCarePlan() {
+  if (carePlanBusy) return;
+  carePlanBusy = true;
+  try {
+    const siteId = parsePositiveInteger(document.querySelector('#cp-new-site').value, '현장 ID');
+    await api('POST', '/care/care-plans', readCarePlanEnrollForm('cp-new', siteId));
+    msg.textContent = '가입이 저장되었습니다.';
+    await loadCarePlans();
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  } finally {
+    carePlanBusy = false;
+  }
+}
+
+async function updateCarePlanUsedVisits(id, customerId) {
+  if (carePlanBusy) return;
+  carePlanBusy = true;
+  try {
+    const plan = currentCarePlanRows.find(p => p.id === id) || (currentCustomerDetail && currentCustomerDetail.carePlans || []).find(p => p.id === id);
+    const moduleInputId = 'cp-used-' + id;
+    const customerInputId = 'cp-c-used-' + id;
+    const inputId = document.querySelector('#' + moduleInputId) ? moduleInputId : customerInputId;
+    const usedVisits = readCarePlanUsedVisitsInput(inputId, plan ? plan.included_visits : null);
+    await api('PUT', '/care/care-plans/' + id, { used_visits: usedVisits });
+    msg.textContent = '사용 횟수가 저장되었습니다.';
+    if (customerId) await viewCustomer(customerId, 'careplans'); else await loadCarePlans();
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  } finally {
+    carePlanBusy = false;
+  }
+}
+
+async function cancelCarePlan(id, customerId) {
+  if (carePlanBusy) return;
+  if (!confirm('이 연간관리 가입을 취소할까요? 취소 후에는 되돌릴 수 없습니다.')) return;
+  carePlanBusy = true;
+  try {
+    await api('PUT', '/care/care-plans/' + id + '/cancel', {});
+    msg.textContent = '가입이 취소되었습니다.';
+    if (customerId) await viewCustomer(customerId, 'careplans'); else await loadCarePlans();
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  } finally {
+    carePlanBusy = false;
+  }
+}
+
+async function renewCarePlan(id, customerId) {
+  if (carePlanBusy) return;
+  if (!confirm('이 연간관리를 갱신할까요? 시작일 기본값은 기존 종료일 다음날입니다.')) return;
+  carePlanBusy = true;
+  try {
+    await api('POST', '/care/care-plans/' + id + '/renew', {});
+    msg.textContent = '갱신되었습니다.';
+    if (customerId) await viewCustomer(customerId, 'careplans'); else await loadCarePlans();
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  } finally {
+    carePlanBusy = false;
+  }
+}
+
+async function createCustomerCarePlan(customerId) {
+  if (carePlanBusy) return;
+  const siteSelect = document.querySelector('#cp-c-site');
+  carePlanBusy = true;
+  try {
+    const siteId = parsePositiveInteger(siteSelect && siteSelect.value ? siteSelect.value : '', '현장');
+    await api('POST', '/care/care-plans', readCarePlanEnrollForm('cp-c', siteId));
+    msg.textContent = '연간관리 가입이 저장되었습니다.';
+    await viewCustomer(customerId, 'careplans');
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  } finally {
+    carePlanBusy = false;
+  }
+}
+
 function consultationRow(c) {
   return `<tr ${actionAttrs('viewCustomer', [c.customer_id])}>
     <td>${escapeHtml(c.customer_name || '')}</td>
@@ -538,13 +803,13 @@ async function showDetail(id) {
     const res = await api('GET', '/care/tickets/' + id);
     msg.textContent = '';
     const t = res.data.ticket;
-    const visits = res.data.visits.map(v => `<li>${v.visited_at} — ${v.technician}: ${v.diagnosis || ''} / ${v.action_taken || ''} (인건비 ${v.labor_cost}, 부품비 ${v.parts_cost})</li>`).join('');
-    const history = res.data.history.map(h => `<li>${h.changed_at}: ${h.old_status || '-'} → ${h.new_status}</li>`).join('');
+    const visits = res.data.visits.map(v => `<li>${escapeHtml(v.visited_at || '')} — ${escapeHtml(v.technician || '')}: ${escapeHtml(v.diagnosis || '')} / ${escapeHtml(v.action_taken || '')} (인건비 ${escapeHtml(String(v.labor_cost ?? '-'))}, 부품비 ${escapeHtml(String(v.parts_cost ?? '-'))})</li>`).join('');
+    const history = res.data.history.map(h => `<li>${escapeHtml(h.changed_at || '')}: ${escapeHtml(h.old_status || '-')} → ${escapeHtml(h.new_status || '-')}</li>`).join('');
     const nextOptions = { RECEIVED: ['SCHEDULED','IN_PROGRESS','CANCELLED'], SCHEDULED: ['IN_PROGRESS','CANCELLED'], IN_PROGRESS: ['COMPLETED','CANCELLED'] }[t.status] || [];
     content.innerHTML = `<div class="panel">
-      <h2>티켓 #${t.id} — ${badge(t.status)}</h2>
-      <p>고객: ${t.customer_name} / 사업장: ${t.site_name} (${t.address || ''}, ${t.contact_phone || ''})</p>
-      <p>증상: ${t.symptom}</p>
+      <h2>티켓 #${escapeHtml(String(t.id))} — ${badge(t.status)}</h2>
+      <p>고객: ${escapeHtml(t.customer_name || '-')} / 사업장: ${escapeHtml(t.site_name || '-')} (${escapeHtml(t.address || '')}, ${escapeHtml(t.contact_phone || '')})</p>
+      <p>증상: ${escapeHtml(t.symptom || '')}</p>
       <div class="row">
         ${nextOptions.map(s => `<button class="ghost" ${actionAttrs('changeStatus', [t.id, s])}>${s}로 변경</button>`).join('')}
         <button class="ghost" ${actionAttrs('reissueLink', [t.id])}>공개 링크 재발급</button>
@@ -568,10 +833,10 @@ async function changeStatus(id, status) {
 async function reissueLink(id) {
   try {
     const res = await api('POST', '/care/tickets/' + id + '/link/reissue');
-    const token = res.data.public_token;
+    const token = String(res.data.public_token || '');
     content.insertAdjacentHTML('afterbegin', `<div class="panel">
       <h2>재발급된 토큰 (한 번만 표시됨)</h2>
-      <div class="token-box"><span id="tk">${token}</span>
+      <div class="token-box"><span id="tk">${escapeHtml(token)}</span>
         <button class="ghost" ${actionAttrs('copyTextFromSelector', ['#tk'])}>복사</button>
       </div>
     </div>`);
@@ -579,6 +844,7 @@ async function reissueLink(id) {
 }
 
 async function loadCustomerHome() {
+  clearCustomerDetailState();
   msg.textContent = '불러오는 중...';
   content.innerHTML = `<div class="panel">
     <div class="row" style="justify-content:space-between; align-items:center;">
@@ -642,6 +908,14 @@ function setCustomerFilter(filter) {
   loadCustomerHome();
 }
 
+function clearCustomerDetailState() {
+  currentCustomerId = null;
+  currentCustomerDetail = null;
+  currentTimelineType = 'ALL';
+  customerDetailRequestToken++;
+  customerTimelineRequestToken = 0;
+}
+
 function showCustomerTab(tab) {
   currentCustomerTab = tab;
   renderCustomerDetail();
@@ -655,6 +929,7 @@ function customerDetailTabs() {
     ['equipment', '장비'],
     ['quotes', '견적'],
     ['contracts', '계약'],
+    ['careplans', '연간관리'],
     ['tickets', '출장'],
     ['sales', '판매'],
     ['contacts', '담당자'],
@@ -662,8 +937,8 @@ function customerDetailTabs() {
     ['tasks', '할 일'],
     ['followups', '사후관리'],
   ];
-  return `<div class="tab-bar">
-    ${tabs.map(([value, label]) => `<button class="${value === currentCustomerTab ? 'primary' : 'ghost'}" ${actionAttrs('showCustomerTab', [value])}>${escapeHtml(label)}</button>`).join('')}
+  return `<div class="tab-bar" role="tablist" aria-label="고객 상세 탭">
+    ${tabs.map(([value, label]) => `<button class="${value === currentCustomerTab ? 'primary' : 'ghost'}" role="tab" aria-pressed="${value === currentCustomerTab}" ${actionAttrs('showCustomerTab', [value])}>${escapeHtml(label)}</button>`).join('')}
   </div>`;
 }
 
@@ -687,12 +962,17 @@ function renderBasicTab(detail) {
   const customer = detail.customer;
   const recent = detail.consultations.slice(0, 3);
   const pending = detail.consultations.filter(c => c.next_action !== 'NONE' && !c.completed_at);
+  const activeCarePlan = (detail.carePlans || []).find(p => carePlanEffectiveStatus(p) === 'ACTIVE');
+  const carePlanSummary = activeCarePlan
+    ? `${carePlanCodeLabel(activeCarePlan.plan_code)} / 잔여 ${carePlanRemainingVisits(activeCarePlan)}회`
+    : '미가입';
   const stats = [
     ['현장', detail.sites.length],
     ['장비', detail.equipment.length],
     ['담당자', detail.contacts.length],
     ['할 일', detail.tasks.filter(t => t.status !== 'DONE').length],
     ['사후관리', detail.followups.filter(f => !f.completed_at).length],
+    ['연간관리', carePlanSummary],
   ];
   return `<div class="tab-panel">
     <div class="info-card">
@@ -703,7 +983,7 @@ function renderBasicTab(detail) {
         <div class="info-row"><span class="info-row-label">메모</span><span class="info-row-value">${escapeHtml(customer.memo || '-')}</span></div>
       </div>
       <div class="stat-chip-row">
-        ${stats.map(([label, value]) => `<div class="stat-chip"><div class="stat-chip-value">${value}</div><div class="stat-chip-label">${escapeHtml(label)}</div></div>`).join('')}
+        ${stats.map(([label, value]) => `<div class="stat-chip"><div class="stat-chip-value">${escapeHtml(String(value))}</div><div class="stat-chip-label">${escapeHtml(label)}</div></div>`).join('')}
       </div>
     </div>
     <h2>최근 상담</h2>
@@ -784,6 +1064,42 @@ function renderContractsTab(detail) {
     <table><thead><tr>
       <th>계약번호</th><th>상태</th><th>금액</th><th>생성일</th><th>수정일</th>
     </tr></thead><tbody>${detail.contracts.map(c => `<tr><td>${escapeHtml(c.number || '-')}</td><td>${escapeHtml(c.status || '-')}</td><td>${escapeHtml(String(c.amount ?? '-'))}</td><td>${escapeHtml(c.created_at || '-')}</td><td>${escapeHtml(c.updated_at || '-')}</td></tr>`).join('') || emptyStateRow(5, '계약 없음', '이 고객에 연결된 계약이 없습니다.')}</tbody></table>
+  </div>`;
+}
+
+function renderCarePlansTab(detail) {
+  const customer = detail.customer;
+  const sites = detail.sites || [];
+  const rows = (detail.carePlans || []).map(p => {
+    const actions = carePlanEffectiveStatus(p) === 'ACTIVE'
+      ? `<input type="number" min="0" max="${escapeHtml(String(p.included_visits ?? 0))}" value="${escapeHtml(String(p.used_visits ?? 0))}" id="cp-c-used-${p.id}" style="width:64px">
+         <button class="ghost" ${actionAttrs('updateCarePlanUsedVisits', [p.id, customer.id])}>사용횟수 저장</button>
+         <button class="ghost" ${actionAttrs('renewCarePlan', [p.id, customer.id], { stopPropagation: true })}>갱신</button>
+         <button class="ghost" ${actionAttrs('cancelCarePlan', [p.id, customer.id], { stopPropagation: true })}>취소</button>`
+      : '-';
+    return `<tr>
+      <td>${escapeHtml(p.site_name || '-')}</td>
+      <td>${escapeHtml(carePlanCodeLabel(p.plan_code))}</td>
+      <td>${escapeHtml(p.starts_at || '-')} ~ ${escapeHtml(p.ends_at || '-')}</td>
+      <td>${escapeHtml(String(p.price_snapshot ?? '-'))}</td>
+      <td>${escapeHtml(String(p.used_visits ?? 0))}/${escapeHtml(String(p.included_visits ?? 0))} (잔여 ${escapeHtml(String(carePlanRemainingVisits(p)))})</td>
+      <td>${carePlanStatusBadge(p)}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+  const siteOptions = sites.map(s => `<option value="${escapeHtml(String(s.id))}">${escapeHtml(s.name || '')}</option>`).join('');
+  return `<div class="tab-panel">
+    <h2>연간관리</h2>
+    <p style="color:#8B979B; margin:0 0 8px;">할인/과금/자동차감·미수금 없음</p>
+    <table><thead><tr>
+      <th>현장</th><th>플랜</th><th>기간</th><th>가격</th><th>사용/포함(잔여)</th><th>상태</th><th>처리</th>
+    </tr></thead><tbody>${rows || emptyStateRow(7, '연간관리 없음', '이 고객에 연결된 연간관리 가입이 없습니다.')}</tbody></table>
+    ${sites.length
+      ? `${carePlanEnrollFormHtml('cp-c', `<div class="row"><div><label>현장</label><select id="cp-c-site">${siteOptions}</select></div></div>`)}
+         <div class="row" style="margin-top:-4px;">
+           <button class="primary" ${actionAttrs('createCustomerCarePlan', [customer.id])}>가입 저장</button>
+         </div>`
+      : `<div class="panel" style="margin-top:16px;">${emptyState('가입할 현장 없음', '연간관리에 가입하려면 먼저 현장을 등록하세요.')}</div>`}
   </div>`;
 }
 
@@ -966,6 +1282,7 @@ function renderCustomerDetail() {
   else if (currentCustomerTab === 'equipment') tabContent = renderEquipmentTab(currentCustomerDetail);
   else if (currentCustomerTab === 'quotes') tabContent = renderQuotesTab(currentCustomerDetail);
   else if (currentCustomerTab === 'contracts') tabContent = renderContractsTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'careplans') tabContent = renderCarePlansTab(currentCustomerDetail);
   else if (currentCustomerTab === 'tickets') tabContent = renderTicketsTab(currentCustomerDetail);
   else if (currentCustomerTab === 'sales') tabContent = renderSalesTab(currentCustomerDetail);
   else if (currentCustomerTab === 'contacts') tabContent = renderContactsTab(currentCustomerDetail);
@@ -1030,8 +1347,11 @@ async function createCustomer() {
 
 async function viewCustomer(id, selectedTab) {
   msg.textContent = '불러오는 중...';
+  // 요청 identity guard: 응답을 받을 때 여전히 최신 조회 요청인지 토큰으로 확인해
+  // 고객 A 조회 중 고객 B로 빠르게 이동해도 늦게 도착한 A 응답이 B 화면을 덮지 않게 한다.
+  const requestToken = ++customerDetailRequestToken;
   try {
-    const [customerRes, consultationsRes, timelineRes, sitesRes, equipmentRes, quotesRes, contractsRes, ticketsRes, salesRes, contactsRes, tasksRes, followupsRes] = await Promise.all([
+    const [customerRes, consultationsRes, timelineRes, sitesRes, equipmentRes, quotesRes, contractsRes, ticketsRes, salesRes, contactsRes, tasksRes, followupsRes, carePlansRes] = await Promise.all([
       api('GET', '/care/customers/' + id),
       api('GET', '/care/consultations?customer_id=' + id),
       api('GET', '/care/timeline?customer_id=' + id + '&type=ALL'),
@@ -1043,8 +1363,10 @@ async function viewCustomer(id, selectedTab) {
       api('GET', '/care/part-sales?customer_id=' + id),
       api('GET', '/care/customer-contacts?customer_id=' + id),
       api('GET', '/care/customer-tasks?customer_id=' + id),
-      api('GET', '/care/customer-followups?customer_id=' + id)
+      api('GET', '/care/customer-followups?customer_id=' + id),
+      api('GET', '/care/care-plans?customer_id=' + id)
     ]);
+    if (requestToken !== customerDetailRequestToken) return;
     msg.textContent = '';
     currentCustomerId = id;
     currentCustomerTab = selectedTab || 'basic';
@@ -1061,22 +1383,29 @@ async function viewCustomer(id, selectedTab) {
       sales: salesRes.data,
       contacts: contactsRes.data,
       tasks: tasksRes.data,
-      followups: followupsRes.data
+      followups: followupsRes.data,
+      carePlans: carePlansRes.data
     };
     renderCustomerDetail();
   } catch (e) {
+    if (requestToken !== customerDetailRequestToken) return;
     msg.textContent = '오류: ' + e.message;
   }
 }
 
 async function setCustomerTimelineType(type) {
   if (!currentCustomerId || !currentCustomerDetail) return;
+  const requestToken = ++customerTimelineRequestToken;
+  const requestCustomerId = currentCustomerId;
   try {
     const res = await api('GET', '/care/timeline?customer_id=' + currentCustomerId + '&type=' + encodeURIComponent(type));
+    if (requestToken !== customerTimelineRequestToken) return;
+    if (requestCustomerId !== currentCustomerId) return;
     currentTimelineType = type;
     currentCustomerDetail.timeline = res.data;
     renderCustomerDetail();
   } catch (e) {
+    if (requestToken !== customerTimelineRequestToken) return;
     msg.textContent = '오류: ' + e.message;
   }
 }
@@ -1240,6 +1569,7 @@ function loadNewTicketForm() {
     <h2>새 A/S 접수</h2>
     <div class="row"><div><label>사업장 ID</label><input id="f-site"></div>
     <div><label>장비 ID (선택)</label><input id="f-equipment"></div></div>
+    <div id="ticketCarePlanBanner" class="info-card" role="status" style="display:none;"></div>
     <div class="row"><div><label>증상</label><input id="f-symptom" style="width:300px"></div></div>
     <div class="row">
       <div><label>우선순위</label><select id="f-priority">
@@ -1253,6 +1583,42 @@ function loadNewTicketForm() {
     <button class="primary" ${actionAttrs('createTicket')}>접수 생성</button>
     <div id="newResult"></div>
   </div>`;
+  const siteInput = document.querySelector('#f-site');
+  siteInput.addEventListener('change', () => refreshTicketCarePlanBanner(siteInput.value));
+  siteInput.addEventListener('blur', () => refreshTicketCarePlanBanner(siteInput.value));
+}
+
+// 표시 전용 배너: 현장의 연간관리 이용 현황을 안내만 하며, 할인/과금/방문
+// 자동차감·접수 차단은 절대 하지 않는다. 요청 토큰으로 site_id를 빠르게
+// 바꿔도 늦게 도착한 이전 응답이 배너를 덮어쓰지 않게 막는다.
+async function refreshTicketCarePlanBanner(siteIdRaw) {
+  const requestToken = ++ticketCarePlanRequestToken;
+  const banner = document.querySelector('#ticketCarePlanBanner');
+  if (!banner) return;
+  const siteId = Number(siteIdRaw);
+  if (!siteIdRaw || !Number.isFinite(siteId) || siteId <= 0) {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    return;
+  }
+  banner.style.display = '';
+  banner.textContent = '연간관리 확인 중...';
+  try {
+    const res = await api('GET', '/care/care-plans?site_id=' + siteId);
+    if (requestToken !== ticketCarePlanRequestToken) return;
+    const freshBanner = document.querySelector('#ticketCarePlanBanner');
+    if (!freshBanner) return;
+    const active = (res.data || []).find(p => carePlanEffectiveStatus(p) === 'ACTIVE');
+    if (active) {
+      freshBanner.innerHTML = `연간관리 이용 중 — ${escapeHtml(carePlanCodeLabel(active.plan_code))} · 잔여 ${escapeHtml(String(carePlanRemainingVisits(active)))}회 · ~${escapeHtml(active.ends_at || '-')}`;
+    } else {
+      freshBanner.textContent = '연간관리 미가입';
+    }
+  } catch (e) {
+    if (requestToken !== ticketCarePlanRequestToken) return;
+    const freshBanner = document.querySelector('#ticketCarePlanBanner');
+    if (freshBanner) freshBanner.textContent = '연간관리 확인 실패: ' + e.message;
+  }
 }
 
 async function createTicket() {
@@ -1604,6 +1970,7 @@ document.querySelectorAll('nav button[data-view]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('nav button[data-view]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+    clearCustomerDetailState();
     const view = btn.dataset.view;
     if (view === 'home') loadOpsSummary();
     else if (view === 'today') loadTickets('RECEIVED', true);
@@ -1615,7 +1982,7 @@ document.querySelectorAll('nav button[data-view]').forEach(btn => {
     else if (view === 'contracts') loadModulePlaceholder(MODULE_PLACEHOLDERS.contracts.title, MODULE_PLACEHOLDERS.contracts.description, MODULE_PLACEHOLDERS.contracts.outline);
     else if (view === 'outreach') loadOutreach();
     else if (view === 'warranty') loadWarranty();
-    else if (view === 'careplan') loadModulePlaceholder(MODULE_PLACEHOLDERS.careplan.title, MODULE_PLACEHOLDERS.careplan.description, MODULE_PLACEHOLDERS.careplan.outline);
+    else if (view === 'careplan') loadCarePlans();
     else if (view === 'accounting') loadModulePlaceholder(MODULE_PLACEHOLDERS.accounting.title, MODULE_PLACEHOLDERS.accounting.description, MODULE_PLACEHOLDERS.accounting.outline);
     else if (view === 'messages') loadModulePlaceholder(MODULE_PLACEHOLDERS.messages.title, MODULE_PLACEHOLDERS.messages.description, MODULE_PLACEHOLDERS.messages.outline);
     else if (view === 'todos') loadModulePlaceholder(MODULE_PLACEHOLDERS.todos.title, MODULE_PLACEHOLDERS.todos.description, MODULE_PLACEHOLDERS.todos.outline);

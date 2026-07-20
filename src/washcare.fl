@@ -964,22 +964,49 @@
   (let [row (first (db_query DB "SELECT * FROM care_plans WHERE id = ?" [id]))]
     (if (nil? row) nil (with-effective-status row (careplan-today)))))
 
+;; 5주차 선행: Admin CarePlan 모듈이 site_id/customer_id 무필터로도 최근
+;; 가입 현황을 볼 수 있어야 해서, 세 목록 함수 모두 customer_id/customer_name/
+;; site_name을 동일하게 JOIN해 반환한다(응답 shape을 필터 종류와 무관하게
+;; 통일 — 호출부가 어떤 필터를 썼는지에 따라 분기할 필요가 없어짐).
 (defn list-site-careplans [site-id]
   (let [today (careplan-today)]
     (map (fn [row] (with-effective-status row today))
          (db_query DB
-           "SELECT * FROM care_plans WHERE site_id = ? ORDER BY starts_at DESC, id DESC"
+           "SELECT cp.*, s.customer_id AS customer_id, c.name AS customer_name, s.name AS site_name
+            FROM care_plans cp
+            JOIN sites s ON s.id = cp.site_id
+            JOIN customers c ON c.id = s.customer_id
+            WHERE cp.site_id = ?
+            ORDER BY cp.starts_at DESC, cp.id DESC"
            [site-id]))))
 
 (defn list-customer-careplans [customer-id]
   (let [today (careplan-today)]
     (map (fn [row] (with-effective-status row today))
          (db_query DB
-           "SELECT cp.* FROM care_plans cp
+           "SELECT cp.*, s.customer_id AS customer_id, c.name AS customer_name, s.name AS site_name
+            FROM care_plans cp
             JOIN sites s ON s.id = cp.site_id
+            JOIN customers c ON c.id = s.customer_id
             WHERE s.customer_id = ?
             ORDER BY cp.starts_at DESC, cp.id DESC"
            [customer-id]))))
+
+;; 무필터 전체 목록 — Admin CarePlan 모듈의 "전체 가입 현황"용. 최신순 최대
+;; 50건(다른 목록 엔드포인트들과 동일한 캡 관례 — 2~3주차 ops-summary/
+;; ops-weekly, search-customers 등). site_id/customer_id 필터가 있는
+;; 목록에는 이 캡을 적용하지 않는다(기존 계약 유지).
+(defn list-all-careplans []
+  (let [today (careplan-today)]
+    (map (fn [row] (with-effective-status row today))
+         (db_query DB
+           "SELECT cp.*, s.customer_id AS customer_id, c.name AS customer_name, s.name AS site_name
+            FROM care_plans cp
+            JOIN sites s ON s.id = cp.site_id
+            JOIN customers c ON c.id = s.customer_id
+            ORDER BY cp.starts_at DESC, cp.id DESC
+            LIMIT 50"
+           []))))
 
 ;; 겹침 판정: 비취소(ACTIVE/RENEWED) 기존 행 중 [starts-at, ends-at]과 날짜
 ;; 구간이 하나라도 겹치면 true. RENEWED도 막는 이유는 갱신으로 이미 닫힌

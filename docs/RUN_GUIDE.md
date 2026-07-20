@@ -131,13 +131,16 @@ node /home/kim/kim/freelang-v11/bootstrap.js run src/washcare-api.fl
 키를 설정한 경우 내부 요청에는 `x-api-key` 헤더가 필요하다.
 
 내부 API는 51개 라우트(정적 Admin UI·루트 리다이렉트 제외, 2026-07-21 4주차
-`/care/care-plans*` 반영)로 늘어나 이 문서에 개별 나열하지 않는다 — **전체
+`/care/care-plans*` 반영, 5주차는 라우트 추가 없이 `GET /care/care-plans`의
+무필터 응답 계약만 확장)로 늘어나 이 문서에 개별 나열하지 않는다 — **전체
 라우트 목록과 요청/응답 스키마는 `docs/openapi-washcare.yaml`(기계 판독용)과
 `docs/04-washcare-api.md`(설명)가 정본**이다. 기동 확인용 스모크 예시만 남긴다:
 
 - `POST /care/tickets` — 응답의 `public_token`은 고객에게 전달한 뒤 별도 저장하지 않는다
 - `PUT /care/tickets/:id/status`
 - `POST /care/care-plans` — 연간관리 가입(site_id 앵커, plan_code 3종)
+- `GET /care/care-plans` — `site_id`/`customer_id` 둘 다 생략하면 고객·현장명을
+  조인한 최신 50건 전체 목록(5주차 Admin `연간관리` 모듈 홈 화면용)
 - `GET /care/ops-summary?warranty_days=30` — 운영 대시보드 집계(지연·일정미정·
   오늘방문·보증임박), Asia/Seoul 기준
 - `GET /care/ops-weekly?as_of=YYYY-MM-DD` — 주간 운영 보고(미처리·다음 주 방문·

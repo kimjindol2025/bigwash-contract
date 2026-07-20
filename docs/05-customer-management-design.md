@@ -618,7 +618,7 @@ customer_merge_history
 |---|---|---|
 | 신규 고객 빠른 등록 | ✅ 구현됨 | `create-customer`(`src/washcare.fl`), `POST /care/customers`, Admin UI "+ 신규 고객 등록" |
 | 고객 검색 | ✅ 구현됨 | `search-customers`(이름/전화/주소/메모 LIKE), `GET /care/customers?q=&filter=`. 4장이 요구하는 "하이픈 무관 검색"도 `REPLACE(REPLACE(phone,'-',''),' ','') LIKE`로 구현됨(`washcare.fl` ~393-420) — 이전 버전이 "정규화 안 됨(갭)"으로 적었던 것은 오류, 이미 해소됨 |
-| 고객 상세 기본정보 | ✅ 구현됨(부분) | `GET /care/customers/:id`, Admin UI 고객 상세. 8.1절 "상단 요약"의 미수금·연간관리 여부는 미구현(해당 모듈 자체가 없음) |
+| 고객 상세 기본정보 | ✅ 구현됨(부분) | `GET /care/customers/:id`, Admin UI 고객 상세. 8.1절 "상단 요약" 중 연간관리 여부는 2026-07-21 5주차에 구현됨(`renderBasicTab`의 "연간관리" 칩 — 활성 플랜 있으면 "플랜명 / 잔여 N회", 없으면 "미가입"). 미수금은 여전히 미구현(해당 모듈 자체가 없음) |
 | 상담 기록 연결 | ✅ 구현됨 | `consultations` 테이블, `create-consultation`/`list-customer-consultations`/`complete-consultation`, 관련 라우트 7종 |
 | 다음 연락일 | ✅ 구현됨 | `list-followups-today`, `GET /care/consultations/due-today`, Admin UI "오늘 다시 연락할 고객" |
 | **고객 목록** | ⏸ 부분 구현 | `loadCustomerHome`+`runCustomerSearch`(`washcare-admin.html`)가 빈 검색어+필터만으로 33장이 확정한 8컬럼(고객번호/고객명/사업장명/연락처/지역/구분/최근연락/다음연락)을 그대로 렌더해 사실상 전체 목록으로 쓸 수 있다. 다만 전용 메뉴·URL·자체 정렬 컨트롤은 없다 — 이전 버전의 "❌ 미구현"은 오류(P1-7, 전용 UX 완성은 별도 항목으로 남김) |
@@ -638,7 +638,7 @@ customer_merge_history
 | 고객 할 일(`customer_tasks`) | ✅ 구현됨 | `customer_tasks` 테이블, `POST/GET /care/customer-tasks`, `PUT /care/customer-tasks/:id/complete` |
 | 사후관리(`customer_followups`) | ✅ 구현됨 | `customer_followups` 테이블, `POST/GET /care/customer-followups`, `PUT /care/customer-followups/:id/complete` |
 | 계약금 세분화 | ❌ 미구현 | `contracts.status` 단일 필드만, 계약금/중도금/잔금 세분화 없음 |
-| 연간관리(`care_plans`) | ❌ 미구현 | 테이블 없음 — `docs/09-implementation-schedule.md` 4~5주차 예정 |
+| 연간관리(`care_plans`) | ✅ 구현됨(2026-07-21, 4~5주차) | `care_plans` 테이블, `POST/GET/PUT /care/care-plans`, `PUT .../cancel`, `POST .../renew`(`docs/09-implementation-schedule.md` 4~5주차). Admin UI: 무필터 최신 50건 전체 목록+`effective_status` 필터+가입/사용횟수 정정/취소·갱신(confirm), 고객 상세 "연간관리" 탭+상단 요약, 티켓 폼 CarePlan 안내 배너(표시 전용). **19장이 언급하는 할인율·자동 할인 적용은 구현 범위 밖**(`payment_status`/PG 연동 없음, `docs/02` Phase2 원칙) |
 | 미수금 원장(`payment_orders`) | ❌ 미구현 | 테이블 없음 — `docs/09` 원칙상 PaymentOrder 정의 후 착수 |
 | 문자발송(`notification_deliveries`) | ❌ 미구현 | 테이블·라우트 없음 |
 | 사진문서(`attachments`) | ❌ 미구현 | 테이블·라우트 없음 |
@@ -681,7 +681,7 @@ customer_merge_history
 | 고객 상태(11종, 7장) | `customer_type` 4종만 유지 — 별도 상태 필드는 `customer_status_history`와 함께 2~3차에서 다룬다 |
 | 진행 업무 | 견적·계약 건수 집계 — "견적 연결"·"계약 연결" 자체가 30장 3차 항목이라 함께 미룬다 |
 | 미수금 | 회계·수금 모듈 없음(30장 3차 "금액 연결") |
-| 연간관리 | 연간관리(`care_plans`) 모듈 없음 — 30장 어디에도 명시적 단계가 없던 누락 항목이라, 이 자리에서 3차로 명시한다 |
+| 연간관리 | 이 절이 확정한 것은 "1차 고객 **목록**" 8개 컬럼에서의 제외이며, 연간관리 모듈 자체는 32장 갱신대로 2026-07-21 4~5주차에 구현 완료됐다(고객 **상세** 탭·상단 요약에는 이미 표시됨). 고객 목록 화면에 별도 컬럼으로 노출하는 것만 여전히 2~3차로 연기 |
 
 > 필터·검색 항목(4장)도 같은 원칙으로 좁힌다: 이번 화면은 `customer_type`
 > 기준 필터(전체/잠재/거래/서비스/거래처 — 현재 Admin UI 5종과 동일)와
