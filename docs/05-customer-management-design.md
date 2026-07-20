@@ -618,8 +618,8 @@ customer_merge_history
 | 고객 상세 기본정보 | ✅ 구현됨(부분) | `GET /care/customers/:id`, Admin UI 고객 상세. 8.1절 "상단 요약"의 미수금·연간관리 여부는 미구현(해당 모듈 자체가 없음) |
 | 상담 기록 연결 | ✅ 구현됨 | `consultations` 테이블, `create-consultation`/`list-customer-consultations`/`complete-consultation`, 관련 라우트 7종 |
 | 다음 연락일 | ✅ 구현됨 | `list-followups-today`, `GET /care/consultations/due-today`, Admin UI "오늘 다시 연락할 고객" |
-| **고객 목록** | ❌ 미구현 | 검색(`search-customers`)만 있고, 필터·정렬이 있는 "전체 고객 목록" 화면은 없다. **다음 확정 대상(사용자 지정)** |
-| **고객 타임라인** | ❌ 미구현 | 상담 기록만 고객 상세에 표시됨. 여러 테이블을 묶는 통합 타임라인 조회는 아직 없음(10장 설계만 있음) |
+| **고객 목록** | ✅ 구현됨(33장 8컬럼 기준) | `search-customers`가 33장에서 확정한 8컬럼(고객번호/고객명/사업장명/연락처/지역/구분/최근연락/다음연락)으로 확장됨, 전화번호 하이픈·공백 정규화 검색도 포함(`REPLACE(REPLACE(c.phone,'-',''),' ','')`), Admin UI 모바일 대응까지 완료 |
+| **고객 타임라인** | ✅ 구현됨(10장 원칙대로 전용 테이블 없이 UNION 조회) | `list-customer-timeline`(`src/washcare.fl`)이 `consultations`/`part_sales`/`quotes`/`contracts`/`service_tickets`/`customer_followups` 6개 테이블을 `UNION ALL`로 묶어 시간순 조회, `GET /care/timeline`, Admin UI 고객 상세 "타임라인" 탭 + 유형별 필터 칩. 10장 원문의 문자·카카오·이메일·입금·미수금·사진·문서·상태변경 이력은 해당 모듈(`notification_deliveries`/회계/`attachments`)이 아직 없어 갭으로 남음 |
 
 ### 2차·3차 항목
 
