@@ -38,6 +38,16 @@
 (defn get-customer [customer-id]
   (first (db_query DB "SELECT * FROM customers WHERE id = ?" [customer-id])))
 
+;; 고객 목록 "지역" 컬럼용 — 주소 앞 두 토큰(시/도 + 시/군/구)만 잘라서 보여준다.
+;; 토큰이 2개 미만이면 주소 원문을 그대로 노출한다 (docs/05 33장).
+(defn parse-region [address]
+  (if (or (nil? address) (str-blank? address))
+    ""
+    (let [parts (str-split address " ")]
+      (if (>= (length parts) 2)
+        (str (nth parts 0) " " (nth parts 1))
+        address))))
+
 (defn create-site [customer-id name address contact-phone]
   (do
     (db_exec DB
@@ -375,28 +385,35 @@
   (let [resolved-filter (if (or (nil? customer-filter) (str-blank? customer-filter)) "ALL" customer-filter)]
     (if (not (valid-customer-filter? resolved-filter))
       (error "filter must be one of ALL, LEAD, CUSTOMER, SERVICE, VENDOR"))
-    (db_query DB
-      "SELECT c.id, c.name, c.phone, c.email, c.address, c.customer_type, c.migration_status,
-              (SELECT co.consulted_at
-               FROM consultations co
-               WHERE co.customer_id = c.id
-               ORDER BY co.consulted_at DESC, co.id DESC LIMIT 1) AS last_consulted_at,
-              (SELECT co.next_contact_at
-               FROM consultations co
-               WHERE co.customer_id = c.id
-                 AND co.completed_at IS NULL
-                 AND co.next_contact_at IS NOT NULL
-               ORDER BY co.next_contact_at ASC, co.id DESC LIMIT 1) AS next_contact_at
-       FROM customers c
-       WHERE (? = 'ALL' OR c.customer_type = ?)
-         AND (? = ''
-              OR c.name LIKE ?
-              OR c.phone LIKE ?
-              OR c.address LIKE ?
-              OR c.memo LIKE ?)
-       ORDER BY c.name LIMIT 50"
-      [resolved-filter resolved-filter query
-       (str "%" query "%") (str "%" query "%") (str "%" query "%") (str "%" query "%")])))
+    (let [normalized-query (str-replace (str-replace query "-" "") " " "")
+          rows (db_query DB
+                 "SELECT c.id, c.name, c.phone, c.email, c.address, c.customer_type, c.migration_status,
+                         (SELECT s.name FROM sites s
+                          WHERE s.customer_id = c.id
+                          ORDER BY s.id ASC LIMIT 1) AS site_name,
+                         (SELECT co.consulted_at
+                          FROM consultations co
+                          WHERE co.customer_id = c.id
+                          ORDER BY co.consulted_at DESC, co.id DESC LIMIT 1) AS last_consulted_at,
+                         (SELECT co.next_contact_at
+                          FROM consultations co
+                          WHERE co.customer_id = c.id
+                            AND co.completed_at IS NULL
+                            AND co.next_contact_at IS NOT NULL
+                          ORDER BY co.next_contact_at ASC, co.id DESC LIMIT 1) AS next_contact_at
+                  FROM customers c
+                  WHERE (? = 'ALL' OR c.customer_type = ?)
+                    AND (? = ''
+                         OR c.name LIKE ?
+                         OR c.phone LIKE ?
+                         OR c.address LIKE ?
+                         OR c.memo LIKE ?
+                         OR REPLACE(REPLACE(c.phone, '-', ''), ' ', '') LIKE ?)
+                  ORDER BY c.name LIMIT 50"
+                 [resolved-filter resolved-filter query
+                  (str "%" query "%") (str "%" query "%") (str "%" query "%") (str "%" query "%")
+                  (str "%" normalized-query "%")])]
+      (map (fn [row] (assoc row :region (parse-region (get row :address)))) rows))))
 
 ;; ---- 부품판매 (매출 30%, A/S와 독립적으로도 발생) ----
 

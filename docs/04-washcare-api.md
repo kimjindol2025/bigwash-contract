@@ -137,12 +137,18 @@ Admin UI에서 이 에러를 그대로 사용자에게 보여주면 안 되고, 
 
 응답 404: `{ok: false, error: "Not found"}` (실측 확인)
 
-### GET /care/customers?q=X
+### GET /care/customers?q=X&filter=Y
 
 `name`/`phone`/`address`/`memo`에 대해 `LIKE %q%` 부분일치, 최대 50건. `q` 없으면 빈 문자열로 전체(최대
-50건) 반환. 전화번호 뒷 4자리 같은 부분 입력도 허용한다.
+50건) 반환. 전화번호 뒷 4자리 같은 부분 입력도 허용하고, 하이픈·공백을 제거한 뒤에도 비교하므로
+`010-1234-5678`/`01012345678` 어느 쪽으로 검색해도 같은 고객이 걸린다(2026-07-20 추가, docs/05 33장).
+`filter`는 `ALL`(기본)/`LEAD`/`CUSTOMER`/`SERVICE`/`VENDOR`.
 
-응답 200: `{ok: true, data: [{id, name, phone, email, address, customer_type, migration_status}, ...]}`
+응답 200: `{ok: true, data: [{id, name, phone, email, address, customer_type, migration_status, site_name, last_consulted_at, next_contact_at, region}, ...]}`
+
+- `site_name`: 이 고객의 가장 먼저 등록된 현장(`sites`) 이름 — 현장이 없으면 `null`
+- `region`: `address` 앞 두 토큰(예: "경기도 김포시")만 잘라낸 값 — 파싱 실패 시 `address` 원문
+- `last_consulted_at`/`next_contact_at`: 최근 상담일 / 미완료 상담의 다음 연락 예정일(`consultations` 기준)
 
 ### GET /care/customers/:id
 

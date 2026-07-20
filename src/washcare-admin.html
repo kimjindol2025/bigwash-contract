@@ -74,14 +74,38 @@
 
   @media (max-width: 780px) {
     .topbar { padding:12px 14px; }
-    .topbar input { width:150px; }
+    .topbar input { width:150px; font-size:16px; }
     .shell { flex-direction:column; min-height:0; }
     aside.sidebar { width:100%; border-right:none; border-bottom:1px solid #E7ECED; padding:12px; }
     .sidebar-label { display:none; }
     aside.sidebar nav { flex-direction:row; overflow-x:auto; gap:6px; -webkit-overflow-scrolling:touch; padding-bottom:2px; }
-    aside.sidebar nav button { white-space:nowrap; flex:0 0 auto; }
+    aside.sidebar nav button { white-space:nowrap; flex:0 0 auto; min-height:44px; }
     main { padding:16px 14px 28px; }
     .panel { padding:16px; }
+
+    /* 폼 필드: 16px 미만이면 iOS Safari가 입력창 탭할 때 자동으로 화면을 확대한다 */
+    input, select, textarea { font-size:16px; }
+
+    /* .row 안에서 나란히 놓이던 필드를 세로로 꽉 채워 쌓는다 — 두 손가락 줌 없이 바로 탭 가능하게 */
+    .row > div { flex: 1 1 100%; }
+    .row > input, .row > select, .row > textarea,
+    .row > div > input, .row > div > select, .row > div > textarea { width: 100%; }
+
+    /* 터치 타깃 44px 미만 방지 (iOS/Android 권장 최소 터치 영역) */
+    button.primary, button.ghost { min-height: 44px; }
+
+    /* 표: 좁은 화면에서 글자 크기를 살짝 줄이고, 첫 컬럼을 고정해 가로 스크롤 중에도
+       어느 행인지 계속 보이게 한다 */
+    table { font-size: 12.5px; }
+    th, td { padding: 10px 10px; }
+    th:first-child, td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      box-shadow: 2px 0 4px -2px rgba(0,0,0,.12);
+    }
+    th:first-child { background: #FAFBFB; }
+    td:first-child { background: #FFFFFF; }
   }
 </style>
 </head>
@@ -447,8 +471,9 @@ function customerRow(c) {
   return `<tr ${actionAttrs('viewCustomer', [c.id])}>
     <td>${c.id}</td>
     <td>${escapeHtml(c.name)}</td>
+    <td>${escapeHtml(c.site_name || '-')}</td>
     <td>${escapeHtml(c.phone || '')}</td>
-    <td>${escapeHtml(c.address || '')}</td>
+    <td>${escapeHtml(c.region || '')}</td>
     <td>${escapeHtml(customerTypeLabel(c.customer_type))}</td>
     <td>${escapeHtml(c.last_consulted_at || '-')}</td>
     <td>${escapeHtml(c.next_contact_at || '-')}</td>
@@ -587,8 +612,8 @@ async function runCustomerSearch() {
   try {
     const res = await api('GET', '/care/customers?q=' + encodeURIComponent(q) + '&filter=' + encodeURIComponent(currentCustomerFilter));
     document.querySelector('#customerSearchResult').innerHTML = `<table><thead><tr>
-      <th>ID</th><th>고객명</th><th>연락처</th><th>주소</th><th>구분</th><th>최근 연락</th><th>다음 연락</th>
-    </tr></thead><tbody>${res.data.map(customerRow).join('') || emptyStateRow(7, '검색 결과 없음', '입력한 조건에 맞는 고객이 없습니다.')}</tbody></table>`;
+      <th>고객번호</th><th>고객명</th><th>사업장명</th><th>연락처</th><th>지역</th><th>구분</th><th>최근 연락</th><th>다음 연락</th>
+    </tr></thead><tbody>${res.data.map(customerRow).join('') || emptyStateRow(8, '검색 결과 없음', '입력한 조건에 맞는 고객이 없습니다.')}</tbody></table>`;
   } catch (e) {
     msg.textContent = '오류: ' + e.message;
   }
