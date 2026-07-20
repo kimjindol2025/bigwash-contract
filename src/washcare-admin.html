@@ -64,8 +64,18 @@
   .empty-state { margin-top:12px; padding:28px 18px; border:1px dashed #D9E0E3; border-radius:14px; background:#FBFCFC; color:#7B878C; text-align:center; }
   .empty-state-title { margin:0 0 6px; font-size:14px; font-weight:800; color:#5C666C; }
   .empty-state-text { margin:0; font-size:13px; line-height:1.5; }
-  .tab-bar { display:flex; gap:8px; flex-wrap:wrap; margin:18px 0 20px; }
+  .tab-bar { display:flex; gap:8px; flex-wrap:nowrap; overflow-x:auto; margin:18px 0 20px; padding-bottom:6px; scrollbar-width:thin; -webkit-overflow-scrolling:touch; }
+  .tab-bar button { flex-shrink:0; white-space:nowrap; }
   .tab-panel { margin-top:18px; }
+  .info-card { background:#FFFFFF; border:1px solid #E7ECED; border-left:4px solid #6C4CE0; border-radius:14px; padding:18px 20px; margin-bottom:18px; }
+  .info-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px 24px; }
+  .info-row { display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .info-row-label { font-size:11.5px; font-weight:700; color:#8B979B; }
+  .info-row-value { font-size:13.5px; font-weight:700; color:#22292E; overflow-wrap:break-word; }
+  .stat-chip-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(96px, 1fr)); gap:10px; margin-top:16px; }
+  .stat-chip { background:#FBFAFE; border:1px solid #E6E0FA; border-radius:12px; padding:12px 10px; text-align:center; }
+  .stat-chip-value { font-size:18px; font-weight:800; color:#6C4CE0; }
+  .stat-chip-label { font-size:11px; font-weight:700; color:#8B979B; margin-top:2px; }
   .msg { min-height:20px; color:#B4780A; font-size:13px; margin:0 0 12px; font-weight:600; }
   .token-box { display:flex; gap:8px; align-items:center; background:#F4F6F6; padding:10px 12px; border-radius:9px; font-family:ui-monospace,monospace; font-size:12px; word-break:break-all; border:1px solid #E7ECED; }
   h2 { font-size:16px; color:#22292E; margin:0 0 16px; font-weight:800; }
@@ -287,6 +297,17 @@ function quoteStatusLabel(status) {
   }[status] || status || '-';
 }
 
+function timelineTypeLabel(type) {
+  return {
+    CONSULTATION: '상담',
+    SALE: '판매',
+    QUOTE: '견적',
+    CONTRACT: '계약',
+    TICKET: '출장',
+    FOLLOWUP: '사후관리',
+  }[type] || type || '-';
+}
+
 const QUOTE_NEXT = {
   DRAFT: ['SENT'],
   SENT: ['REVIEWING', 'ON_HOLD', 'REJECTED'],
@@ -312,8 +333,19 @@ const CUSTOMER_FILTERS = [
   ['VENDOR', '거래처'],
 ];
 
+const TIMELINE_FILTERS = [
+  ['ALL', '전체'],
+  ['CONSULTATION', '상담'],
+  ['SALE', '판매'],
+  ['QUOTE', '견적'],
+  ['CONTRACT', '계약'],
+  ['TICKET', '출장'],
+  ['FOLLOWUP', '사후관리'],
+];
+
 let currentCustomerFilter = 'ALL';
 let currentCustomerTab = 'basic';
+let currentTimelineType = 'ALL';
 let currentCustomerId = null;
 let currentCustomerDetail = null;
 
@@ -632,6 +664,7 @@ function showCustomerTab(tab) {
 function customerDetailTabs() {
   const tabs = [
     ['basic', '기본정보'],
+    ['timeline', '타임라인'],
     ['sites', '현장'],
     ['equipment', '장비'],
     ['quotes', '견적'],
@@ -648,15 +681,45 @@ function customerDetailTabs() {
   </div>`;
 }
 
+function renderTimelineTab(detail) {
+  return `<div class="tab-panel">
+    <div class="row">
+      ${TIMELINE_FILTERS.map(([value, label]) => `<button class="${value === currentTimelineType ? 'primary' : 'ghost'}" ${actionAttrs('setCustomerTimelineType', [value])}>${escapeHtml(label)}</button>`).join('')}
+    </div>
+    <table><thead><tr>
+      <th>날짜</th><th>구분</th><th>제목</th><th>내용</th>
+    </tr></thead><tbody>${detail.timeline.map(event => `<tr>
+      <td>${escapeHtml((event.event_at || '').slice(0, 10) || '-')}</td>
+      <td><span class="badge b-${escapeHtml(event.event_type)}">${escapeHtml(timelineTypeLabel(event.event_type))}</span></td>
+      <td>${escapeHtml(event.title || '-')}</td>
+      <td>${escapeHtml(event.detail || '-')}</td>
+    </tr>`).join('') || emptyStateRow(4, '타임라인 없음', '선택한 유형의 고객 기록이 아직 없습니다.')}</tbody></table>
+  </div>`;
+}
+
 function renderBasicTab(detail) {
   const customer = detail.customer;
   const recent = detail.consultations.slice(0, 3);
   const pending = detail.consultations.filter(c => c.next_action !== 'NONE' && !c.completed_at);
+  const stats = [
+    ['현장', detail.sites.length],
+    ['장비', detail.equipment.length],
+    ['담당자', detail.contacts.length],
+    ['할 일', detail.tasks.filter(t => t.status !== 'DONE').length],
+    ['사후관리', detail.followups.filter(f => !f.completed_at).length],
+  ];
   return `<div class="tab-panel">
-    <p>연락처: ${escapeHtml(customer.phone || '-')} / 주소: ${escapeHtml(customer.address || '-')}</p>
-    <p>구분: ${escapeHtml(customerTypeLabel(customer.customer_type))}</p>
-    <p>메모: ${escapeHtml(customer.memo || '-')}</p>
-    <p>현장 ${detail.sites.length}건 / 장비 ${detail.equipment.length}건 / 담당자 ${detail.contacts.length}명 / 할 일 ${detail.tasks.filter(t => t.status !== 'DONE').length}건 / 사후관리 ${detail.followups.filter(f => !f.completed_at).length}건</p>
+    <div class="info-card">
+      <div class="info-grid">
+        <div class="info-row"><span class="info-row-label">연락처</span><span class="info-row-value">${escapeHtml(customer.phone || '-')}</span></div>
+        <div class="info-row"><span class="info-row-label">주소</span><span class="info-row-value">${escapeHtml(customer.address || '-')}</span></div>
+        <div class="info-row"><span class="info-row-label">구분</span><span class="info-row-value">${escapeHtml(customerTypeLabel(customer.customer_type))}</span></div>
+        <div class="info-row"><span class="info-row-label">메모</span><span class="info-row-value">${escapeHtml(customer.memo || '-')}</span></div>
+      </div>
+      <div class="stat-chip-row">
+        ${stats.map(([label, value]) => `<div class="stat-chip"><div class="stat-chip-value">${value}</div><div class="stat-chip-label">${escapeHtml(label)}</div></div>`).join('')}
+      </div>
+    </div>
     <h2>최근 상담</h2>
     ${recent.length ? `<ul>${recent.map(c => `<li>${escapeHtml(c.consulted_at || '-')} / ${escapeHtml(consultationMethodLabel(c.method))} / ${escapeHtml(c.content || '')}</li>`).join('')}</ul>` : emptyState('최근 상담 없음', '아직 등록된 상담 기록이 없습니다.')}
     <h2>다음 해야 할 일</h2>
@@ -912,6 +975,7 @@ function renderCustomerDetail() {
   if (!currentCustomerDetail) return;
   let tabContent = '';
   if (currentCustomerTab === 'basic') tabContent = renderBasicTab(currentCustomerDetail);
+  else if (currentCustomerTab === 'timeline') tabContent = renderTimelineTab(currentCustomerDetail);
   else if (currentCustomerTab === 'sites') tabContent = renderSitesTab(currentCustomerDetail);
   else if (currentCustomerTab === 'equipment') tabContent = renderEquipmentTab(currentCustomerDetail);
   else if (currentCustomerTab === 'quotes') tabContent = renderQuotesTab(currentCustomerDetail);
@@ -981,9 +1045,10 @@ async function createCustomer() {
 async function viewCustomer(id, selectedTab) {
   msg.textContent = '불러오는 중...';
   try {
-    const [customerRes, consultationsRes, sitesRes, equipmentRes, quotesRes, contractsRes, ticketsRes, salesRes, contactsRes, tasksRes, followupsRes] = await Promise.all([
+    const [customerRes, consultationsRes, timelineRes, sitesRes, equipmentRes, quotesRes, contractsRes, ticketsRes, salesRes, contactsRes, tasksRes, followupsRes] = await Promise.all([
       api('GET', '/care/customers/' + id),
       api('GET', '/care/consultations?customer_id=' + id),
+      api('GET', '/care/timeline?customer_id=' + id + '&type=ALL'),
       api('GET', '/care/sites?customer_id=' + id),
       api('GET', '/care/equipment?customer_id=' + id),
       api('GET', '/care/quotes?customer_id=' + id),
@@ -997,9 +1062,11 @@ async function viewCustomer(id, selectedTab) {
     msg.textContent = '';
     currentCustomerId = id;
     currentCustomerTab = selectedTab || 'basic';
+    currentTimelineType = 'ALL';
     currentCustomerDetail = {
       customer: customerRes.data,
       consultations: consultationsRes.data,
+      timeline: timelineRes.data,
       sites: sitesRes.data,
       equipment: equipmentRes.data,
       quotes: quotesRes.data,
@@ -1010,6 +1077,18 @@ async function viewCustomer(id, selectedTab) {
       tasks: tasksRes.data,
       followups: followupsRes.data
     };
+    renderCustomerDetail();
+  } catch (e) {
+    msg.textContent = '오류: ' + e.message;
+  }
+}
+
+async function setCustomerTimelineType(type) {
+  if (!currentCustomerId || !currentCustomerDetail) return;
+  try {
+    const res = await api('GET', '/care/timeline?customer_id=' + currentCustomerId + '&type=' + encodeURIComponent(type));
+    currentTimelineType = type;
+    currentCustomerDetail.timeline = res.data;
     renderCustomerDetail();
   } catch (e) {
     msg.textContent = '오류: ' + e.message;

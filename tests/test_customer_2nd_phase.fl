@@ -43,6 +43,7 @@
       sale-main (create-part-sale site-id (get equipment :id) nil "노즐" 2 12000 "STORE")
       sale-other (create-part-sale other-site-id nil nil "필터" 1 5000 "STORE")
       quote (create-quote customer-id "고객2차 견적" 275000 "2026-07-31" "견적 메모")
+      consultation (create-consultation customer-id "2026-07-20T01:00:00" "PHONE" "타임라인 상담" "NONE" nil)
       invalid-quote-transition
         (try
           (do
@@ -81,6 +82,36 @@
     (assert (not (= (get (first customer-tickets) :id) (get ticket-other :id))) "비교 고객 출장은 포함되면 안 된다")
     (assert (not (= (get (first customer-sales) :id) (get sale-other :id))) "비교 고객 판매는 포함되면 안 된다")
     (assert invalid-quote-transition "잘못된 견적 상태 전이는 거부해야 한다"))
+
+  ;; 입력 포맷과 생성 순서에 기대지 않고 고정 시각으로 타임라인 정렬을 검증한다.
+  (db_exec DB "UPDATE part_sales SET sold_at = '2026-07-20 02:00:00' WHERE id = ?" [(get sale-main :id)])
+  (db_exec DB "UPDATE quotes SET created_at = '2026-07-20 03:00:00' WHERE id = ?" [(get quote :id)])
+  (db_exec DB "UPDATE contracts SET created_at = '2026-07-20 04:00:00' WHERE id = ?" [(get contract-main-row :id)])
+  (db_exec DB "UPDATE service_tickets SET created_at = '2026-07-20 05:00:00' WHERE id = ?" [(get ticket-main :id)])
+  (db_exec DB "UPDATE customer_followups SET scheduled_at = '2026-07-20T06:00:00' WHERE id = ?" [(get followup :id)])
+
+  (let [timeline (list-customer-timeline customer-id nil)
+        quote-timeline (list-customer-timeline customer-id "QUOTE")
+        ticket-timeline (list-customer-timeline customer-id "TICKET")
+        invalid-timeline-type
+          (try
+            (do
+              (list-customer-timeline customer-id "UNKNOWN")
+              false)
+            (catch [e] true))]
+    (assert (= (length timeline) 6) "고객 타임라인에 6개 도메인 기록이 모두 보여야 한다")
+    (assert (= (get (nth timeline 0) :event_type) "FOLLOWUP") "타임라인은 정규화된 시각 기준 최신순이어야 한다")
+    (assert (= (get (nth timeline 1) :event_type) "TICKET") "출장 기록이 두 번째여야 한다")
+    (assert (= (get (nth timeline 2) :event_type) "CONTRACT") "계약 기록이 세 번째여야 한다")
+    (assert (= (get (nth timeline 3) :event_type) "QUOTE") "견적 기록이 네 번째여야 한다")
+    (assert (= (get (nth timeline 4) :event_type) "SALE") "판매 기록이 다섯 번째여야 한다")
+    (assert (= (get (nth timeline 5) :event_type) "CONSULTATION") "상담 기록이 마지막이어야 한다")
+    (assert (= (length quote-timeline) 1) "견적 필터는 견적 기록만 반환해야 한다")
+    (assert (= (get (first quote-timeline) :source_id) (get quote :id)) "견적 필터가 해당 고객 견적을 반환해야 한다")
+    (assert (= (length ticket-timeline) 1) "출장 필터에 비교 고객 기록이 섞이면 안 된다")
+    (assert (= (get (first ticket-timeline) :source_id) (get ticket-main :id)) "출장 필터는 해당 고객 기록만 반환해야 한다")
+    (assert (not (= (get (first ticket-timeline) :source_id) (get ticket-other :id))) "비교 고객 출장은 타임라인에 섞이면 안 된다")
+    (assert invalid-timeline-type "지원하지 않는 타임라인 유형은 거부해야 한다"))
 
   (update-quote-status (get quote :id) "SENT")
   (update-quote-status (get quote :id) "REVIEWING")

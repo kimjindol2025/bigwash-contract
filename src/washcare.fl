@@ -447,6 +447,62 @@
      ORDER BY p.sold_at DESC, p.id DESC"
     [customer-id]))
 
+;; ---- 고객 타임라인 ----
+
+(defn valid-timeline-type? [event-type]
+  (or (= event-type "ALL")
+      (= event-type "CONSULTATION")
+      (= event-type "SALE")
+      (= event-type "QUOTE")
+      (= event-type "CONTRACT")
+      (= event-type "TICKET")
+      (= event-type "FOLLOWUP")))
+
+(defn list-customer-timeline [customer-id event-type]
+  (let [resolved-type (if (or (nil? event-type) (str-blank? event-type)) "ALL" event-type)]
+    (if (not (valid-timeline-type? resolved-type))
+      (error "type must be one of ALL, CONSULTATION, SALE, QUOTE, CONTRACT, TICKET, FOLLOWUP"))
+    (db_query DB
+      "SELECT * FROM (
+         SELECT 'CONSULTATION' AS event_type, datetime(consulted_at) AS event_at,
+                (method || ' 상담') AS title, content AS detail, id AS source_id
+         FROM consultations WHERE customer_id = ?
+
+         UNION ALL
+         SELECT 'SALE', datetime(p.sold_at),
+                (p.part_name || ' ' || p.quantity || '개'),
+                ('총액 ' || p.total_price || '원'), p.id
+         FROM part_sales p
+         JOIN sites s ON s.id = p.site_id
+         WHERE s.customer_id = ?
+
+         UNION ALL
+         SELECT 'QUOTE', datetime(created_at), title,
+                ('금액 ' || amount || '원 / 상태 ' || status), id
+         FROM quotes WHERE customer_id = ?
+
+         UNION ALL
+         SELECT 'CONTRACT', datetime(created_at), ('계약 ' || number),
+                ('금액 ' || amount || '원 / 상태 ' || status), id
+         FROM contracts WHERE customer_id = ?
+
+         UNION ALL
+         SELECT 'TICKET', datetime(t.created_at), t.symptom,
+                ('상태 ' || t.status), t.id
+         FROM service_tickets t
+         JOIN sites s ON s.id = t.site_id
+         WHERE s.customer_id = ?
+
+         UNION ALL
+         SELECT 'FOLLOWUP', datetime(scheduled_at), followup_type,
+                COALESCE(result, ''), id
+         FROM customer_followups WHERE customer_id = ?
+       )
+       WHERE (? = 'ALL' OR event_type = ?)
+       ORDER BY event_at DESC, event_type, source_id DESC"
+      [customer-id customer-id customer-id customer-id customer-id customer-id
+       resolved-type resolved-type])))
+
 ;; ---- 휴면기 관리·홍보 (활동 20%, 판매 후 ~3년 동안 가장 자주 도는 흐름) ----
 
 (defn create-outreach-touch [site-id equipment-id touch-type channel next-touch-at]

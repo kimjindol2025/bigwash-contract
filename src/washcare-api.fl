@@ -375,6 +375,17 @@
                   :data (list-customer-contracts (server_req_query req "customer_id"))})
     (unauthorized)))
 
+(defn handle-list-customer-timeline [req]
+  (if (internal-authorized? req)
+    (try
+      (server_json {:ok true
+                    :data (list-customer-timeline
+                            (server_req_query req "customer_id")
+                            (server_req_query req "type"))})
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
 (defn handle-create-quote [req]
   (if (internal-authorized? req)
     (try
@@ -535,6 +546,7 @@
 (server_get  "/care/quotes" "handle-list-customer-quotes")
 (server_put  "/care/quotes/:id/status" "handle-update-quote-status")
 (server_post "/care/quotes/:id/convert" "handle-convert-quote")
+(server_get  "/care/timeline" "handle-list-customer-timeline")
 (server_get  "/care/contracts" "handle-list-customer-contracts")
 (server_post "/care/tickets" "handle-create-ticket")
 (server_get  "/care/tickets" "handle-list-tickets")
