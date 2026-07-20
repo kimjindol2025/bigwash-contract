@@ -1,4 +1,4 @@
-(load "/root/apps/bigwash-contract/src/db.fl")
+(load "/root/kim/bigwash-contract/src/db.fl")
 
 ;; OR IGNORE: number이 UNIQUE라 이 테스트를 같은 DB에 대해 두 번 실행해도 실패하지
 ;; 않게 한다 (이미 있으면 건너뜀 — 이후 조회는 number로 지목하므로 안전하다).
@@ -9,7 +9,7 @@
 (db_exec DB "INSERT OR IGNORE INTO contracts (number, status, client_id, amount) VALUES (?, 'DRAFT', ?, ?)"
   ["MIGRATION-202" 202 3000])
 
-(load "/root/apps/bigwash-contract/src/phase1-db.fl")
+(load "/root/kim/bigwash-contract/src/phase1-db.fl")
 
 ;; db/contracts.sqlite는 테스트 간 리셋되지 않는 공유 파일이라, 이전 실행에서 남은
 ;; client_id=101/202 계약이 섞여 있을 수 있다. 배열 위치(ORDER BY id의 0/1/2번째)로

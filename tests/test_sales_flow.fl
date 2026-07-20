@@ -1,6 +1,6 @@
-(load "/root/apps/bigwash-contract/src/washcare.fl")
+(load "/root/kim/bigwash-contract/src/washcare.fl")
 
-(if (= DB "/root/apps/bigwash-contract/db/contracts.sqlite")
+(if (= DB "/root/kim/bigwash-contract/db/contracts.sqlite")
   (error "test_sales_flow.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
 
 ;; 격리 테스트 DB 재실행을 위해 이 테스트 픽스처를

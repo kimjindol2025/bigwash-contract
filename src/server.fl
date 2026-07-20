@@ -1,8 +1,8 @@
 ;;; BigWash Contract Server
 
-(load "/root/apps/bigwash-contract/src/db.fl")
-(load "/root/apps/bigwash-contract/src/contract.fl")
-(load "/root/apps/bigwash-contract/src/pages.fl")
+(load "/root/kim/bigwash-contract/src/db.fl")
+(load "/root/kim/bigwash-contract/src/contract.fl")
+(load "/root/kim/bigwash-contract/src/pages.fl")
 
 ;;; 테스트 데이터
 (define sample-contracts [

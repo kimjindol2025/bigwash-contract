@@ -1,4 +1,4 @@
-(load "/root/apps/bigwash-contract/src/contract.fl")
+(load "/root/kim/bigwash-contract/src/contract.fl")
 
 (println "--- Contract Test Start ---")
 

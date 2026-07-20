@@ -1,8 +1,8 @@
 ;;; Contract API Server
 
 ;; 1. 스코프 오염 방지: load 대신 import 사용
-(import contract :from "/root/apps/bigwash-contract/src/contract.fl")
-(import db :from "/root/apps/bigwash-contract/src/db.fl")
+(import contract :from "./contract.fl")
+(import db :from "./db.fl")
 
 ;; 4. 부작용(Side effect) 통제: 메인 실행부에서 명시적으로 DB 초기화
 (db:init-db)

@@ -1,6 +1,6 @@
-(load "/root/apps/bigwash-contract/src/washcare.fl")
+(load "/root/kim/bigwash-contract/src/washcare.fl")
 
-(if (= DB "/root/apps/bigwash-contract/db/contracts.sqlite")
+(if (= DB "/root/kim/bigwash-contract/db/contracts.sqlite")
   (error "test_customer_consultation.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
 
 (db_exec DB "DELETE FROM consultations WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '상담테스트 %')" [])

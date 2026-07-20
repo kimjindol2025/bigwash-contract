@@ -1,6 +1,6 @@
 ;;; Contract Management Logic
 
-(load "/root/apps/bigwash-contract/src/phase1-db.fl")
+(load "/root/kim/bigwash-contract/src/phase1-db.fl")
 
 ;;; Status constants
 (define STATUS-DRAFT "DRAFT")
@@ -8,12 +8,6 @@
 (define STATUS-APPROVED "APPROVED")
 (define STATUS-COMPLETED "COMPLETED")
 (define STATUS-CANCELLED "CANCELLED")
-
-;;; Generate contract number
-(defn generate-contract-number []
-  (let [[ts (now_ms)]
-        [rand-val (+ 1000 (floor (* (random) 8999)))]]
-    (str "CTR-" ts "-" rand-val)))
 
 ;;; Validate status transition
 (defn valid-transition? [from to]
@@ -40,21 +34,11 @@
          (* (get item :quantity) (get item :unit_price))])
       (insert-items-rec db-conn contract-id items (+ idx 1)))))
 
-;;; Temporary rollback shadow for the legacy NOT NULL client_id column.
-;;; Verified legacy IDs are preserved; new customers use a negative Customer.id.
-(defn legacy-shadow-client-id [customer-id]
-  (let [rows (db_query (get-db)
-               "SELECT legacy_client_id FROM customers WHERE id = ?"
-               [customer-id])]
-    (if (= (length rows) 0) (error "Customer not found"))
-    (let [legacy-id (get (first rows) :legacy_client_id)]
-      (if (nil? legacy-id) (- 0 customer-id) legacy-id))))
-
 ;;; Create new contract (no try-catch inside, let caller handle errors)
 (defn create-contract-impl [customer-id amount items]
   (let [[db-conn (get-db)]
-        [contract-num (generate-contract-number)]
-        [shadow-client-id (legacy-shadow-client-id customer-id)]]
+        [contract-num (generate-doc-number "CTR")]
+        [shadow-client-id (resolve-shadow-client-id customer-id)]]
     (db_exec db-conn "BEGIN TRANSACTION" [])
     ;; Insert contract
     (db_exec db-conn

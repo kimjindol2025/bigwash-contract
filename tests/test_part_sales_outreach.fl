@@ -1,4 +1,4 @@
-(load "/root/apps/bigwash-contract/src/washcare.fl")
+(load "/root/kim/bigwash-contract/src/washcare.fl")
 
 ;; db/contracts.sqlite는 테스트 간 리셋되지 않는 공유 파일이라, 이 테스트 픽스처를
 ;; 먼저 정리한다.

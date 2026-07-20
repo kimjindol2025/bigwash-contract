@@ -1,6 +1,6 @@
 ;;; BigWash Care Phase 1 domain operations
 
-(load "/home/kim/kim/bigwash-contract/src/phase1-db.fl")
+(load "/root/kim/bigwash-contract/src/phase1-db.fl")
 
 (define TICKET-RECEIVED "RECEIVED")
 (define TICKET-SCHEDULED "SCHEDULED")
@@ -244,12 +244,6 @@
      ORDER BY created_at DESC, id DESC"
     [customer-id]))
 
-(defn generate-quote-number []
-  (str "QT-" (now_ms) "-" (+ 1000 (floor (* (random) 8999)))))
-
-(defn generate-converted-contract-number []
-  (str "CTR-" (now_ms) "-" (+ 1000 (floor (* (random) 8999)))))
-
 (defn valid-quote-transition? [from to]
   (cond
     [(= from "DRAFT") (= to "SENT")]
@@ -264,7 +258,7 @@
     [true false]))
 
 (defn create-quote [customer-id title amount valid-until memo]
-  (let [number (generate-quote-number)]
+  (let [number (generate-doc-number "QT")]
     (db_exec DB
       "INSERT INTO quotes (customer_id, quote_number, title, amount, valid_until, memo)
        VALUES (?, ?, ?, ?, ?, ?)"
@@ -296,12 +290,6 @@
            [new-status quote-id])])
       (first (db_query DB "SELECT * FROM quotes WHERE id = ?" [quote-id])))))
 
-(defn quote-shadow-client-id [customer-id]
-  (let [rows (db_query DB "SELECT legacy_client_id FROM customers WHERE id = ?" [customer-id])]
-    (if (= (length rows) 0) (error "Customer not found"))
-    (let [legacy-id (get (first rows) :legacy_client_id)]
-      (if (nil? legacy-id) (- 0 customer-id) legacy-id))))
-
 (defn convert-quote-to-contract [quote-id]
   (let [rows (db_query DB "SELECT * FROM quotes WHERE id = ?" [quote-id])]
     (if (= (length rows) 0) (error "Quote not found"))
@@ -310,8 +298,8 @@
         (error "Only APPROVED quotes can be converted to a contract"))
       (db_exec DB "BEGIN TRANSACTION" [])
       (try
-        (let [contract-number (generate-converted-contract-number)
-              shadow-client-id (quote-shadow-client-id (get quote :customer_id))]
+        (let [contract-number (generate-doc-number "CTR")
+              shadow-client-id (resolve-shadow-client-id (get quote :customer_id))]
           (db_exec DB
             "INSERT INTO contracts (number, status, client_id, customer_id, amount)
              VALUES (?, 'DRAFT', ?, ?, ?)"

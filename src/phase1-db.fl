@@ -1,6 +1,17 @@
 ;;; BigWash Care Phase 1 schema and bounded legacy migration
 
-(load "/home/kim/kim/bigwash-contract/src/db.fl")
+(load "/root/kim/bigwash-contract/src/db.fl")
+
+;;; 레거시 client_id NOT NULL 컬럼용 임시 롤백 섀도우.
+;;; 검증된 레거시 ID는 보존하고, 신규 고객은 음수 Customer.id를 쓴다.
+;;; (계약 생성·견적→계약 전환 양쪽에서 공유)
+(defn resolve-shadow-client-id [customer-id]
+  (let [rows (db_query DB
+               "SELECT legacy_client_id FROM customers WHERE id = ?"
+               [customer-id])]
+    (if (= (length rows) 0) (error "Customer not found"))
+    (let [legacy-id (get (first rows) :legacy_client_id)]
+      (if (nil? legacy-id) (- 0 customer-id) legacy-id))))
 
 (defn phase1-contract-customer-column? []
   (let [rows (db_query DB
@@ -10,9 +21,8 @@
 
 (defn phase1-column-exists? [table-name column-name]
   (let [rows (db_query DB
-               (str "SELECT COUNT(*) AS count FROM pragma_table_info('" table-name
-                    "') WHERE name = '" column-name "'")
-               [])]
+               "SELECT COUNT(*) AS count FROM pragma_table_info(?) WHERE name = ?"
+               [table-name column-name])]
     (> (get (first rows) :count) 0)))
 
 (defn phase1-create-schema []

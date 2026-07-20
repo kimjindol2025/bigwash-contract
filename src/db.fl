@@ -3,7 +3,7 @@
 (define DB
   (let [override (env-get "BIGWASH_DB_PATH")]
     (if (or (nil? override) (str-blank? override))
-      "/home/kim/kim/bigwash-contract/db/contracts.sqlite"
+      "/root/kim/bigwash-contract/db/contracts.sqlite"
       override)))
 
 ;;; Initialize database
@@ -48,5 +48,9 @@
 
 ;;; Utility functions
 (defn get-db [] DB)
+
+;;; 문서 번호 생성 (계약/견적 공용) — 예: (generate-doc-number "CTR") -> "CTR-1784...-4821"
+(defn generate-doc-number [prefix]
+  (str prefix "-" (now_ms) "-" (+ 1000 (floor (* (random) 8999)))))
 
 (init-db)
