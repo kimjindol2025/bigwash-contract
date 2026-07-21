@@ -55,7 +55,19 @@ FREELANG_BOOTSTRAP=/home/kim/kim/freelang-v11/bootstrap.js ./scripts/migrate-pha
 
 FreeLang v11 실행기는 병렬 프로세스 간 공유 상태가 충돌할 수 있으므로 아래 테스트를
 동시에 실행하지 않는다. 각 테스트는 서로 다른 임시 DB를 사용한다.
-전체 10개 테스트 파일(`tests/test_*.fl`) 목록:
+전체 회귀는 개별 명령을 수동으로 반복하는 대신 다음 명령을 권장한다.
+
+```bash
+./scripts/verify-week6.sh
+```
+
+이 스크립트는 12종을 `mktemp` 하위의 서로 다른 DB로 직렬 실행하며 운영
+`db/contracts.sqlite`와 경로가 같거나 저장소 내부에 임시 DB가 생기면 즉시
+중단한다. Admin 인라인 스크립트 구문과 OpenAPI 55개 라우트 정합도 함께
+검증한다. 운영 배포 체크리스트와 롤백/승인 경계는
+`docs/10-week6-readiness.md`를 따른다.
+
+전체 12개 테스트 파일(`tests/test_*.fl`) 목록:
 
 ```bash
 BIGWASH_DB_PATH=/tmp/bigwash-contract-test.sqlite \
@@ -69,6 +81,12 @@ BIGWASH_DB_PATH=/tmp/bigwash-care-test.sqlite \
 
 BIGWASH_DB_PATH=/tmp/bigwash-part-sales-test.sqlite \
   node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_part_sales_outreach.fl
+
+BIGWASH_DB_PATH=/tmp/bigwash-incoming-call-test.sqlite \
+  node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_incoming_call.fl
+
+BIGWASH_DB_PATH=/tmp/bigwash-call-events-test.sqlite \
+  node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_call_events.fl
 ```
 
 아래 6개는 격리된 `BIGWASH_DB_PATH`가 없으면 테스트 자체가 즉시 에러로
@@ -130,9 +148,9 @@ node /home/kim/kim/freelang-v11/bootstrap.js run src/washcare-api.fl
 
 키를 설정한 경우 내부 요청에는 `x-api-key` 헤더가 필요하다.
 
-내부 API는 51개 라우트(정적 Admin UI·루트 리다이렉트 제외, 2026-07-21 4주차
-`/care/care-plans*` 반영, 5주차는 라우트 추가 없이 `GET /care/care-plans`의
-무필터 응답 계약만 확장)로 늘어나 이 문서에 개별 나열하지 않는다 — **전체
+내부 API는 53개 라우트(정적 Admin UI·루트 리다이렉트·공개 2개 제외,
+2026-07-22 통화 조회·이벤트 수신 API 포함)로 늘어나 이 문서에 개별 나열하지
+않는다 — **전체
 라우트 목록과 요청/응답 스키마는 `docs/openapi-washcare.yaml`(기계 판독용)과
 `docs/04-washcare-api.md`(설명)가 정본**이다. 기동 확인용 스모크 예시만 남긴다:
 

@@ -67,15 +67,21 @@
 │   ├── washcare.fl            # WashCare 도메인 로직
 │   ├── washcare-api.fl         # WashCare HTTP API (포트 40101)
 │   └── washcare-admin.html     # WashCare Admin UI (정적 HTML+JS)
-├── tests/                  # 테스트 10종 (test_contract.fl, test_phase1_migration.fl,
+├── tests/                  # 테스트 12종 (test_contract.fl, test_phase1_migration.fl,
 │                           #   test_washcare.fl, test_part_sales_outreach.fl,
 │                           #   test_sales_flow.fl, test_customer_consultation.fl,
 │                           #   test_customer_2nd_phase.fl, test_ops_summary.fl,
-│                           #   test_ops_weekly.fl, test_careplan.fl —
+│                           #   test_ops_weekly.fl, test_careplan.fl,
+│                           #   test_incoming_call.fl, test_call_events.fl —
 │                           #   실행 방법은 docs/RUN_GUIDE.md)
 ├── docs/                   # 문서 (제품기획, 아키텍처, API 문서, OpenAPI 스펙)
+├── scripts/verify-week6.sh # 운영 DB를 배제한 전체 회귀·문서 정합 검증
 └── db/                     # SQLite 데이터베이스
 ```
+
+전체 회귀는 저장소 루트에서 `./scripts/verify-week6.sh`로 실행한다. 12개 테스트를
+각각 별도 임시 DB에서 직렬 실행하고 Admin 구문·OpenAPI 55개 라우트·공백 오류를
+함께 확인한다. 운영 준비 판정과 승인 경계는 `docs/10-week6-readiness.md`가 정본이다.
 
 ### WashCare 실행
 
