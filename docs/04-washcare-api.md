@@ -41,6 +41,14 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
   - 이 세 조건이 충족되기 전까지는 개발 공개 모드를 운영 배포에 그대로
     가져가지 않는다 — 즉 fail-open 상태로 실고객 데이터를 다루는 배포는
     금지한다.
+  - **알려진 예외 (2026-07-20~, kim 확인)**: 위 게이트 완성 전에
+    `care.dclub.kr`가 이미 공개 배포됐다(node25 pm2, `README.md` "배포" 절).
+    `BIGWASH_INTERNAL_API_KEY`는 실제로 설정되어 있어 완전한 fail-open은
+    아니고, 현재 올라간 데이터도 전부 테스트/마이그레이션 더미(실고객
+    정보 없음, 2026-07-21 재확인)다. 코드 자체의 fail-closed 전환(조건 2)은
+    아직 안 됐으므로 정책 문서 기준으로는 여전히 갭이지만, kim이 이 상태
+    유지를 선택했다 — 실고객 데이터를 넣기 전에는 반드시 조건 2·3을
+    마저 채울 것.
 - **공개 엔드포인트** (`/care/status/:token`, `/care/site-status/:token`): 원래부터
   인증 없음. 토큰 자체가 접근 권한이며, 위 개발 공개 정책과 무관하게 항상
   같은 보안 모델(해시 저장, rate limit, `Cache-Control: no-store`)로 동작한다.
