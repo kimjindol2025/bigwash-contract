@@ -61,6 +61,24 @@ paths:
         "200": { description: 목록 }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /care/incoming-call:
+    get:
+      summary: 전화 수신 자동조회 (안드로이드 Tasker/MacroDroid 연동용, 2026-07-21 추가)
+      description: >-
+        발신번호로 고객을 정확 일치(하이픈 무관) 조회한다. search-customers와
+        달리 부분일치가 아니라 정확 일치만 — 착신 팝업에 엉뚱한 고객이 뜨면
+        안 되기 때문. 문서: docs/11-mobile-caller-lookup.md
+      security: [{ApiKeyAuth: []}, {}]
+      parameters:
+        - name: phone
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: "{ok, found, data} — found=false면 data=null(신규 발신자)" }
+        "400": { description: "phone 파라미터 누락" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /care/customers/{id}:
     get:
       summary: 고객 상세 조회

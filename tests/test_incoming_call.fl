@@ -1,0 +1,28 @@
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+(load (str REPO-ROOT "/src/washcare.fl"))
+
+;; 재실행 가능하도록 이 테스트의 픽스처만 먼저 지운다.
+(db_exec DB "DELETE FROM customers WHERE name = '전화조회테스트고객'" [])
+
+(define c (create-customer "전화조회테스트고객" "010-7777-8888" nil "메모" "CUSTOMER" nil))
+
+(let [hyphenated (lookup-customer-by-phone "010-7777-8888")]
+  (if (nil? hyphenated) (error "하이픈 포함 번호로 조회 실패"))
+  (if (not (= (get hyphenated :id) (get c :id))) (error "잘못된 고객이 조회됨")))
+
+(let [normalized (lookup-customer-by-phone "01077778888")]
+  (if (nil? normalized) (error "하이픈 없는 번호로 조회 실패"))
+  (if (not (= (get normalized :id) (get c :id))) (error "잘못된 고객이 조회됨")))
+
+(if (not (nil? (lookup-customer-by-phone "010-0000-0000")))
+  (error "존재하지 않는 번호인데 결과가 나옴"))
+
+(if (not (nil? (lookup-customer-by-phone "")))
+  (error "빈 문자열인데 결과가 나옴"))
+
+(if (not (nil? (lookup-customer-by-phone nil)))
+  (error "nil인데 결과가 나옴"))
+
+(println "✓ Incoming call lookup tests passed")

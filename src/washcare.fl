@@ -420,6 +420,38 @@
                   (str "%" normalized-query "%")])]
       (map (fn [row] (assoc row :region (parse-region (get row :address)))) rows))))
 
+;; 전화 수신 자동조회용 — 발신번호 정확히 일치하는 고객 1명만 찾는다.
+;; search-customers(LIKE 부분일치)와 달리 여기는 정확 일치라야 한다 —
+;; 착신 팝업에 엉뚱한 고객이 뜨면 안 되기 때문.
+(defn lookup-customer-by-phone [phone]
+  (let [normalized (str-replace (str-replace (if (nil? phone) "" phone) "-" "") " " "")]
+    (if (str-blank? normalized)
+      nil
+      (first
+        (db_query DB
+          "SELECT c.id, c.name, c.phone, c.customer_type, c.memo,
+                  (SELECT s.name FROM sites s
+                   WHERE s.customer_id = c.id
+                   ORDER BY s.id ASC LIMIT 1) AS site_name,
+                  (SELECT co.consulted_at
+                   FROM consultations co
+                   WHERE co.customer_id = c.id
+                   ORDER BY co.consulted_at DESC, co.id DESC LIMIT 1) AS last_consulted_at,
+                  (SELECT co.content
+                   FROM consultations co
+                   WHERE co.customer_id = c.id
+                   ORDER BY co.consulted_at DESC, co.id DESC LIMIT 1) AS last_content,
+                  (SELECT co.next_contact_at
+                   FROM consultations co
+                   WHERE co.customer_id = c.id
+                     AND co.completed_at IS NULL
+                     AND co.next_contact_at IS NOT NULL
+                   ORDER BY co.next_contact_at ASC, co.id DESC LIMIT 1) AS next_contact_at
+           FROM customers c
+           WHERE REPLACE(REPLACE(c.phone, '-', ''), ' ', '') = ?
+           LIMIT 1"
+          [normalized])))))
+
 ;; ---- 부품판매 (매출 30%, A/S와 독립적으로도 발생) ----
 
 (defn create-part-sale [site-id equipment-id ticket-id part-name quantity unit-price channel]

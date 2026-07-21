@@ -214,6 +214,22 @@
                           (or (server_req_query req "filter") "ALL"))})
     (unauthorized)))
 
+;; 전화 수신 자동조회 — 안드로이드 Tasker/MacroDroid가 발신번호를 여기로
+;; 넘기면 팝업에 띄울 최소 정보(이름·최근상담·다음조치)를 돌려준다.
+;; GET인 이유: 조회 전용이라 Tasker의 기본 HTTP Request 액션으로 바로 되고,
+;; 쿼리파라미터 하나(phone)만 있으면 되니 body를 만들 필요가 없다.
+(defn handle-incoming-call [req]
+  (if (internal-authorized? req)
+    (try
+      (let [phone (server_req_query req "phone")]
+        (if (or (nil? phone) (str-blank? phone))
+          (server_status 400 {:ok false :error "phone query param required"})
+          (let [customer (lookup-customer-by-phone phone)]
+            (server_json {:ok true :found (not (nil? customer)) :data customer}))))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
 ;; ---- 고객 상세·상담 관리 ----
 (defn handle-customer-detail [req]
   (if (internal-authorized? req)
@@ -646,6 +662,7 @@
 (server_post "/care/customers" "handle-create-customer")
 (server_get  "/care/customers" "handle-search-customers")
 (server_get  "/care/customers/:id" "handle-customer-detail")
+(server_get  "/care/incoming-call" "handle-incoming-call")
 (server_post "/care/consultations" "handle-create-consultation")
 (server_get  "/care/consultations" "handle-list-consultations")
 (server_put  "/care/consultations/:id/complete" "handle-complete-consultation")

@@ -55,7 +55,7 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 
 ## 내부 엔드포인트
 
-**이 표는 전체 내부 API 51개(정적 `/care/admin`, 공개 `/care/status/:token`·
+**이 표는 전체 내부 API 52개(정적 `/care/admin`, 공개 `/care/status/:token`·
 `/care/site-status/:token` 제외)를 `src/washcare-api.fl`의 `server_get`/
 `server_post`/`server_put` 등록과 1:1 대조해 채운 것이다. 각 요청/응답
 스키마의 기계 판독용 정본은 `docs/openapi-washcare.yaml`이고, 아래 표와
@@ -78,6 +78,7 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | GET | `/care/tickets/:id` | 티켓 상세 + 방문이력 + 상태변경이력 (2026-07-16 추가) | O |
 | GET | `/care/customers?q=X` | 이름·전화번호로 고객 검색, 최대 50건 (2026-07-16 추가) | O |
 | GET | `/care/customers/:id` | 고객 상세 조회 (2026-07-19 추가) | O |
+| GET | `/care/incoming-call?phone=X` | 전화 수신 자동조회 — 정확 일치(하이픈 무관), Tasker/MacroDroid 연동용 (2026-07-21 추가, `docs/11-mobile-caller-lookup.md`) | O |
 | POST | `/care/quotes` | 고객 견적 생성 (2026-07-19 추가) | O |
 | GET | `/care/quotes?customer_id=X` | 고객별 견적 목록 (2026-07-19 추가) | O |
 | PUT | `/care/quotes/:id/status` | 견적 상태 변경 (2026-07-19 추가) | O |
@@ -117,9 +118,9 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | PUT | `/care/care-plans/:id/cancel` | CarePlan 취소 (2026-07-21 4주차 추가) | O |
 | POST | `/care/care-plans/:id/renew` | CarePlan 갱신 — 기존 ACTIVE를 RENEWED로 전환 후 신규 행 생성 (2026-07-21 4주차 추가) | O |
 
-위 51개(내부 API, `/care/admin` 제외) + 아래 "공개 엔드포인트" 절의
+위 52개(내부 API, `/care/admin` 제외) + 아래 "공개 엔드포인트" 절의
 `/care/status/:token`, `/care/site-status/:token` 2개를 더하면
-`openapi-washcare.yaml`의 전체 operation 53개와 정확히 일치한다
+`openapi-washcare.yaml`의 전체 operation 54개와 정확히 일치한다
 (`/care/admin`, 루트 `/`는 정적 페이지라 양쪽 문서 모두 API 스펙에서 제외).
 
 ### POST /care/customers
