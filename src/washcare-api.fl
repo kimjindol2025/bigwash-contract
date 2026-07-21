@@ -257,8 +257,8 @@
             content (get body :content)
             duration (get body :duration)
             occurred-at-ms (get body :date)]
-        (if (or (nil? participant) (nil? direction) (nil? occurred-at-ms))
-          (server_status 400 {:ok false :error "participant, direction, date required"})
+        (if (or (nil? participant) (nil? direction))
+          (server_status 400 {:ok false :error "participant, direction required"})
           (let [result (record-call-event participant event-type direction content duration occurred-at-ms)]
             (server_json {:ok true :data result}))))
       (catch [e]

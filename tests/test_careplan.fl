@@ -286,4 +286,20 @@
       (assert (= (length future-rows) 50) "가장 최신(2100-01-01) 51건 중 50건만 반환돼야 한다 — 최신순 정렬이 캡과 함께 정확해야 한다")))
   )
 
+;; ---- 10. starts_at 생략(정상 사용법 — "생략하면 오늘 날짜로") ----
+;; 회귀 방지: FreeLang 함정(2026-07-21 재현·확인) — let의 여러 바인딩 중
+;; 하나가 (if cond (bare-call) other) 형태이고 뒤이은 바인딩이 그걸
+;; 참조하면 bare-call 분기가 미평가 thunk로 새어나온다. create-care-plan의
+;; resolved-starts-at이 정확히 이 모양이라, starts_at을 생략하는(문서가
+;; 명시한 정상 사용법) 모든 호출이 항상 깨졌었다 — 이 파일의 다른 모든
+;; 테스트는 starts_at을 전부 명시로 넘겨서 이 경로를 한 번도 안 거쳤다.
+(db_exec DB "DELETE FROM customers WHERE name = 'CarePlan테스트 생략점주'" [])
+(let [customer (create-customer "CarePlan테스트 생략점주" "010-9200-0099" "" "" nil nil)
+      customer-id (get customer :id)
+      site (create-site customer-id "CarePlan테스트 생략현장" "서울시 CP구" "02-9200-0099")
+      site-id (get site :id)
+      plan (create-care-plan site-id "BASIC_360" nil nil nil nil nil)]
+  (assert (not (nil? (get plan :starts_at))) "starts_at 생략 시 오늘 날짜로 자동 채워져야 한다")
+  (assert (valid-calendar-date? (get plan :starts_at)) "자동 채워진 starts_at은 유효한 YYYY-MM-DD여야 한다"))
+
 (println "✓ CarePlan tests passed")

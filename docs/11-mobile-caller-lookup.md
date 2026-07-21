@@ -47,7 +47,31 @@ curl "https://care.dclub.kr/care/incoming-call?phone=01012345678" \
 #  "next_contact_at":"2026-07-25"}}
 ```
 
-## Tasker 설정 (요약)
+## 착신 팝업 설정 — MacroDroid (실제 채택, 2026-07-21)
+
+처음엔 Tasker를 가정하고 썼는데(아래 요약 유지), 실제로는 **MacroDroid**
+(무료, 플레이스토어 정식 앱)로 갔다 — mobserve APK 사이드로딩이 Play
+Protect에 막혀서, 사이드로딩 자체가 필요 없는 경로로 바꿨다.
+
+**매크로 1 — 착신 팝업**
+
+1. MacroDroid 앱 → **+** (새 매크로) → **Trigger** 추가
+   - 카테고리: Phone → **Incoming Call** → State: **Ringing**
+2. **Action** 추가
+   - 카테고리: Connectivity → **HTTP Request**
+   - Method: GET
+   - URL: `https://care.dclub.kr/care/incoming-call?phone=[cl_phone_number]`
+     (Magic Text 목록에서 발신번호 변수 선택 — 트리거 종류에 따라 이름이
+     다를 수 있으니 Magic Text 버튼으로 직접 확인)
+   - Header: `x-api-key: <BIGWASH_INTERNAL_API_KEY>`
+   - Response Variable: 예) `lv_call_result`
+3. **Action** 추가 — 카테고리: MacroDroid → **JSON Read/Write** (또는
+   Variables → Parse JSON)로 `lv_call_result`에서 `found`/`data.name`/
+   `data.memo`/`data.next_contact_at` 추출
+4. **Action** 추가 — 카테고리: **Notification** → **Show Dialog** (또는
+   Popup Message)로 추출한 값 표시
+
+## Tasker 설정 (대안, 요약)
 
 1. **Profile** 생성 → Event → Phone → Phone Ring
 2. **Task** → Action → Net → HTTP Request
@@ -60,18 +84,57 @@ curl "https://care.dclub.kr/care/incoming-call?phone=01012345678" \
 4. **Action** → Alert → Flash 또는 Popup으로 `name`/`memo`/`next_contact_at`
    표시 — 전화가 울리는 동안 잠깐 뜨는 정도로 충분
 
-MacroDroid도 같은 3단계(트리거: Phone Ring → HTTP GET → Notification)로
-동일하게 구성 가능.
-
-## 통화·문자 자동 기록 — mobserve 연동 (2026-07-21 추가)
+## 통화·문자 자동 기록 — MacroDroid로 mobserve 대체 (2026-07-21)
 
 착신 팝업(위)과는 **별개 문제**다. 위 흐름은 "벨 울릴 때 누구인지 보여주기"고,
-여기는 "통화·문자가 끝난 뒤 자동으로 고객 타임라인에 기록"이다. GitHub에서
-정확히 이 역할을 하는 오픈소스를 찾아 그대로 붙였다 —
+여기는 "통화·문자가 끝난 뒤 자동으로 고객 타임라인에 기록"이다.
+
+원래 GitHub에서 정확히 이 역할을 하는 오픈소스를 찾아 붙일 계획이었다 —
 [`syncloudsoftech/mobserve`](https://github.com/syncloudsoftech/mobserve)
-(Kotlin, MIT, 2026-06-05 활발히 유지보수 중). 새 앱을 만들거나 빌드할
-필요 없이 [Releases](https://github.com/syncloudsoftech/mobserve/releases)
-에서 APK 받아 설치 후 webhook URL만 설정하면 된다.
+(Kotlin, MIT, 2026-06-05 활발히 유지보수 중). **API 설계는 mobserve의
+실제 webhook payload 형식(소스 `PostJsonWorker.kt` 확인)을 그대로 따라
+만들었지만, 실제 설치 단계에서 Play Protect가 APK 사이드로딩을 차단**했다
+(통화기록·SMS 권한 + 플레이스토어 미검증 조합을 자동으로 의심). GitHub
+Actions로 직접 빌드까지 해봤지만(`kimjindol2025/mobserve` 포크, 빌드
+자체는 성공) 서명 안 된 디버그 빌드라 오히려 신뢰도가 더 낮아 근본
+해결책이 아니었다 — 결국 **MacroDroid로 같은 JSON 형식을 만들어 보내는
+쪽으로 바꿨다.** 서버 API는 mobserve 전용이 아니라 이 형식을 따르는
+아무 앱이나 받도록 설계돼 있어 코드 변경 없이 그대로 됨.
+
+**매크로 2 — 통화 종료 후 자동 기록**
+
+1. **Trigger**: Phone → **Incoming Call** → State: **Ended** (통화 시간이
+   확정된 시점)
+2. **Action**: Connectivity → **HTTP Request**
+   - Method: POST
+   - URL: `https://care.dclub.kr/care/call-events?key=<BIGWASH_INTERNAL_API_KEY>`
+   - Content-Type: `application/json`
+   - Body:
+     ```json
+     {"event":"call","direction":"incoming","participant":"[cl_phone_number]","duration":[cl_call_duration]}
+     ```
+   - `date` 필드는 뺐다 — 안 보내면 서버가 수신 시각으로 채운다
+     (2026-07-21 서버 쪽에 추가, MacroDroid가 밀리초 타임스탬프를 만들기
+     번거로워서)
+
+**매크로 3 — 문자 수신 자동 기록**
+
+1. **Trigger**: Messaging → **SMS Received**
+2. **Action**: Connectivity → **HTTP Request** (매크로 2와 동일 URL/헤더)
+   - Body:
+     ```json
+     {"event":"sms","direction":"incoming","participant":"[sms_sender]","content":"[sms_message]"}
+     ```
+
+(mobserve를 실제로 설치할 수 있는 환경이면 그쪽이 더 간단하다 — 앱 하나로
+끝나고 MacroDroid 매크로 3개를 직접 안 만들어도 된다. 설치 가이드는
+아래에 남겨둔다.)
+
+새 앱을 만들거나 빌드할 필요 없이 mobserve
+[Releases](https://github.com/syncloudsoftech/mobserve/releases)에서
+APK 받아 설치 후 webhook URL만 설정하면 된다(Play Protect 차단 시
+플레이스토어 앱 → 프로필 → Play Protect → 설정 → "기기에서 유해한 앱
+검색" 일시 해제로 우회 가능, 안 되면 위 MacroDroid 경로 사용).
 
 ### 구조
 

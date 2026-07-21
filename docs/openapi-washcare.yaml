@@ -81,15 +81,15 @@ paths:
 
   /care/call-events:
     post:
-      summary: 자동 통화·문자 로거 webhook 수신 (mobserve 등, 2026-07-21 추가)
+      summary: 자동 통화·문자 로거 webhook 수신 (mobserve/MacroDroid 등, 2026-07-21 추가)
       description: >-
-        안드로이드 백그라운드 앱(예: syncloudsoftech/mobserve, MIT)이 통화·문자
-        직후 보내는 webhook을 받아 call_events에 원본 저장하고, 발신번호가
-        기존 고객과 일치하면 고객 타임라인에도 노출한다. 모르는 번호도 버리지
-        않고 customer_id NULL로 저장(소급 연결용, 타임라인엔 안 뜸).
-        mobserve는 커스텀 헤더를 못 보내므로(소스 확인) 이 엔드포인트만
-        `x-api-key` 헤더 대신 `?key=` 쿼리파라미터로 인증한다. 문서:
-        docs/11-mobile-caller-lookup.md
+        안드로이드 자동화 앱(syncloudsoftech/mobserve 또는 MacroDroid — 같은
+        JSON 형식으로 맞춰서 호출)이 통화·문자 직후 보내는 webhook을 받아
+        call_events에 원본 저장하고, 발신번호가 기존 고객과 일치하면 고객
+        타임라인에도 노출한다. 모르는 번호도 버리지 않고 customer_id NULL로
+        저장(소급 연결용, 타임라인엔 안 뜸). mobserve는 커스텀 헤더를 못
+        보내므로(소스 확인) 이 엔드포인트만 `x-api-key` 헤더 대신 `?key=`
+        쿼리파라미터로 인증한다. 문서: docs/11-mobile-caller-lookup.md
       security: [{ApiKeyQueryAuth: []}, {}]
       parameters:
         - name: key
@@ -102,14 +102,19 @@ paths:
           application/json:
             schema:
               type: object
-              required: [event, direction, participant, date]
+              required: [event, direction, participant]
               properties:
                 event: { type: string, enum: [call, sms] }
                 direction: { type: string, enum: [incoming, outgoing, missed] }
                 participant: { type: string, description: "국제(+82...)/국내(010-...) 둘 다 허용" }
                 content: { type: string, description: "sms일 때만" }
                 duration: { type: integer, description: "call일 때만, 초 단위" }
-                date: { type: integer, description: "epoch milliseconds" }
+                date:
+                  type: integer
+                  description: >-
+                    epoch milliseconds. 선택값 — 생략하면 서버 수신 시각을 쓴다
+                    (MacroDroid처럼 밀리초 타임스탬프를 만들기 번거로운 앱 대응,
+                    2026-07-21 추가)
       responses:
         "200": { description: "{ok, data:{matched, customer_id}}" }
         "400": { description: "participant/direction/date 누락" }

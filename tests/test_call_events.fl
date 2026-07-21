@@ -26,6 +26,11 @@
 (let [unknown-result (record-call-event "+821000000000" "SMS" "incoming" "테스트" nil 1770000100000)]
   (if (get unknown-result :matched) (error "모르는 번호인데 매칭됐다고 나옴")))
 
+;; date(occurred-at-ms) 생략 — MacroDroid처럼 밀리초 타임스탬프를 못 만드는
+;; 자동화 앱을 위한 fallback. 서버 수신 시각으로 기록되고 에러가 나면 안 된다.
+(let [no-date-result (record-call-event "+821066667777" "CALL" "incoming" nil 30 nil)]
+  (if (not (get no-date-result :matched)) (error "date 생략 시 고객 매칭 실패")))
+
 ;; 타임라인에 CALL 이벤트가 뜨고, 매칭 안 된 SMS는 안 뜬다(고객 스코프라).
 (let [timeline (list-customer-timeline (get c :id) "ALL")
       call-entries (filter (fn [e] (= (get e :event_type) "CALL")) timeline)]

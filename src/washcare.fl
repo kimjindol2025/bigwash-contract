@@ -558,6 +558,8 @@
 ;; ---- 자동 통화·문자 로거 webhook 수신 (안드로이드 mobserve 등, 2026-07-21) ----
 ;; 모르는 번호도 원본은 버리지 않고 customer_id NULL로 저장한다(위 타임라인
 ;; UNION에는 customer_id 필터가 있어 노출 안 됨 — 나중에 소급 조회용).
+;; occurred-at-ms(epoch 밀리초)는 선택값이다 — MacroDroid 같은 자동화 앱은
+;; 밀리초 타임스탬프를 만드는 게 번거로워서, 안 보내면 서버 수신 시각을 쓴다.
 (defn record-call-event [participant event-type direction content duration-seconds occurred-at-ms]
   (let [phone (normalize-phone participant)
         matched (if (str-blank? phone) nil
@@ -565,12 +567,27 @@
                            "SELECT id FROM customers WHERE REPLACE(REPLACE(phone, '-', ''), ' ', '') = ?"
                            [phone])))
         customer-id (if (nil? matched) nil (get matched :id))]
-    (db_exec DB
-      "INSERT INTO call_events
-       (customer_id, phone, event_type, direction, content, duration_seconds, occurred_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime(? / 1000, 'unixepoch'))"
-      [customer-id phone event-type direction content duration-seconds occurred-at-ms])
-    {:matched (not (nil? customer-id)) :customer_id customer-id}))
+    ;; 주의(FreeLang 함정, 2026-07-21 재현·확인): defn 본문에서 if가 마지막
+    ;; 표현식이 아니면 그 분기 안의 db_exec 부작용이 조용히 무시된다.
+    ;; 그래서 각 분기가 db_exec 실행 후 반환값까지 함께 내도록 do로 감싸서
+    ;; if 자체가 항상 함수의 마지막 표현식이 되게 한다 — 별도로 뒤에
+    ;; {:matched ...}를 두면 안 됨(직접 재현: 값은 맞게 나오는데 INSERT가
+    ;; 실제로는 안 됨).
+    (if (nil? occurred-at-ms)
+      (do
+        (db_exec DB
+          "INSERT INTO call_events
+           (customer_id, phone, event_type, direction, content, duration_seconds, occurred_at)
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))"
+          [customer-id phone event-type direction content duration-seconds])
+        {:matched (not (nil? customer-id)) :customer_id customer-id})
+      (do
+        (db_exec DB
+          "INSERT INTO call_events
+           (customer_id, phone, event_type, direction, content, duration_seconds, occurred_at)
+           VALUES (?, ?, ?, ?, ?, ?, datetime(? / 1000, 'unixepoch'))"
+          [customer-id phone event-type direction content duration-seconds occurred-at-ms])
+        {:matched (not (nil? customer-id)) :customer_id customer-id}))))
 
 ;; ---- 휴면기 관리·홍보 (활동 20%, 판매 후 ~3년 동안 가장 자주 도는 흐름) ----
 
@@ -1091,7 +1108,13 @@
 (defn create-care-plan [site-id plan-code starts-at price-override included-visits-override next-inspection-at memo]
   (if (nil? (find-site site-id))
     (error "Site not found"))
-  (let [resolved-starts-at (if (or (nil? starts-at) (str-blank? starts-at)) (careplan-today) starts-at)
+  ;; 주의(FreeLang 함정, 2026-07-21 재현·확인): let의 여러 바인딩 중 하나가
+  ;; (if cond (bare-call) other) 형태이고 그 바인딩을 뒤이은 다른 바인딩이
+  ;; 참조하면, bare-call 분기가 평가되지 않고 미평가 thunk 객체
+  ;; ({"fn":...,"args":[...]})가 그대로 새어나온다 — 그래서 starts_at을
+  ;; 생략(정상 사용법)하면 이 자리에서 항상 깨졌다. (careplan-today)를
+  ;; do로 감싸서 회피한다.
+  (let [resolved-starts-at (if (or (nil? starts-at) (str-blank? starts-at)) (do (careplan-today)) starts-at)
         defaults (careplan-plan-defaults plan-code)
         days (get defaults :days)
         price-raw (if (nil? price-override) nil (str price-override))
