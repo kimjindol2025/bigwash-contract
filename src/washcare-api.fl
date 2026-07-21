@@ -32,6 +32,16 @@
 (defn unauthorized []
   (server_status 401 {:ok false :error "Unauthorized"}))
 
+;; mobserve 같은 자동화 앱은 커스텀 헤더를 못 보낸다(소스 확인함 —
+;; OkHttp로 header 없이 순수 JSON POST만 함) — 그래서 이 엔드포인트만
+;; 쿼리파라미터(?key=)로 같은 BIGWASH_INTERNAL_API_KEY를 받는다.
+(defn call-webhook-authorized? [req]
+  (let [expected (env-get "BIGWASH_INTERNAL_API_KEY")
+        supplied (server_req_query req "key")]
+    (if (or (nil? expected) (str-blank? expected))
+      true
+      (= (sha256 expected) (sha256 (if (nil? supplied) "" supplied))))))
+
 (defn no-store [response]
   (server_header response "Cache-Control" "no-store"))
 
@@ -226,6 +236,31 @@
           (server_status 400 {:ok false :error "phone query param required"})
           (let [customer (lookup-customer-by-phone phone)]
             (server_json {:ok true :found (not (nil? customer)) :data customer}))))
+      (catch [e]
+        (server_status 400 {:ok false :error (str e)})))
+    (unauthorized)))
+
+;; 자동 통화·문자 로거(안드로이드 mobserve 등) webhook 수신.
+;; mobserve의 실제 페이로드(소스 확인, 2026-07-21):
+;;   {"event":"call","direction":"incoming","participant":"+8210...",
+;;    "duration":143,"date":1609459200000}
+;;   {"event":"sms","direction":"incoming","participant":"+8210...",
+;;    "content":"...","date":...}
+(defn handle-call-event-webhook [req]
+  (if (call-webhook-authorized? req)
+    (try
+      (let [body (server_req_json req)
+            mobserve-event (get body :event)
+            event-type (if (= mobserve-event "sms") "SMS" "CALL")
+            direction (get body :direction)
+            participant (get body :participant)
+            content (get body :content)
+            duration (get body :duration)
+            occurred-at-ms (get body :date)]
+        (if (or (nil? participant) (nil? direction) (nil? occurred-at-ms))
+          (server_status 400 {:ok false :error "participant, direction, date required"})
+          (let [result (record-call-event participant event-type direction content duration occurred-at-ms)]
+            (server_json {:ok true :data result}))))
       (catch [e]
         (server_status 400 {:ok false :error (str e)})))
     (unauthorized)))
@@ -663,6 +698,7 @@
 (server_get  "/care/customers" "handle-search-customers")
 (server_get  "/care/customers/:id" "handle-customer-detail")
 (server_get  "/care/incoming-call" "handle-incoming-call")
+(server_post "/care/call-events" "handle-call-event-webhook")
 (server_post "/care/consultations" "handle-create-consultation")
 (server_get  "/care/consultations" "handle-list-consultations")
 (server_put  "/care/consultations/:id/complete" "handle-complete-consultation")

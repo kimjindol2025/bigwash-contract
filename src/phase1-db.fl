@@ -335,6 +335,24 @@
         FOREIGN KEY(renewed_from_id) REFERENCES care_plans(id)
       )" [])
 
+    ;; 2026-07-21 추가: 안드로이드 자동 통화·문자 로거(mobserve)가 보내는
+    ;; webhook을 그대로 쌓는 원본 테이블. 모르는 번호(고객 매칭 안 됨)는
+    ;; customer_id NULL로 저장 — 나중에 고객 등록되면 소급 연결 가능하도록
+    ;; 버리지 않는다(단, 타임라인 UNION에는 customer_id NOT NULL만 노출).
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS call_events (
+        id INTEGER PRIMARY KEY,
+        customer_id INTEGER,
+        phone TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK (event_type IN ('CALL', 'SMS')),
+        direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing', 'missed')),
+        content TEXT,
+        duration_seconds INTEGER,
+        occurred_at TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(customer_id) REFERENCES customers(id)
+      )" [])
+
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_contracts_customer_id ON contracts(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_sites_customer_id ON sites(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_equipment_site_id ON equipment(site_id)" [])
@@ -358,6 +376,8 @@
     ;; 만료 임박/파생 effective_status 조회가 status+ends_at 조합을 쓴다
     ;; (2~3주차 idx_tickets_status_scheduled와 동일한 이유).
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_care_plans_status_ends_at ON care_plans(status, ends_at)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_call_events_customer_id ON call_events(customer_id)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_call_events_phone ON call_events(phone)" [])
     (db_exec DB
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_sites_public_token_hash
        ON sites(public_token_hash) WHERE public_token_hash IS NOT NULL" [])))

@@ -420,11 +420,21 @@
                   (str "%" normalized-query "%")])]
       (map (fn [row] (assoc row :region (parse-region (get row :address)))) rows))))
 
+;; 하이픈·공백·국제번호(+82)를 전부 국내표기 자릿수로 정규화한다.
+;; DB엔 010-1234-5678 형태로 저장되지만, 자동화 앱(Tasker/mobserve)은
+;; +821012345678처럼 국제번호로 넘기는 경우가 있어 둘을 맞춰야 한다.
+(defn normalize-phone [phone]
+  (let [raw (if (nil? phone) "" phone)
+        digits (str-replace (str-replace (str-replace raw "+" "") "-" "") " " "")]
+    (if (and (>= (length digits) 2) (str-starts-with? digits "82"))
+      (str "0" (substring digits 2 (length digits)))
+      digits)))
+
 ;; 전화 수신 자동조회용 — 발신번호 정확히 일치하는 고객 1명만 찾는다.
 ;; search-customers(LIKE 부분일치)와 달리 여기는 정확 일치라야 한다 —
 ;; 착신 팝업에 엉뚱한 고객이 뜨면 안 되기 때문.
 (defn lookup-customer-by-phone [phone]
-  (let [normalized (str-replace (str-replace (if (nil? phone) "" phone) "-" "") " " "")]
+  (let [normalized (normalize-phone phone)]
     (if (str-blank? normalized)
       nil
       (first
@@ -488,12 +498,14 @@
       (= event-type "QUOTE")
       (= event-type "CONTRACT")
       (= event-type "TICKET")
-      (= event-type "FOLLOWUP")))
+      (= event-type "FOLLOWUP")
+      (= event-type "CALL")
+      (= event-type "SMS")))
 
 (defn list-customer-timeline [customer-id event-type]
   (let [resolved-type (if (or (nil? event-type) (str-blank? event-type)) "ALL" event-type)]
     (if (not (valid-timeline-type? resolved-type))
-      (error "type must be one of ALL, CONSULTATION, SALE, QUOTE, CONTRACT, TICKET, FOLLOWUP"))
+      (error "type must be one of ALL, CONSULTATION, SALE, QUOTE, CONTRACT, TICKET, FOLLOWUP, CALL, SMS"))
     (db_query DB
       "SELECT * FROM (
          SELECT 'CONSULTATION' AS event_type, datetime(consulted_at) AS event_at,
@@ -529,11 +541,36 @@
          SELECT 'FOLLOWUP', datetime(scheduled_at), followup_type,
                 COALESCE(result, ''), id
          FROM customer_followups WHERE customer_id = ?
+
+         UNION ALL
+         SELECT event_type, datetime(occurred_at),
+                (direction || ' ' || (CASE event_type WHEN 'CALL' THEN '통화' ELSE '문자' END)
+                 || CASE WHEN duration_seconds IS NOT NULL THEN ' ' || duration_seconds || '초' ELSE '' END),
+                COALESCE(content, ''), id
+         FROM call_events
+         WHERE customer_id = ? AND event_type IN ('CALL', 'SMS')
        )
        WHERE (? = 'ALL' OR event_type = ?)
        ORDER BY event_at DESC, event_type, source_id DESC"
-      [customer-id customer-id customer-id customer-id customer-id customer-id
+      [customer-id customer-id customer-id customer-id customer-id customer-id customer-id
        resolved-type resolved-type])))
+
+;; ---- 자동 통화·문자 로거 webhook 수신 (안드로이드 mobserve 등, 2026-07-21) ----
+;; 모르는 번호도 원본은 버리지 않고 customer_id NULL로 저장한다(위 타임라인
+;; UNION에는 customer_id 필터가 있어 노출 안 됨 — 나중에 소급 조회용).
+(defn record-call-event [participant event-type direction content duration-seconds occurred-at-ms]
+  (let [phone (normalize-phone participant)
+        matched (if (str-blank? phone) nil
+                  (first (db_query DB
+                           "SELECT id FROM customers WHERE REPLACE(REPLACE(phone, '-', ''), ' ', '') = ?"
+                           [phone])))
+        customer-id (if (nil? matched) nil (get matched :id))]
+    (db_exec DB
+      "INSERT INTO call_events
+       (customer_id, phone, event_type, direction, content, duration_seconds, occurred_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime(? / 1000, 'unixepoch'))"
+      [customer-id phone event-type direction content duration-seconds occurred-at-ms])
+    {:matched (not (nil? customer-id)) :customer_id customer-id}))
 
 ;; ---- 휴면기 관리·홍보 (활동 20%, 판매 후 ~3년 동안 가장 자주 도는 흐름) ----
 

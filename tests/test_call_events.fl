@@ -1,0 +1,34 @@
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+(load (str REPO-ROOT "/src/washcare.fl"))
+
+;; 재실행 가능하도록 이 테스트의 픽스처만 먼저 지운다.
+(db_exec DB "DELETE FROM call_events WHERE phone = '01066667777'" [])
+(db_exec DB "DELETE FROM customers WHERE name = '통화이벤트테스트고객'" [])
+
+(define c (create-customer "통화이벤트테스트고객" "010-6666-7777" nil "메모" "CUSTOMER" nil))
+
+;; normalize-phone — 국제번호/국내표기/이미정규화 전부 같은 값이어야 한다.
+(if (not (= (normalize-phone "+821066667777") "01066667777"))
+  (error "국제번호 정규화 실패"))
+(if (not (= (normalize-phone "010-6666-7777") "01066667777"))
+  (error "하이픈 정규화 실패"))
+(if (not (= (normalize-phone "01066667777") "01066667777"))
+  (error "이미 정규화된 번호가 바뀜"))
+
+;; record-call-event — 국제번호로 들어와도 고객과 매칭돼야 한다.
+(let [call-result (record-call-event "+821066667777" "CALL" "incoming" nil 143 1770000000000)]
+  (if (not (get call-result :matched)) (error "통화 기록이 고객과 매칭 안 됨"))
+  (if (not (= (get call-result :customer_id) (get c :id))) (error "잘못된 고객과 매칭됨")))
+
+;; 모르는 번호는 customer_id NULL로 저장하되 에러는 아니어야 한다(원본 보존).
+(let [unknown-result (record-call-event "+821000000000" "SMS" "incoming" "테스트" nil 1770000100000)]
+  (if (get unknown-result :matched) (error "모르는 번호인데 매칭됐다고 나옴")))
+
+;; 타임라인에 CALL 이벤트가 뜨고, 매칭 안 된 SMS는 안 뜬다(고객 스코프라).
+(let [timeline (list-customer-timeline (get c :id) "ALL")
+      call-entries (filter (fn [e] (= (get e :event_type) "CALL")) timeline)]
+  (if (= (length call-entries) 0) (error "타임라인에 통화 이벤트가 안 보임")))
+
+(println "✓ Call/SMS webhook event tests passed")
