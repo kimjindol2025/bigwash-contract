@@ -299,6 +299,21 @@ ssh node25 "test -n \"\$(pm2 env washcare-api | grep -c BIGWASH_INTERNAL_API_KEY
 기존 실측과 일치하므로, 정적 소스에 헤더 코드가 없다는 이유만으로 별도 P0로
 판정하지 않는다. 다만 운영 CORS 허용 범위는 배포 리허설 때 다시 확인한다.
 
+### 게이트 진행 상황 (2026-07-23 갱신)
+
+- **(1) fail-closed 전환 — ✅ 완료.** `BIGWASH_INTERNAL_API_KEY` 미설정 시
+  서버가 기동 자체를 거부하도록 변경(`process_exit 1`, 요청 단위 401보다
+  강함). 실측 확인: 키 없이 기동 → 즉시 종료(exit 1)·포트 안 열림, 키로
+  기동 후 무인증 요청 → 401, 올바른 키 → 200, 틀린 키 → 401. 전체 12종
+  테스트 + `scripts/verify-week6.sh`(OpenAPI 55개 라우트 완전일치 포함)
+  재통과 확인. `docs/04-washcare-api.md` "인증" 절, `openapi-washcare.yaml`
+  전체 `security` 선언에서 fail-open 대안(`, {}`) 제거 완료.
+- **(2) Admin 접근 경계** — 미착수.
+- **(3) 예외 응답 새니타이즈** — 미착수.
+- **(4) 격리 복사본 백업·복원 리허설** — 미착수.
+
+(2)~(4)를 마저 닫아야 §8의 "실고객 운영 파일럿 HOLD"가 풀린다.
+
 ## 9. `docs/09` §6 DoD 대조
 
 | DoD 항목(`docs/09` §6) | 상태 |

@@ -15,12 +15,11 @@ servers:
     description: 로컬 개발 (BIGWASH_CARE_PORT로 변경 가능, 기본 40101)
 security:
   - ApiKeyAuth: []
-  - {}
 paths:
   /care/customers:
     post:
       summary: 고객 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -47,7 +46,7 @@ paths:
           $ref: "#/components/responses/Unauthorized"
     get:
       summary: "고객 검색 (name/phone/address/memo LIKE 부분일치, 전화번호 하이픈 무관, 최대 50건)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: q
           in: query
@@ -68,7 +67,7 @@ paths:
         발신번호로 고객을 정확 일치(하이픈 무관) 조회한다. search-customers와
         달리 부분일치가 아니라 정확 일치만 — 착신 팝업에 엉뚱한 고객이 뜨면
         안 되기 때문. 문서: docs/11-mobile-caller-lookup.md
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: phone
           in: query
@@ -90,7 +89,7 @@ paths:
         저장(소급 연결용, 타임라인엔 안 뜸). mobserve는 커스텀 헤더를 못
         보내므로(소스 확인) 이 엔드포인트만 `x-api-key` 헤더 대신 `?key=`
         쿼리파라미터로 인증한다. 문서: docs/11-mobile-caller-lookup.md
-      security: [{ApiKeyQueryAuth: []}, {}]
+      security: [{ApiKeyQueryAuth: []}]
       parameters:
         - name: key
           in: query
@@ -123,7 +122,7 @@ paths:
   /care/customers/{id}:
     get:
       summary: 고객 상세 조회
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -137,7 +136,7 @@ paths:
   /care/consultations:
     post:
       summary: 상담 기록 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -158,7 +157,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 상담 기록 목록 (consulted_at DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -171,7 +170,7 @@ paths:
   /care/consultations/{id}/complete:
     put:
       summary: "상담 완료 처리 (건별 completed_at 기록, 최신 1건만 남기지 않고 개별 완료)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -184,7 +183,7 @@ paths:
   /care/consultations/due-today:
     get:
       summary: "오늘 다시 연락할 상담 목록 (completed_at IS NULL, date(next_contact_at) <= date('now'))"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       responses:
         "200": { description: 목록 }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -192,7 +191,7 @@ paths:
   /care/consultations/recent:
     get:
       summary: "최근 상담 목록 (limit 기본 15)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: limit
           in: query
@@ -205,7 +204,7 @@ paths:
   /care/consultations/pending:
     get:
       summary: "다음 조치가 남은 상담 목록 (completed_at IS NULL AND next_action <> 'NONE')"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       responses:
         "200": { description: 목록 }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -213,7 +212,7 @@ paths:
   /care/sites:
     post:
       summary: 사업장 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -231,7 +230,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: 고객별 사업장 목록
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -244,7 +243,7 @@ paths:
   /care/equipment:
     post:
       summary: 장비 등록
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -266,7 +265,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 장비 목록 (site 조인, installed_at DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -279,7 +278,7 @@ paths:
   /care/customer-contacts:
     post:
       summary: 고객 담당자 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -304,7 +303,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 담당자 목록 (is_primary DESC, 최신순)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -317,7 +316,7 @@ paths:
   /care/customer-tasks:
     post:
       summary: 고객 할 일 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -337,7 +336,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 할 일 목록 (마감일 오름차순, 마감일 없는 건은 뒤로)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -350,7 +349,7 @@ paths:
   /care/customer-tasks/{id}/complete:
     put:
       summary: "할 일 완료 처리 (status=DONE, completed_at 기록)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -363,7 +362,7 @@ paths:
   /care/customer-followups:
     post:
       summary: 사후관리 예정 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -388,7 +387,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 사후관리 목록 (scheduled_at DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -401,7 +400,7 @@ paths:
   /care/customer-followups/{id}/complete:
     put:
       summary: "사후관리 완료 처리 (completed_at 기록)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -414,7 +413,7 @@ paths:
   /care/quotes:
     post:
       summary: 고객 견적 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -434,7 +433,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 견적 목록 (created_at DESC, id DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -447,7 +446,7 @@ paths:
   /care/quotes/{id}/status:
     put:
       summary: "견적 상태 변경 (DRAFT→SENT→REVIEWING→REVISION_REQUESTED→SENT 흐름 + ON_HOLD/REJECTED 분기만 허용)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -470,7 +469,7 @@ paths:
   /care/quotes/{id}/convert:
     post:
       summary: "승인 견적을 계약으로 전환 (APPROVED만 가능)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -484,7 +483,7 @@ paths:
   /care/timeline:
     get:
       summary: "고객 통합 타임라인 (상담·판매·견적·계약·출장·사후관리 UNION ALL, event_at DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -502,7 +501,7 @@ paths:
   /care/contracts:
     get:
       summary: "고객별 계약 목록 (created_at DESC, id DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -515,7 +514,7 @@ paths:
   /care/tickets:
     post:
       summary: A/S 접수 (공개 토큰 발급)
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -548,7 +547,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: 상태별 티켓 목록 (Admin UI용)
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: status
           in: query
@@ -566,7 +565,7 @@ paths:
   /care/tickets/{id}/status:
     put:
       summary: 티켓 상태 변경
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       requestBody:
@@ -591,7 +590,7 @@ paths:
   /care/tickets/{id}/visits:
     post:
       summary: 방문·수리 이력 추가
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       requestBody:
@@ -616,7 +615,7 @@ paths:
   /care/tickets/{id}:
     get:
       summary: 티켓 상세 (방문·상태변경 이력 포함)
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       responses:
@@ -627,7 +626,7 @@ paths:
   /care/part-sales:
     post:
       summary: "부품판매 등록 (A/S와 독립적으로도 가능, 매출 30%)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -648,7 +647,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: 사업장별 부품판매 목록
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: site_id
           in: query
@@ -661,7 +660,7 @@ paths:
   /care/outreach:
     post:
       summary: "홍보/휴면기 접촉 예정 생성 (판매 후 ~3년 휴면기 관리)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -682,7 +681,7 @@ paths:
   /care/outreach/{id}/response:
     post:
       summary: 접촉 응답·전환 결과 기록
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -706,7 +705,7 @@ paths:
   /care/outreach/due:
     get:
       summary: "접촉 예정일이 지난(또는 오늘인) 대상 목록 (사업장·장비별 최신 1건만)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       responses:
         "200": { description: 목록 }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -714,7 +713,7 @@ paths:
   /care/tickets/{id}/link/revoke:
     post:
       summary: 공개 링크 폐기
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       responses:
@@ -724,7 +723,7 @@ paths:
   /care/tickets/{id}/link/reissue:
     post:
       summary: "공개 링크 재발급 (이전 토큰은 즉시 무효화)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       responses:
@@ -771,7 +770,7 @@ paths:
   /care/sales:
     post:
       summary: "판매 등록 (고객/사업장/장비 생성 + 장비관리 링크 발급 + 첫 접촉 예약, orchestrated)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -808,7 +807,7 @@ paths:
   /care/sites/{id}/link/revoke:
     post:
       summary: 사업장 장비관리 링크 폐기
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -822,7 +821,7 @@ paths:
   /care/sites/{id}/link/reissue:
     post:
       summary: "사업장 장비관리 링크 재발급 (이전 토큰은 즉시 무효화)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -836,7 +835,7 @@ paths:
   /care/warranty-expiring:
     get:
       summary: "보증 만료 임박 장비 목록 (재구매·교체판매 제안 대상, ACTIVE 장비만)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: days
           in: query
@@ -859,7 +858,7 @@ paths:
         service_visits.technician은 방문 완료 후에만 존재하는 사후 이력이라
         배정 여부를 나타낼 수 없다. visits_today는 scheduled_at(예정) 기준이며
         service_visits(완료 이력)를 쓰지 않는다. 상세는 04-washcare-api.md 참조.
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: warranty_days
           in: query
@@ -915,8 +914,7 @@ paths:
         warranty_ends_at이 다음 ISO 주에 해당하는 보증 만료 기반 점검 대상이다.
         unprocessed는 status NOT IN (COMPLETED,CANCELLED)이며 IN_PROGRESS를
         포함한다(열린 티켓 전체). "담당자 미배정"이 아니다.
-        개발 단계 fail-open: security에 ApiKeyAuth와 빈 {}를 함께 둔다.
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: as_of
           in: query
@@ -981,7 +979,7 @@ paths:
         (starts_at + 기간일수 - 1). 같은 site_id에 겹치는 비취소(ACTIVE/
         RENEWED) 기간이 있으면 트랜잭션 내에서 거부. payment_status/PG
         연동 없음(PaymentOrder 도입 전).
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -1020,7 +1018,7 @@ paths:
         모두 sites/customers를 JOIN해 customer_id/customer_name/site_name을
         각 행에 채운다. site_id/customer_id에 정수가 아니거나 0 이하인
         값을 주면 400 — 생략은 오류가 아니라 무필터 전체 목록으로 처리된다.
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: site_id
           in: query
@@ -1048,7 +1046,7 @@ paths:
   /care/care-plans/{id}:
     get:
       summary: "CarePlan 상세 조회 (4주차, 2026-07-21 추가)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -1072,7 +1070,7 @@ paths:
         used_visits는 자동 차감 없이 항상 절대값을 받는다(재시도 멱등,
         증가·감소 모두 허용 — 오입력 정정 목적). 0..included_visits 범위를
         벗어나면 400. 대상 CarePlan이 ACTIVE가 아니면 400.
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -1105,7 +1103,7 @@ paths:
   /care/care-plans/{id}/cancel:
     put:
       summary: "CarePlan 취소 (4주차, 2026-07-21 추가)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -1143,7 +1141,7 @@ paths:
         시 원본 코드를 재사용하되 price_snapshot/included_visits는 원본 값이
         아니라 (재사용/변경된) plan_code의 기본값을 새로 적용하며, 새 행의
         used_visits는 0부터 다시 시작한다.
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -1204,16 +1202,14 @@ components:
       in: header
       name: x-api-key
       description: >
-        BIGWASH_INTERNAL_API_KEY 환경변수 값. 미설정 시 전체 내부 엔드포인트가
-        무인증으로 열림(fail-open) — 2026-07-19부터 개발 단계 임시 운영 모드로
-        의도된 정책이며, 운영 배포 전 인증 필수 게이트로 전환 예정이다. 정책·
-        차단조건 상세는 04-washcare-api.md "인증" 절 참조. 이 스펙의 각
-        operation이 `security: [{ApiKeyAuth: []}, {}]`(전역 보안도 동일)로
-        선언된 것은 이 fail-open 동작을 있는 그대로 반영한 것이다 — 빈 `{}`는
-        OpenAPI 3.0에서 "인증 없이도 호출 가능"을 뜻하는 표준 표기다. 운영
-        배포 전 인증 필수 게이트가 실제로 켜지면(코드 변경 필요, 이번 문서
-        갱신 범위 아님) 그때 각 operation에서 `{}` 대안을 제거해 필수
-        인증으로 바꾼다.
+        BIGWASH_INTERNAL_API_KEY 환경변수 값. **fail-closed(2026-07-23~)**:
+        이 값이 없거나 빈 문자열이면 서버가 아예 기동을 거부한다(요청 단위
+        401이 아니라 프로세스가 안 뜬다) — `src/washcare-api.fl`, 실측 확인
+        완료. 값이 설정된 뒤에는 모든 내부 엔드포인트가 이 헤더의 정확한
+        일치를 요구하며, 불일치·누락 시 401. 2026-07-19~2026-07-22엔 키
+        미설정 시 전체 무인증으로 열리는 개발 공개 모드(fail-open)였으나
+        운영 배포 전 보안 게이트로 폐기됐다 — 상세는 04-washcare-api.md
+        "인증" 절 참조.
     ApiKeyQueryAuth:
       type: apiKey
       in: query
@@ -1221,7 +1217,7 @@ components:
       description: >
         /care/call-events 전용. 발신 앱(mobserve 등)이 커스텀 헤더를 못 보내는
         경우가 있어 ApiKeyAuth와 같은 BIGWASH_INTERNAL_API_KEY 값을 쿼리
-        파라미터로 대신 받는다 — 인증 정책(fail-open 등)은 ApiKeyAuth와 동일.
+        파라미터로 대신 받는다 — fail-closed 등 인증 정책은 ApiKeyAuth와 동일.
   parameters:
     TicketId:
       name: id

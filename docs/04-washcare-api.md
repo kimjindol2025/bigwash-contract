@@ -1,57 +1,50 @@
 # WashCare Phase 1 API 문서
 
 작성일: 2026-07-16
-갱신: 2026-07-21 — 인증(개발 공개 정책 명문화) + 에러 응답 계약 절 추가
-(`docs/09-implementation-schedule.md` 1주차)
+갱신: 2026-07-23 — 운영 배포 전 보안 게이트 1/3: 인증 fail-closed 전환
+(이전 갱신: 2026-07-21 개발 공개 정책 명문화 + 에러 응답 계약 절,
+`docs/09-implementation-schedule.md` 1주차 / `docs/10-week6-readiness.md`
+6주차 게이트 판정)
 기준 파일: `src/washcare-api.fl`
 OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 
 ## 인증
 
-### 현재 상태 — 개발 단계 전체 공개 정책 (의도된 결정)
+### 현재 상태 — fail-closed (2026-07-23~)
 
-- **내부 엔드포인트** 전체(`/care/customers`, `/care/sites`, `/care/equipment`,
-  `/care/tickets/*`, `/care/consultations/*`, `/care/quotes/*`,
-  `/care/customer-contacts`, `/care/customer-tasks/*`, `/care/customer-followups/*`,
-  `/care/timeline`, `/care/contracts`, `/care/part-sales`, `/care/outreach/*`,
-  `/care/sales`, `/care/sites/:id/link/*`, `/care/warranty-expiring` 등 — 전체
-  라우트는 `openapi-washcare.yaml` 참조): 헤더 `x-api-key: <BIGWASH_INTERNAL_API_KEY>`를
-  검사하지만, 환경변수 `BIGWASH_INTERNAL_API_KEY`가 비어있거나 미설정이면
-  `internal-authorized?`(`src/washcare-api.fl`)가 **모든 요청을 무조건 통과시킨다**
-  (fail-open).
-- **이것은 버그가 아니라 2026-07-19에 내려진 명시적 개발 단계 결정이다** —
-  로그인 시스템이 없는 현재 단계에서 매 요청마다 키를 요구하면 개발 속도가
-  떨어진다는 판단. 인증 코드 자체는 이번 1주차에서 바꾸지 않는다
-  (`docs/09-implementation-schedule.md` 1주차 범위 참조).
-- **실데이터 금지·외부 노출 금지**: 이 공개 모드로 서버를 실행하는 동안은
-  실제 고객 정보·연락처·계약금액 등 운영 데이터를 입력하지 않는다. 서버는
-  `localhost` 또는 접근이 통제된 개발망(사내 VPN 등)에서만 실행하고,
-  공인 IP·리버스 프록시를 통해 외부 인터넷에 노출하지 않는다. 개발 중
-  실측·데모가 필요하면 가짜 고객명·가짜 연락처만 사용한다.
-- **운영 배포 전 인증 필수 게이트**: 아래 조건을 모두 만족하기 전에는 이
-  서버를 실제 고객 데이터와 함께 외부에 노출된 환경(예: `care.dclub.kr`
-  운영 배포, README.md "배포" 절)에 올리지 않는다.
-  1. `BIGWASH_INTERNAL_API_KEY`가 배포 환경에 실제로 설정되어 있음을 배포
-     담당자가 확인
-  2. 키 미설정 시 서버가 무인증으로 열리는 대신 **기동을 거부하거나 전체
-     401을 반환**하도록 `internal-authorized?`/기동 스크립트를 fail-closed로
-     전환(별도 스프린트 — 이번 1주차 범위 아님)
-  3. 위 전환 후 "키 없이 기동 → 차단됨", "키 있을 때 기동 → 정상 200/401" 두
-     경우를 실측 확인
-  - 이 세 조건이 충족되기 전까지는 개발 공개 모드를 운영 배포에 그대로
-    가져가지 않는다 — 즉 fail-open 상태로 실고객 데이터를 다루는 배포는
-    금지한다.
-  - **알려진 예외 (2026-07-20~, kim 확인)**: 위 게이트 완성 전에
-    `care.dclub.kr`가 이미 공개 배포됐다(node25 pm2, `README.md` "배포" 절).
-    `BIGWASH_INTERNAL_API_KEY`는 실제로 설정되어 있어 완전한 fail-open은
-    아니고, 현재 올라간 데이터도 전부 테스트/마이그레이션 더미(실고객
-    정보 없음, 2026-07-21 재확인)다. 코드 자체의 fail-closed 전환(조건 2)은
-    아직 안 됐으므로 정책 문서 기준으로는 여전히 갭이지만, kim이 이 상태
-    유지를 선택했다 — 실고객 데이터를 넣기 전에는 반드시 조건 2·3을
-    마저 채울 것.
+- **`BIGWASH_INTERNAL_API_KEY`가 없거나 빈 문자열이면 서버가 아예 기동을
+  거부한다** (`process_exit 1`, `src/washcare-api.fl` 최상단). 요청 단위
+  401이 아니라 **프로세스 자체가 안 뜬다** — 배포자가 키 설정을 잊고
+  그대로 돌리는 사고를 원천 차단하기 위해 요청 단위 차단보다 강하게 잡았다.
+- 키가 있으면 **내부 엔드포인트 전체**(`/care/customers`, `/care/sites`,
+  `/care/equipment`, `/care/tickets/*`, `/care/consultations/*`,
+  `/care/quotes/*`, `/care/customer-contacts`, `/care/customer-tasks/*`,
+  `/care/customer-followups/*`, `/care/timeline`, `/care/contracts`,
+  `/care/part-sales`, `/care/outreach/*`, `/care/sales`,
+  `/care/sites/:id/link/*`, `/care/warranty-expiring`,
+  `/care/incoming-call`, `/care/call-events` 등 — 전체 라우트는
+  `openapi-washcare.yaml` 참조)에 헤더 `x-api-key: <BIGWASH_INTERNAL_API_KEY>`가
+  요청마다 정확히 일치해야 한다(`internal-authorized?`, 해시 비교).
+  `/care/call-events`만 예외로 `?key=` 쿼리파라미터를 쓴다(11번 문서 참조 —
+  일부 webhook 발신 앱이 커스텀 헤더를 못 보냄). 불일치·미설정 시 401.
+- **2026-07-19~2026-07-22의 "개발 공개 모드"(키 없으면 전체 무인증 허용,
+  fail-open)는 폐기됐다.** 그 기간엔 로그인 시스템 없는 초기 개발 속도를
+  위한 의도적 결정이었지만, `docs/10-week6-readiness.md` 6주차 게이트
+  판정에서 "실고객 파일럿 전 반드시 닫아야 할 P0"로 지목됐다.
+- **실측 확인 (2026-07-23)**: 키 없이 기동 → 프로세스가 로그 출력 후 즉시
+  종료(exit 1), 포트가 열리지 않음. 키로 기동 후 `x-api-key` 없이 요청 →
+  401. 올바른 키 → 200. 틀린 키 → 401. 전부 실제 HTTP로 확인.
+- 로컬 개발에서도 이제 키가 항상 필요하다 — 빠르게 띄워볼 때도
+  `BIGWASH_INTERNAL_API_KEY=<임의 문자열>`을 반드시 지정한다.
 - **공개 엔드포인트** (`/care/status/:token`, `/care/site-status/:token`): 원래부터
-  인증 없음. 토큰 자체가 접근 권한이며, 위 개발 공개 정책과 무관하게 항상
-  같은 보안 모델(해시 저장, rate limit, `Cache-Control: no-store`)로 동작한다.
+  인증 없음(내부 인증 게이트와 무관, `internal-authorized?`를 호출하지
+  않음). 토큰 자체가 접근 권한이며, 항상 같은 보안 모델(해시 저장,
+  rate limit, `Cache-Control: no-store`)로 동작한다.
+- **남은 보안 게이트 (2·3/3, `docs/10` §8 순서)**: (2) `/care/admin` 접근
+  경계(리버스 프록시/VPN/IP 제한 중 하나로 확정) — 미착수. (3) 예외
+  응답 새니타이즈(`(str e)`가 내부 파일경로·줄번호·스택을 그대로 노출하는
+  문제, "알려진 개선 후보" 절 참조) — 미착수. 이 둘을 닫아야 실고객
+  파일럿 HOLD가 풀린다.
 
 ## 내부 엔드포인트
 
