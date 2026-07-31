@@ -87,6 +87,13 @@
   h2 { font-size:16px; color:#22292E; margin:0 0 16px; font-weight:800; }
   label { display:block; font-size:12px; color:#8B979B; margin-bottom:4px; font-weight:700; }
   #content { max-width:100%; overflow-x:auto; }
+  .company-footer { padding:28px 32px; color:#CAD2D5; background:#22292E; border-top:1px solid #364147; }
+  .company-footer-inner { max-width:1280px; margin:0 auto; display:grid; gap:12px; }
+  .company-footer-contact { display:flex; align-items:center; gap:8px 22px; flex-wrap:wrap; }
+  .company-footer-label { color:#8B979B; font-size:12px; font-weight:700; }
+  .company-footer-phone { color:#FFFFFF; font-size:18px; font-weight:800; text-decoration:none; }
+  .company-footer-details { display:flex; gap:7px 20px; flex-wrap:wrap; font-size:12.5px; line-height:1.65; }
+  .company-footer-details span { overflow-wrap:anywhere; }
 
   @media (max-width: 780px) {
     .topbar { padding:12px 14px; }
@@ -122,6 +129,9 @@
     }
     th:first-child { background: #FAFBFB; }
     td:first-child { background: #FFFFFF; }
+    .company-footer { padding:24px 14px; }
+    .company-footer-contact, .company-footer-details { display:grid; gap:7px; }
+    .company-footer-phone { min-height:44px; display:inline-flex; align-items:center; font-size:17px; }
   }
 </style>
 </head>
@@ -171,6 +181,21 @@
     <div id="content"></div>
   </main>
 </div>
+<footer class="company-footer" id="company-info">
+  <div class="company-footer-inner">
+    <div class="company-footer-contact">
+      <span class="company-footer-label">상담 및 문의전화</span>
+      <a class="company-footer-phone" href="tel:03116887759">031-1688-7759</a>
+    </div>
+    <div class="company-footer-details">
+      <span>대표이사 : 김진돌</span>
+      <span>경기도 양주시 감악산로 244번길 117번지</span>
+      <span>사업자등록번호 : 127-38-49368 (정보확인)</span>
+      <span>통신판매업신고 : 2008-경기양주-0178</span>
+      <span>개인정보관리책임자 : 김진돌</span>
+    </div>
+  </div>
+</footer>
 <script>
 const KEY_STORAGE = 'washcare_admin_key';
 const apiKeyInput = document.querySelector('#apiKey');
