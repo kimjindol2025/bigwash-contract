@@ -114,5 +114,10 @@
 (assert (fn? call-webhook-authorized?) "call-webhook-authorized?가 정의돼 있어야 한다")
 (assert (fn? safe-error-response) "safe-error-response가 정의돼 있어야 한다")
 (assert (fn? safe-error-response-fixed) "safe-error-response-fixed가 정의돼 있어야 한다")
+(assert (fn? operations-page-csp) "operations-page-csp가 정의돼 있어야 한다")
+(assert (regex_match (operations-page-csp) "img-src 'self' data: blob:")
+  "운영 페이지 CSP는 IndexedDB 사진 미리보기용 blob 이미지를 허용해야 한다")
+(assert (regex_match (operations-page-csp) "script-src 'self' 'nonce-")
+  "운영 페이지 CSP도 요청별 script nonce 경계를 유지해야 한다")
 
 (println "✓ Security gate tests passed")

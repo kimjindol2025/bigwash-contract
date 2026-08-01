@@ -70,3 +70,15 @@
   있으며 화면은 이를 별도 오류로 알린다.
 - 서버 재시작 전 운영 도메인은 새 HTML을 읽지 않으므로, 푸시 뒤 실제 반영에는
   별도 재시작 승인과 운영 Chrome 검증이 필요하다.
+
+## 운영 Chrome에서 발견한 CSP 교정
+
+kim의 재시작 승인 뒤 커밋 `9ccbcaf`를 운영에 반영했지만 실제 Chrome 검증에서
+사진 object URL이 FreeLang 기본 CSP의 `default-src 'self'`에 차단됐다. 폼과 사진
+개수만 확인했다면 놓쳤을 문제였고, `naturalWidth=0`과 브라우저 CSP 오류를 함께
+확인해 실제 픽셀 표시가 실패한다는 것을 판별했다.
+
+운영 페이지 응답에만 `img-src 'self' data: blob:`을 추가하고, 기존 요청별
+`script-src 'nonce-...'`, `style-src`, `connect-src` 경계는 그대로 유지했다. AFJ
+`operations-page-csp`가 요청 nonce를 조합하며, 보안 테스트와 정적 가드가 blob
+허용과 nonce 유지를 모두 단정한다. 다른 Admin/API 응답의 CSP는 넓히지 않았다.

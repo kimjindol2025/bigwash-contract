@@ -189,6 +189,7 @@ section "2. Admin/운영 기록실 UI 인라인 스크립트 구문 검사 (new 
 
 ADMIN_HTML="${ROOT_DIR}/src/washcare-admin.html"
 OPERATIONS_HTML="${ROOT_DIR}/src/operations-admin.html"
+WASHCARE_API="${ROOT_DIR}/src/washcare-api.fl"
 if ADMIN_CHECK_OUT="$(node -e '
 const fs = require("fs");
 let operationsScript = "";
@@ -224,6 +225,15 @@ else
   echo "  ${ADMIN_CHECK_OUT}"
   FAILED=1
   SUMMARY+=("Admin inline script 구문·장비 모달 경계: FAIL")
+fi
+
+if ! rg -F "img-src 'self' data: blob:" "${WASHCARE_API}" >/dev/null; then
+  echo "  operations CSP blob image permission missing"
+  FAILED=1
+  SUMMARY+=("운영 사진 CSP 경계: FAIL")
+else
+  echo "  operations page CSP blob image permission + nonce test guard ok"
+  SUMMARY+=("운영 사진 CSP 경계: OK")
 fi
 
 # ============================================================

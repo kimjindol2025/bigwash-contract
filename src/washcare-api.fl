@@ -538,9 +538,18 @@
     (admin-unauthorized)))
 
 ;; ---- 세차장 점주용 운영 기록실 ----
+(defn operations-page-csp []
+  ;; FreeLang 기본 CSP는 img-src가 없어 default-src 'self'로 폴백한다. 작업 사진은
+  ;; 서버 URL이 아니라 현재 기기의 IndexedDB Blob에서 object URL로 표시하므로
+  ;; 운영 페이지 응답에만 blob:/data: 이미지를 허용한다. script nonce와 나머지
+  ;; 기본 경계는 그대로 유지한다.
+  (str "default-src 'self'; script-src 'self' 'nonce-" (server_csp_nonce)
+       "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:;"))
+
 (defn handle-operations-page [req]
   (if (admin-authorized? req)
-    (server_html OPERATIONS-HTML)
+    (server_header (server_html OPERATIONS-HTML)
+      "Content-Security-Policy" (operations-page-csp))
     (admin-unauthorized)))
 
 (defn handle-wash-ops-sites [req]
