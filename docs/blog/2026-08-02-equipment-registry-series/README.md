@@ -1,0 +1,16 @@
+# 2026-08-02 사업장별 장비 등록 연재
+
+오늘 kim이 바로잡은 “고압세척기만 있는 것이 아니다”라는 요구에서 시작해,
+사업장별 내 장비 등록, 같은 종류 자동 순번, 등록 장비 기반 이상기록, 운영 배포와
+Gogs 체크포인트까지 이어진 전체 작업을 세 편으로 나눈다.
+
+1. `01-from-one-washer-to-my-equipment.md`
+   - 고압세척기 예시를 장비 전체로 오해한 설계 누락과 제품 경계 교정
+2. `02-afj-equipment-registry-and-issues.md`
+   - 기존 equipment 정본, AFJ API, 자동 순번, 터치 UI, 회귀 검증
+3. `03-production-deployment-and-checkpoint.md`
+   - 운영 DB 백업, 대상 프로세스 재기동, 공개 검증, Gogs 증거와 남은 위험
+
+기능 체크포인트는 `20c65a6`, 기존 배포 기록은 `a98c8c0`, 장비 이상 모달
+교정은 `00f103a`다. 이 연재 원고는 후속 `docs(blog)` 체크포인트로 묶어 Gogs와
+공식 블로그에 함께 남긴다.
