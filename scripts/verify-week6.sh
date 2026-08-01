@@ -191,20 +191,33 @@ ADMIN_HTML="${ROOT_DIR}/src/washcare-admin.html"
 OPERATIONS_HTML="${ROOT_DIR}/src/operations-admin.html"
 if ADMIN_CHECK_OUT="$(node -e '
 const fs = require("fs");
+let operationsScript = "";
 for (const path of process.argv.slice(1)) {
   const html = fs.readFileSync(path, "utf8");
   const m = html.match(/<script>([\s\S]*?)<\/script>/i);
   if (!m) { console.error(`script block not found: ${path}`); process.exit(1); }
   new Function(m[1]);
+  if (path.endsWith("operations-admin.html")) operationsScript = m[1];
 }
-console.log("admin and operations inline script syntax ok");
+const directEquipmentRedirect = "type=" + String.fromCharCode(39) + "equipment" + String.fromCharCode(39) + ";";
+if (operationsScript.includes(directEquipmentRedirect)) {
+  console.error("equipment issue must not redirect to equipment registration modal");
+  process.exit(1);
+}
+for (const required of ["장비 이상 기록", "이상 증상", "현재 상태", "영업 중단시간", "등록된 장비가 없습니다. 고장 원인과 상태"]) {
+  if (!operationsScript.includes(required)) {
+    console.error(`operations issue modal requirement missing: ${required}`);
+    process.exit(1);
+  }
+}
+console.log("admin and operations inline script syntax + equipment modal boundary ok");
 ' "${ADMIN_HTML}" "${OPERATIONS_HTML}")"; then
   echo "  ${ADMIN_CHECK_OUT}"
-  SUMMARY+=("Admin inline script 구문: OK")
+  SUMMARY+=("Admin inline script 구문·장비 모달 경계: OK")
 else
   echo "  ${ADMIN_CHECK_OUT}"
   FAILED=1
-  SUMMARY+=("Admin inline script 구문: FAIL")
+  SUMMARY+=("Admin inline script 구문·장비 모달 경계: FAIL")
 fi
 
 # ============================================================
