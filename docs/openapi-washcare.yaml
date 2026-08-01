@@ -1517,6 +1517,37 @@ paths:
         "400": { description: 잘못된 요청 }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /care/operations/vehicle-suggestions:
+    get:
+      summary: 사업장 저장 이력에서 차량번호 근접 제안 최대 3개
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      parameters:
+        - in: query
+          name: site_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: q
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { description: 최근 차량명·크기·방문 횟수를 포함한 제안 목록 }
+        "400": { description: 잘못된 요청 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/vehicle-models:
+    get:
+      summary: 차량명 기준 크기 자동 판정 제안 최대 3개
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: 차량명·자동 크기·기준 출처 목록 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /care/operations/vehicles:
     post:
       summary: 차량번호 중심 작업 기록
@@ -1532,6 +1563,8 @@ paths:
                 site_id: { type: integer }
                 job_date: { type: string, format: date }
                 plate_number: { type: string }
+                vehicle_model: { type: string, nullable: true, description: 생략 시 같은 차량번호의 최근 차량명을 재사용한다. }
+                vehicle_size: { type: string, nullable: true, enum: [경형, 소형, 중형, SUV, 대형, 승합], description: 생략 시 최근 차량 이력 또는 차량명 기준 DB로 자동 판정한다. }
                 work_minutes: { type: integer, minimum: 0 }
                 wait_minutes: { type: integer, minimum: 0 }
                 payment_amount: { type: number, minimum: 0 }

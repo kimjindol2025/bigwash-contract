@@ -132,6 +132,7 @@ request_expect "무인증 Admin" 401 "${BASE_URL}/care/admin"
 assert_header "Admin Basic challenge" '^WWW-Authenticate: Basic realm="BigWash Admin"'
 assert_header "Admin 401 no-store" '^Cache-Control: no-store'
 request_expect "무인증 루트" 401 "${BASE_URL}/"
+request_expect "favicon 정적 응답" 204 "${BASE_URL}/favicon.ico"
 request_expect "공개 토큰 모델 유지" 404 "${BASE_URL}/care/status/not-a-real-token"
 
 echo "--- 키·Basic 분리 ---"

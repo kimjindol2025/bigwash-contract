@@ -131,7 +131,7 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 
 위 71개(내부 API, 정적 페이지 제외) + 아래 "공개 엔드포인트" 절의
 `/care/status/:token`, `/care/site-status/:token` 2개를 더하면
-`openapi-washcare.yaml`의 전체 operation 73개와 정확히 일치한다
+`openapi-washcare.yaml`의 전체 operation 75개와 정확히 일치한다
 (`/care/admin`, `/care/operations`, 루트 `/`는 정적 페이지라 OpenAPI에서 제외).
 
 ### POST /care/customers

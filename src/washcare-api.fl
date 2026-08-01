@@ -526,6 +526,12 @@
     (server_html ADMIN-HTML)
     (admin-unauthorized)))
 
+;; 브라우저 기본 favicon 요청이 404를 만들거나 data: URL 때문에 CSP 경고를
+;; 내지 않도록 본문 없는 정상 응답을 제공한다. 운영 데이터와 무관한 정적
+;; 브라우저 보조 경로이므로 인증·OpenAPI 대상에는 포함하지 않는다.
+(defn handle-favicon [req]
+  (server_status 204 ""))
+
 (defn handle-root [req]
   (if (admin-authorized? req)
     (server_redirect "/care/admin")
@@ -565,6 +571,23 @@
       (server_json {:ok true :data (list-wash-ops-equipment
         (parse-int-param (server_req_query req "site_id") "site_id"))})
       (catch [e] (safe-error-response "handle-wash-ops-equipment" e)))
+    (unauthorized)))
+
+(defn handle-wash-ops-vehicle-suggestions [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (server_json {:ok true :data (list-wash-ops-vehicle-suggestions
+        (parse-int-param (server_req_query req "site_id") "site_id")
+        (or (server_req_query req "q") ""))})
+      (catch [e] (safe-error-response "handle-wash-ops-vehicle-suggestions" e)))
+    (unauthorized)))
+
+(defn handle-wash-ops-vehicle-models [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (server_json {:ok true :data (list-wash-ops-vehicle-models
+        (or (server_req_query req "q") ""))})
+      (catch [e] (safe-error-response "handle-wash-ops-vehicle-models" e)))
     (unauthorized)))
 
 (defn handle-save-wash-ops-day [req]
@@ -1088,6 +1111,8 @@
 (server_post "/care/operations/sites" "handle-create-wash-ops-site")
 (server_post "/care/operations/sites/:id/activate" "handle-activate-wash-ops-site")
 (server_get  "/care/operations/equipment" "handle-wash-ops-equipment")
+(server_get  "/care/operations/vehicle-suggestions" "handle-wash-ops-vehicle-suggestions")
+(server_get  "/care/operations/vehicle-models" "handle-wash-ops-vehicle-models")
 (server_post "/care/operations/day" "handle-save-wash-ops-day")
 (server_post "/care/operations/vehicles" "handle-create-wash-ops-vehicle")
 (server_post "/care/operations/reworks" "handle-create-wash-ops-rework")
@@ -1097,6 +1122,7 @@
 (server_get  "/care/operations/dashboard" "handle-wash-ops-dashboard")
 (server_get  "/care/operations/weekly" "handle-wash-ops-weekly")
 (server_get  "/care/admin" "handle-admin-page")
+(server_get  "/favicon.ico" "handle-favicon")
 (server_get  "/" "handle-root")
 
 ;; BIGWASH_SKIP_SERVER_START=1이면 라우트 등록까지만 하고 실제로 포트를

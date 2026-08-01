@@ -1,0 +1,73 @@
+{
+  "executed_at": "2026-08-01T17:20:00+09:00",
+  "task": "wash-vehicle-history-suggestions-and-size-resolution",
+  "completion": "implemented_verified_and_deployed_to_production",
+  "implementation_language": {
+    "database_domain_api": "FreeLang/AFJ with SQLite",
+    "browser_adapter": "HTML/CSS and minimal event-delegated JavaScript",
+    "rule_boundary": "Vehicle matching, prior-profile inheritance, model-size resolution, learning, validation, and persistence are AFJ rules. JavaScript only renders suggestions and converts touch/input events into API requests."
+  },
+  "behavior": [
+    "A vehicle-number query is normalized without spaces or hyphens and returns at most three saved vehicles from the selected site.",
+    "Suggestions are ranked exact match, prefix match, contained match, and then recency; the latest row per normalized plate is returned.",
+    "Selecting a saved vehicle fills its latest model and size.",
+    "For a new vehicle, entering the model resolves size from the vehicle model table; manual size selection is a correction fallback.",
+    "A successfully saved model and size are learned back into the model table for later reuse."
+  ],
+  "schema": {
+    "wash_ops_vehicle_jobs_added_columns": [
+      "plate_number_key",
+      "vehicle_model_key"
+    ],
+    "new_table": "wash_ops_vehicle_models",
+    "new_indexes": [
+      "idx_wash_ops_vehicle_plate_key",
+      "idx_wash_ops_vehicle_model_key"
+    ],
+    "seeded_common_models": 35
+  },
+  "new_api": [
+    "GET /care/operations/vehicle-suggestions?site_id=&q=",
+    "GET /care/operations/vehicle-models?q="
+  ],
+  "verification": {
+    "freelang_tests": "17/17 PASS",
+    "openapi_code_routes": "75/75 exact match",
+    "http_security": "PASS including unauthenticated favicon 204 and protected operations APIs",
+    "database_backup_restore_rehearsal": "PASS",
+    "mobile_browser": {
+      "viewport": "390x844",
+      "vehicle_suggestion_count": 3,
+      "saved_vehicle_result": "34나-5678 -> 쏘렌토 / SUV",
+      "new_model_result": "그랜저IG -> 중형",
+      "horizontal_overflow": false,
+      "runtime_errors": 0
+    },
+    "production": {
+      "database_integrity": "ok",
+      "foreign_key_errors": 0,
+      "vehicle_models": 35,
+      "search_columns": 2,
+      "lookup_indexes": 2,
+      "backfill_missing_rows": 0,
+      "local_authenticated_page": 200,
+      "local_wrong_password": 401,
+      "local_favicon": 204,
+      "public_authenticated_page": 200,
+      "public_model_resolution": "그랜저IG -> 그랜저 / 중형",
+      "site_1_vehicle_suggestion_count": 1
+    }
+  },
+  "deployment": {
+    "approved_by_user": true,
+    "backup": "/home/kim/kim/backups/bigwash-contract/contracts-before-vehicle-lookup-20260801T1706KST.sqlite",
+    "process": "washcare-api",
+    "environment_changed": false,
+    "incident": "The first restart exposed a legacy-schema migration defect: the conditional ALTER branch did not add plate_number_key before the backfill UPDATE. PM2 entered a rapid restart loop. The service recovered after changing the AFJ migration to independently attempt both ALTER statements and letting the following UPDATE/index statements enforce completeness in the same transaction.",
+    "regression_added": "test_phase1_migration.fl now starts with a pre-lookup wash_ops_vehicle_jobs schema and asserts both normalized keys are added and backfilled.",
+    "final_pm2_state": "online, stable after recovery; restart counter 1009, unstable restarts 0"
+  },
+  "production_state": "Deployed and verified on local port 40101 and https://care.dclub.kr.",
+  "commit": null,
+  "push": false
+}

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko">
 <head>
-<link rel="icon" href="data:,">
+<link rel="icon" href="/favicon.ico">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#5B43D6">
@@ -155,6 +155,22 @@
   .field input,.field select,.field textarea { width:100%; border:1px solid #DBD8E3; border-radius:10px; background:#fff; color:var(--ink); padding:10px 11px; min-height:42px; font-size:13px; outline:none; }
   .field textarea { min-height:84px; resize:vertical; line-height:1.5; }
   .field input:focus,.field select:focus,.field textarea:focus { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
+  .lookup-field { position:relative; }
+  .lookup-list { position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:8; display:flex; flex-direction:column; gap:5px; padding:7px; border:1px solid #DCD7E8; border-radius:12px; background:#fff; box-shadow:0 14px 32px rgba(39,31,72,.16); }
+  .lookup-list[hidden] { display:none; }
+  .lookup-option { width:100%; min-height:52px; border:0; border-radius:9px; background:#FAF9FC; color:var(--ink); padding:9px 11px; display:flex; align-items:center; justify-content:space-between; gap:10px; text-align:left; }
+  .lookup-option:hover,.lookup-option:focus { background:var(--primary-soft); outline:none; }
+  .lookup-primary { display:block; font-size:12.5px; font-weight:900; }
+  .lookup-meta { display:block; margin-top:3px; color:#8F8C98; font-size:10px; }
+  .lookup-count { flex:none; border-radius:999px; padding:4px 7px; background:#EEEAF8; color:var(--primary); font-size:9px; font-weight:850; }
+  .auto-size-card { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:52px; padding:10px 12px; border:1px solid #DDD8E8; border-radius:12px; background:#fff; }
+  .auto-size-card.resolved { border-color:#B7DFC9; background:var(--green-soft); }
+  .auto-size-label { color:#8D8A96; font-size:10px; }
+  .auto-size-value { margin-top:3px; color:#66636E; font-size:13px; font-weight:900; }
+  .auto-size-card.resolved .auto-size-value { color:var(--green); }
+  .manual-size-toggle { flex:none; min-height:36px; border:1px solid #D8D3E1; border-radius:9px; background:#fff; color:#706C79; padding:0 10px; font-size:10px; font-weight:850; }
+  .manual-size-grid { margin-top:10px; }
+  .manual-size-grid[hidden] { display:none; }
   .check-field { display:flex; align-items:center; gap:8px; min-height:42px; }
   .check-field input { width:18px; height:18px; accent-color:var(--primary); }
   .touch-section { grid-column:1/-1; padding:15px; border:1px solid #ECE9F1; border-radius:14px; background:#FCFBFD; }
@@ -452,6 +468,11 @@ document.addEventListener('click',e=>{
   if(action==='resolve-issue')resolveIssue(Number(target.dataset.id));
   if(action==='close-modal')closeModal();
   if(action==='toggle-details')toggleTouchDetails(target);
+  if(action==='select-vehicle-suggestion')applyVehicleSuggestion(target);
+  if(action==='select-model-suggestion')applyVehicleModelSuggestion(target);
+  if(action==='toggle-size-manual'){
+    const grid=el.form.querySelector('.manual-size-grid');if(grid){grid.hidden=!grid.hidden;target.textContent=grid.hidden?'직접 수정':'선택 닫기';}
+  }
 });
 
 const VEHICLE_CONDITION_CATALOG={
@@ -471,6 +492,61 @@ function switchConditionTab(area){el.form.querySelectorAll('[data-condition-tab]
 function selectConditionStatus(button){const row=button.closest('[data-condition-row]');row.querySelectorAll('[data-condition-status]').forEach(x=>x.classList.toggle('active',x===button));}
 function markConditionAreaNormal(area){el.form.querySelectorAll(`[data-condition-row][data-area="${area}"]`).forEach(row=>{const normal=row.querySelector('[data-condition-value="NORMAL"]');if(normal)selectConditionStatus(normal);});}
 function collectVehicleConditions(){const stage=el.form.elements.condition_stage?.value||'ARRIVAL';return [...el.form.querySelectorAll('[data-condition-row]')].map(row=>{const selected=row.querySelector('[data-condition-status].active');return selected?{inspection_stage:stage,area_group:row.dataset.area,checkpoint_code:row.dataset.code,checkpoint_label:row.dataset.label,condition_status:selected.dataset.conditionValue,note:null}:null;}).filter(Boolean);}
+
+const vehicleLookupState={plateSeq:0,modelSeq:0};
+function vehicleLookupKey(value){return String(value||'').replace(/[\s-]/g,'').toLowerCase();}
+function updateVehicleSizeDisplay(size,source=''){
+  const input=el.form.elements.vehicle_size,card=el.form.querySelector('#vehicleSizeAuto'),value=el.form.querySelector('#vehicleSizeValue');if(!input)return;
+  input.value=size||'';input.dataset.source=source||'';
+  el.form.querySelectorAll('[data-choice-target="vehicle_size"]').forEach(x=>x.classList.toggle('active',x.dataset.choiceValue===input.value));
+  if(card)card.classList.toggle('resolved',!!size);
+  if(value)value.textContent=size?`${size} · ${source||'DB 자동 판정'}`:'차량명을 입력하면 자동으로 정해집니다';
+}
+function hideVehicleLookups(){el.form.querySelectorAll('.lookup-list').forEach(x=>x.hidden=true);}
+function applyVehicleSuggestion(button){
+  const plate=el.form.elements.plate_number,model=el.form.elements.vehicle_model;if(!plate||!model)return;
+  plate.value=button.dataset.plate||'';plate.dataset.selectedKey=vehicleLookupKey(plate.value);
+  model.value=button.dataset.vehicleModel||'';model.dataset.autofilled='plate';
+  updateVehicleSizeDisplay(button.dataset.vehicleSize||'',button.dataset.vehicleSize?'최근 작업 이력':'');hideVehicleLookups();
+}
+function applyVehicleModelSuggestion(button){
+  const model=el.form.elements.vehicle_model;if(!model)return;
+  model.value=button.dataset.modelName||'';model.dataset.autofilled='model';
+  updateVehicleSizeDisplay(button.dataset.vehicleSize||'',button.dataset.vehicleSize?'차량 기준 DB':'');hideVehicleLookups();
+}
+async function fetchVehicleNumberSuggestions(input){
+  const seq=++vehicleLookupState.plateSeq,q=input.value.trim(),box=el.form.querySelector('#vehicleNumberSuggestions');if(!box||!state.siteId)return;
+  try{
+    const rows=await api('GET',`/care/operations/vehicle-suggestions?site_id=${encodeURIComponent(state.siteId)}&q=${encodeURIComponent(q)}`);if(seq!==vehicleLookupState.plateSeq||!el.form.contains(input))return;
+    box.innerHTML=rows.map(x=>`<button type="button" class="lookup-option" role="option" data-action="select-vehicle-suggestion" data-plate="${esc(x.plate_number)}" data-vehicle-model="${esc(x.vehicle_model||'')}" data-vehicle-size="${esc(x.vehicle_size||'')}"><span><span class="lookup-primary">${esc(x.plate_number)}</span><span class="lookup-meta">${esc([x.vehicle_model,x.vehicle_size,x.last_job_date].filter(Boolean).join(' · ')||'차량 정보 없음')}</span></span><span class="lookup-count">${n(x.visit_count)}회</span></button>`).join('');
+    box.hidden=!rows.length;
+    if(rows.length&&vehicleLookupKey(rows[0].plate_number)===vehicleLookupKey(q))applyVehicleSuggestion(box.firstElementChild);
+  }catch(_e){box.hidden=true;}
+}
+async function fetchVehicleModelSuggestions(input){
+  const seq=++vehicleLookupState.modelSeq,q=input.value.trim(),box=el.form.querySelector('#vehicleModelSuggestions');if(!box)return;
+  if(!q){box.hidden=true;updateVehicleSizeDisplay('','');return;}
+  try{
+    const rows=await api('GET',`/care/operations/vehicle-models?q=${encodeURIComponent(q)}`);if(seq!==vehicleLookupState.modelSeq||!el.form.contains(input))return;
+    box.innerHTML=rows.map(x=>`<button type="button" class="lookup-option" role="option" data-action="select-model-suggestion" data-model-name="${esc(x.model_name)}" data-vehicle-size="${esc(x.vehicle_size)}"><span><span class="lookup-primary">${esc(x.model_name)}</span><span class="lookup-meta">차량 크기 자동 판정</span></span><span class="lookup-count">${esc(x.vehicle_size)}</span></button>`).join('');box.hidden=!rows.length;
+    const first=rows[0],typed=vehicleLookupKey(q),matched=first&&(typed===vehicleLookupKey(first.model_key)||typed.includes(vehicleLookupKey(first.model_key)));
+    if(matched)updateVehicleSizeDisplay(first.vehicle_size,'차량 기준 DB');else if(el.form.elements.vehicle_size?.dataset.source!=='수동 선택')updateVehicleSizeDisplay('','');
+  }catch(_e){box.hidden=true;}
+}
+function setupVehicleLookup(){
+  const plate=el.form.elements.plate_number,model=el.form.elements.vehicle_model,size=el.form.elements.vehicle_size;if(!plate||!model||!size)return;
+  plate.autocomplete='off';model.autocomplete='off';
+  const plateField=plate.closest('.field'),modelField=model.closest('.field');plateField?.classList.add('lookup-field');modelField?.classList.add('lookup-field');
+  const plateLabel=plateField?.querySelector('label'),modelLabel=modelField?.querySelector('label');if(plateLabel)plateLabel.textContent='차량번호 · 최근 이력 3개';if(modelLabel)modelLabel.textContent='차량명 · 크기 자동';
+  plate.insertAdjacentHTML('afterend','<div id="vehicleNumberSuggestions" class="lookup-list" role="listbox" hidden></div>');
+  model.insertAdjacentHTML('afterend','<div id="vehicleModelSuggestions" class="lookup-list" role="listbox" hidden></div>');
+  const sizeGrid=el.form.querySelector('[data-choice-group="vehicle_size"]'),sizeSection=sizeGrid?.closest('.touch-section');size.value='';size.dataset.source='';
+  sizeGrid?.classList.add('manual-size-grid');if(sizeGrid)sizeGrid.hidden=true;
+  const sizeTitle=sizeSection?.querySelector('.touch-title'),sizeHelp=sizeSection?.querySelector('.touch-help');if(sizeTitle)sizeTitle.textContent='차량 크기 · 자동';if(sizeHelp)sizeHelp.textContent='차량명 기준 DB가 정하고, 맞지 않을 때만 직접 바꿉니다.';
+  sizeGrid?.insertAdjacentHTML('beforebegin','<div id="vehicleSizeAuto" class="auto-size-card"><div><div class="auto-size-label">적용될 차량 크기</div><div id="vehicleSizeValue" class="auto-size-value">차량명을 입력하면 자동으로 정해집니다</div></div><button type="button" class="manual-size-toggle" data-action="toggle-size-manual">직접 수정</button></div>');
+  plate.addEventListener('focus',()=>fetchVehicleNumberSuggestions(plate));plate.addEventListener('input',()=>{if(plate.dataset.selectedKey&&plate.dataset.selectedKey!==vehicleLookupKey(plate.value)){plate.dataset.selectedKey='';if(model.dataset.autofilled==='plate'){model.value='';model.dataset.autofilled='';updateVehicleSizeDisplay('','');}}fetchVehicleNumberSuggestions(plate);});
+  model.addEventListener('input',()=>{model.dataset.autofilled='';fetchVehicleModelSuggestions(model);});
+}
 
 const fields={
   site:{title:'운영 사업장 등록',sub:'이 사업장만의 일일 기록이 새로 시작됩니다.',html:`<div class="form-grid"><div class="field full"><label class="required">사업장명</label><input name="name" required placeholder="예: 양주 손세차장"></div><div class="field full"><label>주소</label><input name="address" placeholder="사업장 주소"></div><div class="field"><label>사업주명</label><input name="owner_name" placeholder="대표자 또는 담당자"></div><div class="field"><label>연락처</label><input name="phone" inputmode="tel" placeholder="010-0000-0000"></div></div>`},
@@ -494,7 +570,7 @@ function openForm(type){
   }
   if(type==='vehicle'){
     const ownerSection=el.form.querySelector('[data-choice-group="owner_involved"]')?.closest('.touch-section');
-    ownerSection?.insertAdjacentHTML('beforebegin',vehicleConditionHtml());renderVehicleConditionChecks();
+    ownerSection?.insertAdjacentHTML('beforebegin',vehicleConditionHtml());renderVehicleConditionChecks();setupVehicleLookup();
   }
   if(type==='day'&&state.data?.day){Object.entries(state.data.day).forEach(([k,v])=>{const input=el.form.elements[k];if(input&&v!=null)input.value=String(v).slice(0,input.type==='time'?5:999);});}
   syncTouchForm();
@@ -509,6 +585,7 @@ function selectTouchChoice(button){
   const group=button.closest('[data-choice-group]')||el.form;
   group.querySelectorAll('[data-choice-target]').forEach(x=>x.classList.toggle('active',x===button));
   if(name==='vehicle_job_id'){const plate=el.form.elements.plate_number;if(plate)plate.value=button.dataset.plate||'';const manual=el.form.elements.manual_plate_number;if(manual)manual.value='';}
+  if(name==='vehicle_size')updateVehicleSizeDisplay(input.value,'수동 선택');
   if(name==='status'){const details=el.form.querySelector('[data-status-details]');if(details)details.hidden=input.value==='NORMAL';}
 }
 function selectTouchMulti(button){

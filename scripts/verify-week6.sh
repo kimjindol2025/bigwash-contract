@@ -11,7 +11,7 @@ set -euo pipefail
 #
 # 검증 순서: (1) tests/test_*.fl 17종 직렬 실행(mktemp 격리 DB)
 #            (2) Admin/운영 기록실 UI 인라인 <script> 구문 검사(new Function)
-#            (3) OpenAPI YAML parse + 코드↔spec API 라우트 73개 완전일치
+#            (3) OpenAPI YAML parse + 코드↔spec API 라우트 75개 완전일치
 #            (4) git diff --check (공백 오류)
 #            (5) 격리 HTTP 인증·오류 노출 공격 검증
 #            (6) 격리 DB 백업·변경·복원 리허설
@@ -208,9 +208,9 @@ else
 fi
 
 # ============================================================
-# 3. OpenAPI YAML parse + 코드↔spec API 라우트 73개 완전일치
+# 3. OpenAPI YAML parse + 코드↔spec API 라우트 75개 완전일치
 # ============================================================
-section "3. OpenAPI YAML parse + 코드↔spec API 라우트 73개 완전일치"
+section "3. OpenAPI YAML parse + 코드↔spec API 라우트 75개 완전일치"
 
 if ROUTE_CHECK_OUT="$(python3 - "${ROOT_DIR}" <<'PY'
 import sys, re, json
@@ -237,7 +237,7 @@ for m in re.finditer(r'\(server_(get|post|put|delete|patch)\s+"([^"]+)"', code):
     method, path = m.group(1), m.group(2)
     # 정적 루트(/)와 정적 Admin UI(/care/admin)는 JSON API 스펙 대상이 아니다
     # (docs/04-washcare-api.md, docs/openapi-washcare.yaml과 동일 원칙).
-    if path in ("/", "/care/admin", "/care/operations"):
+    if path in ("/", "/care/admin", "/care/operations", "/favicon.ico"):
         continue
     # FreeLang 라우트는 :id 스타일, OpenAPI는 {id} 스타일이라 변환해서 비교한다.
     openapi_path = re.sub(r":([a-zA-Z_]+)", r"{\1}", path)
@@ -246,14 +246,14 @@ for m in re.finditer(r'\(server_(get|post|put|delete|patch)\s+"([^"]+)"', code):
 only_in_code = sorted(code_ops - spec_ops)
 only_in_spec = sorted(spec_ops - code_ops)
 
-print(f"  spec operation count: {len(spec_ops)} (기대 73)")
-print(f"  code operation count: {len(code_ops)} (기대 73)")
+print(f"  spec operation count: {len(spec_ops)} (기대 75)")
+print(f"  code operation count: {len(code_ops)} (기대 75)")
 print(f"  code에만 있음: {only_in_code}")
 print(f"  spec에만 있음: {only_in_spec}")
 
 ok = (
-    len(spec_ops) == 73
-    and len(code_ops) == 73
+    len(spec_ops) == 75
+    and len(code_ops) == 75
     and not only_in_code
     and not only_in_spec
 )
@@ -261,11 +261,11 @@ sys.exit(0 if ok else 1)
 PY
 )"; then
   echo "${ROUTE_CHECK_OUT}"
-  SUMMARY+=("OpenAPI YAML parse + 라우트 73개 대조: OK (완전일치)")
+  SUMMARY+=("OpenAPI YAML parse + 라우트 75개 대조: OK (완전일치)")
 else
   echo "${ROUTE_CHECK_OUT}"
   FAILED=1
-  SUMMARY+=("OpenAPI YAML parse + 라우트 73개 대조: FAIL")
+  SUMMARY+=("OpenAPI YAML parse + 라우트 75개 대조: FAIL")
 fi
 
 # ============================================================
