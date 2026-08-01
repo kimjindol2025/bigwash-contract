@@ -1565,6 +1565,7 @@ paths:
                 plate_number: { type: string }
                 vehicle_model: { type: string, nullable: true, description: 생략 시 같은 차량번호의 최근 차량명을 재사용한다. }
                 vehicle_size: { type: string, nullable: true, enum: [경형, 소형, 중형, SUV, 대형, 승합], description: 생략 시 최근 차량 이력 또는 차량명 기준 DB로 자동 판정한다. }
+                manual_size_override: { type: boolean, default: false, description: 현장에서 차량 크기를 직접 수정한 경우에만 true. true일 때만 차량명 기준 DB가 HISTORY로 학습한다. }
                 work_minutes: { type: integer, minimum: 0 }
                 wait_minutes: { type: integer, minimum: 0 }
                 payment_amount: { type: number, minimum: 0 }

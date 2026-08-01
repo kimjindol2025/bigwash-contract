@@ -529,9 +529,9 @@ async function fetchVehicleModelSuggestions(input){
   try{
     const rows=await api('GET',`/care/operations/vehicle-models?q=${encodeURIComponent(q)}`);if(seq!==vehicleLookupState.modelSeq||!el.form.contains(input))return;
     box.innerHTML=rows.map(x=>`<button type="button" class="lookup-option" role="option" data-action="select-model-suggestion" data-model-name="${esc(x.model_name)}" data-vehicle-size="${esc(x.vehicle_size)}"><span><span class="lookup-primary">${esc(x.model_name)}</span><span class="lookup-meta">차량 크기 자동 판정</span></span><span class="lookup-count">${esc(x.vehicle_size)}</span></button>`).join('');box.hidden=!rows.length;
-    const first=rows[0],typed=vehicleLookupKey(q),matched=first&&(typed===vehicleLookupKey(first.model_key)||typed.includes(vehicleLookupKey(first.model_key)));
-    if(matched)updateVehicleSizeDisplay(first.vehicle_size,'차량 기준 DB');else if(el.form.elements.vehicle_size?.dataset.source!=='수동 선택')updateVehicleSizeDisplay('','');
-  }catch(_e){box.hidden=true;}
+    const typed=vehicleLookupKey(q),matched=rows.find(x=>{const key=vehicleLookupKey(x.model_key);return typed===key||typed.includes(key);});
+    if(matched)updateVehicleSizeDisplay(matched.vehicle_size,'차량 기준 DB');else if(el.form.elements.vehicle_size?.dataset.source!=='수동 선택')updateVehicleSizeDisplay('','');
+  }catch(_e){box.hidden=true;if(el.form.elements.vehicle_size?.dataset.source!=='수동 선택')updateVehicleSizeDisplay('','');}
 }
 function setupVehicleLookup(){
   const plate=el.form.elements.plate_number,model=el.form.elements.vehicle_model,size=el.form.elements.vehicle_size;if(!plate||!model||!size)return;
@@ -545,7 +545,7 @@ function setupVehicleLookup(){
   const sizeTitle=sizeSection?.querySelector('.touch-title'),sizeHelp=sizeSection?.querySelector('.touch-help');if(sizeTitle)sizeTitle.textContent='차량 크기 · 자동';if(sizeHelp)sizeHelp.textContent='차량명 기준 DB가 정하고, 맞지 않을 때만 직접 바꿉니다.';
   sizeGrid?.insertAdjacentHTML('beforebegin','<div id="vehicleSizeAuto" class="auto-size-card"><div><div class="auto-size-label">적용될 차량 크기</div><div id="vehicleSizeValue" class="auto-size-value">차량명을 입력하면 자동으로 정해집니다</div></div><button type="button" class="manual-size-toggle" data-action="toggle-size-manual">직접 수정</button></div>');
   plate.addEventListener('focus',()=>fetchVehicleNumberSuggestions(plate));plate.addEventListener('input',()=>{if(plate.dataset.selectedKey&&plate.dataset.selectedKey!==vehicleLookupKey(plate.value)){plate.dataset.selectedKey='';if(model.dataset.autofilled==='plate'){model.value='';model.dataset.autofilled='';updateVehicleSizeDisplay('','');}}fetchVehicleNumberSuggestions(plate);});
-  model.addEventListener('input',()=>{model.dataset.autofilled='';fetchVehicleModelSuggestions(model);});
+  model.addEventListener('input',()=>{model.dataset.autofilled='';updateVehicleSizeDisplay('','');fetchVehicleModelSuggestions(model);});
 }
 
 const fields={
@@ -627,7 +627,7 @@ el.form.addEventListener('submit',async e=>{
     if(type==='day')await api('POST','/care/operations/day',{...base,operation_date:state.date,opened_at:val(fd,'opened_at'),closed_at:val(fd,'closed_at'),reserved_count:num(fd,'reserved_count'),staff_count:num(fd,'staff_count'),weather:val(fd,'weather'),busiest_period:val(fd,'busiest_period'),status:val(fd,'status'),owner_work_minutes:num(fd,'owner_work_minutes'),owner_memo:val(fd,'owner_memo')});
     if(type==='vehicle'){
       const arrived=val(fd,'arrived_at'),started=val(fd,'started_at'),finished=val(fd,'finished_at'),departed=val(fd,'departed_at');
-      await api('POST','/care/operations/vehicles',{...base,job_date:state.date,plate_number:val(fd,'plate_number'),vehicle_model:val(fd,'vehicle_model'),vehicle_size:val(fd,'vehicle_size'),arrived_at:dateTime(arrived),started_at:dateTime(started),finished_at:dateTime(finished),departed_at:dateTime(departed),work_minutes:minutesBetween(started,finished),wait_minutes:minutesBetween(arrived,started),base_work:val(fd,'base_work')||'기본 손세차',extra_work:val(fd,'extra_work'),assigned_staff:val(fd,'assigned_staff'),special_contamination:val(fd,'special_contamination'),customer_request:val(fd,'customer_request'),return_note:val(fd,'return_note'),payment_amount:num(fd,'payment_amount'),owner_involved:val(fd,'owner_involved')==='1',conditions:collectVehicleConditions()});
+      await api('POST','/care/operations/vehicles',{...base,job_date:state.date,plate_number:val(fd,'plate_number'),vehicle_model:val(fd,'vehicle_model'),vehicle_size:val(fd,'vehicle_size'),manual_size_override:el.form.elements.vehicle_size?.dataset.source==='수동 선택',arrived_at:dateTime(arrived),started_at:dateTime(started),finished_at:dateTime(finished),departed_at:dateTime(departed),work_minutes:minutesBetween(started,finished),wait_minutes:minutesBetween(arrived,started),base_work:val(fd,'base_work')||'기본 손세차',extra_work:val(fd,'extra_work'),assigned_staff:val(fd,'assigned_staff'),special_contamination:val(fd,'special_contamination'),customer_request:val(fd,'customer_request'),return_note:val(fd,'return_note'),payment_amount:num(fd,'payment_amount'),owner_involved:val(fd,'owner_involved')==='1',conditions:collectVehicleConditions()});
     }
     if(type==='rework')await api('POST','/care/operations/reworks',{...base,vehicle_job_id:val(fd,'vehicle_job_id')?Number(val(fd,'vehicle_job_id')):null,occurred_date:state.date,plate_number:val(fd,'manual_plate_number')||val(fd,'plate_number'),complaint_area:val(fd,'complaint_area'),customer_request:val(fd,'customer_request'),initial_worker:val(fd,'initial_worker'),inspector:val(fd,'inspector'),free_minutes:num(fd,'free_minutes'),cause:val(fd,'cause'),result:val(fd,'result'),prevention_action:val(fd,'prevention_action')});
     if(type==='issue')await api('POST','/care/operations/equipment-issues',{...base,equipment_id:val(fd,'equipment_id')?Number(val(fd,'equipment_id')):null,occurred_date:state.date,issue_title:val(fd,'issue_title_detail')||val(fd,'issue_title'),state:val(fd,'state'),downtime_minutes:num(fd,'downtime_minutes'),action_taken:val(fd,'action_taken'),note:val(fd,'note')});

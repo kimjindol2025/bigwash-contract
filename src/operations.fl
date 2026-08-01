@@ -25,7 +25,7 @@
 
 (defn wash-ops-search-key [value]
   (let [resolved (normalize-trimmed-string value)]
-    (if (nil? resolved) "" (str-replace (str-replace resolved " " "") "-" ""))))
+    (if (nil? resolved) "" (str-lower (str-replace (str-replace resolved " " "") "-" "")))))
 
 (defn valid-wash-ops-vehicle-size? [size]
   (or (= size "경형") (= size "소형") (= size "중형")
@@ -132,8 +132,21 @@
     [site-id plate-key])))
 
 (defn resolve-wash-ops-vehicle-model [vehicle-model]
-  (let [rows (list-wash-ops-vehicle-models vehicle-model)]
-    (if (= (length rows) 0) nil (first rows))))
+  ;; suggestion의 "입력값이 정본명의 일부" 조건은 확정 판정에 쓰지 않는다.
+  ;; 완전 일치하거나, 그랜저IG처럼 입력 전체 안에 정본명이 들어간 경우만
+  ;; 자동 크기를 확정한다. 여러 정본이 포함되면 가장 긴 이름을 우선한다.
+  (let [key (wash-ops-search-key vehicle-model)]
+    (if (= key "")
+      nil
+      (first (db_query DB
+        "SELECT id,model_name,model_key,vehicle_size,source,use_count
+         FROM wash_ops_vehicle_models
+         WHERE lower(model_key)=lower(?)
+            OR lower(?) LIKE '%'||lower(model_key)||'%'
+         ORDER BY CASE WHEN lower(model_key)=lower(?) THEN 0 ELSE 1 END,
+                  length(model_key) DESC,source='HISTORY' DESC,use_count DESC,id DESC
+         LIMIT 1"
+        [key key key])))))
 
 (defn learn-wash-ops-vehicle-model [vehicle-model vehicle-size]
   (let [resolved-model (normalize-trimmed-string vehicle-model)
@@ -197,7 +210,7 @@
              "SELECT * FROM wash_ops_daily_records WHERE site_id = ? AND operation_date = ?"
              [site-id resolved-date]))))
 
-(defn create-wash-ops-vehicle [site-id job-date plate-number vehicle-model vehicle-size arrived-at started-at finished-at departed-at work-minutes wait-minutes base-work extra-work assigned-staff special-contamination customer-request return-note payment-amount owner-involved]
+(defn create-wash-ops-vehicle [site-id job-date plate-number vehicle-model vehicle-size arrived-at started-at finished-at departed-at work-minutes wait-minutes base-work extra-work assigned-staff special-contamination customer-request return-note payment-amount owner-involved manual-size-override]
   (let [resolved-date (wash-ops-date job-date "job_date")
         resolved-plate (wash-ops-required plate-number "plate_number")
         plate-key (wash-ops-search-key resolved-plate)
@@ -212,6 +225,8 @@
                           (get model-match :vehicle_size))
                         input-size)]
     (ensure-wash-ops-site site-id)
+    (if (and (not (nil? resolved-model)) (nil? resolved-size))
+      (error "Unknown vehicle model; choose vehicle_size manually"))
     (if (and (not (nil? resolved-size)) (not (valid-wash-ops-vehicle-size? resolved-size)))
       (error "vehicle_size must be one of 경형, 소형, 중형, SUV, 대형, 승합"))
     (db_exec DB
@@ -229,8 +244,13 @@
        (wash-ops-nonnegative payment-amount "payment_amount")
        (if (= owner-involved true) 1 (if (= owner-involved 1) 1 0))])
     (let [id (inserted-id "wash_ops_vehicle_jobs")]
-      (learn-wash-ops-vehicle-model resolved-model resolved-size)
-      (first (db_query DB "SELECT * FROM wash_ops_vehicle_jobs WHERE id = ?" [id])))))
+      ;; 자동 판정과 최근 이력 복원은 기준표를 다시 학습시키지 않는다. 현장에서
+      ;; 사용자가 직접 크기를 수정했다고 명시한 저장만 HISTORY로 반영한다.
+      (if (= manual-size-override true)
+        (do
+          (learn-wash-ops-vehicle-model resolved-model resolved-size)
+          (first (db_query DB "SELECT * FROM wash_ops_vehicle_jobs WHERE id = ?" [id])))
+        (first (db_query DB "SELECT * FROM wash_ops_vehicle_jobs WHERE id = ?" [id]))))))
 
 (defn valid-wash-ops-condition-stage? [stage]
   (or (= stage "ARRIVAL") (= stage "FINAL")))
@@ -304,7 +324,8 @@
                     (get payload :departed_at) (get payload :work_minutes) (get payload :wait_minutes)
                     (get payload :base_work) (get payload :extra_work) (get payload :assigned_staff)
                     (get payload :special_contamination) (get payload :customer_request)
-                    (get payload :return_note) (get payload :payment_amount) (get payload :owner_involved))
+                    (get payload :return_note) (get payload :payment_amount) (get payload :owner_involved)
+                    (get payload :manual_size_override))
           conditions (save-wash-ops-vehicle-conditions
                        (get payload :site_id) (get vehicle :id) (get payload :conditions))]
       (db_exec DB "COMMIT" [])

@@ -521,10 +521,9 @@
     (phase1-ensure-wash-ops-vehicle-search-columns)
     (db_exec DB
       "UPDATE wash_ops_vehicle_jobs
-       SET plate_number_key = REPLACE(REPLACE(TRIM(plate_number), ' ', ''), '-', ''),
+       SET plate_number_key = LOWER(REPLACE(REPLACE(TRIM(plate_number), ' ', ''), '-', '')),
            vehicle_model_key = CASE WHEN vehicle_model IS NULL THEN NULL
-             ELSE REPLACE(REPLACE(TRIM(vehicle_model), ' ', ''), '-', '') END
-       WHERE plate_number_key IS NULL OR vehicle_model_key IS NULL"
+             ELSE LOWER(REPLACE(REPLACE(TRIM(vehicle_model), ' ', ''), '-', '')) END"
       [])
 
     ;; 차량명만 입력하면 크기를 자동 판정하는 정본. SYSTEM 행은 기본 기준표,
@@ -542,24 +541,44 @@
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )" [])
+    ;; SQLite의 UNIQUE는 기본적으로 영문 대소문자를 구분한다. 구버전에서 K5와
+    ;; k5가 함께 생겼다면 사람이 교정한 HISTORY → 사용 횟수 → 최근 수정 순으로
+    ;; 하나만 보존한 뒤 키를 소문자로 통일한다.
+    (db_exec DB
+      "DELETE FROM wash_ops_vehicle_models
+       WHERE id IN (
+         SELECT id FROM (
+           SELECT id, ROW_NUMBER() OVER (
+             PARTITION BY LOWER(model_key)
+             ORDER BY (source='HISTORY') DESC, use_count DESC, updated_at DESC, id DESC
+           ) AS duplicate_rank
+           FROM wash_ops_vehicle_models
+         ) WHERE duplicate_rank > 1
+       )"
+      [])
+    (db_exec DB
+      "UPDATE wash_ops_vehicle_models
+       SET model_key=LOWER(model_key)
+       WHERE model_key<>LOWER(model_key)"
+      [])
     (db_exec DB
       "INSERT OR IGNORE INTO wash_ops_vehicle_models
        (model_name, model_key, vehicle_size, source) VALUES
        ('모닝','모닝','경형','SYSTEM'),('레이','레이','경형','SYSTEM'),
        ('스파크','스파크','경형','SYSTEM'),('캐스퍼','캐스퍼','경형','SYSTEM'),
-       ('아반떼','아반떼','소형','SYSTEM'),('K3','K3','소형','SYSTEM'),
+       ('아반떼','아반떼','소형','SYSTEM'),('K3','k3','소형','SYSTEM'),
        ('액센트','액센트','소형','SYSTEM'),('프라이드','프라이드','소형','SYSTEM'),
        ('쏘나타','쏘나타','중형','SYSTEM'),('소나타','소나타','중형','SYSTEM'),
-       ('K5','K5','중형','SYSTEM'),('SM6','SM6','중형','SYSTEM'),
-       ('그랜저','그랜저','중형','SYSTEM'),('K7','K7','중형','SYSTEM'),
-       ('K8','K8','중형','SYSTEM'),('G70','G70','중형','SYSTEM'),
-       ('G80','G80','대형','SYSTEM'),('G90','G90','대형','SYSTEM'),
-       ('K9','K9','대형','SYSTEM'),('에쿠스','에쿠스','대형','SYSTEM'),
+       ('K5','k5','중형','SYSTEM'),('SM6','sm6','중형','SYSTEM'),
+       ('그랜저','그랜저','중형','SYSTEM'),('K7','k7','중형','SYSTEM'),
+       ('K8','k8','중형','SYSTEM'),('G70','g70','중형','SYSTEM'),
+       ('G80','g80','대형','SYSTEM'),('G90','g90','대형','SYSTEM'),
+       ('K9','k9','대형','SYSTEM'),('에쿠스','에쿠스','대형','SYSTEM'),
        ('코나','코나','SUV','SYSTEM'),('셀토스','셀토스','SUV','SYSTEM'),
        ('니로','니로','SUV','SYSTEM'),('투싼','투싼','SUV','SYSTEM'),
        ('스포티지','스포티지','SUV','SYSTEM'),('싼타페','싼타페','SUV','SYSTEM'),
        ('쏘렌토','쏘렌토','SUV','SYSTEM'),('팰리세이드','팰리세이드','SUV','SYSTEM'),
-       ('GV70','GV70','SUV','SYSTEM'),('GV80','GV80','SUV','SYSTEM'),
+       ('GV70','gv70','SUV','SYSTEM'),('GV80','gv80','SUV','SYSTEM'),
        ('토레스','토레스','SUV','SYSTEM'),('렉스턴','렉스턴','SUV','SYSTEM'),
        ('카니발','카니발','승합','SYSTEM'),('스타리아','스타리아','승합','SYSTEM'),
        ('스타렉스','스타렉스','승합','SYSTEM')"

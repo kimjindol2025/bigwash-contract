@@ -39,7 +39,7 @@
     (assert (= (length (get vehicle :conditions)) 3) "차량 저장과 외부·내부 상태 체크를 함께 저장해야 한다"))
   (let [auto-sized (create-wash-ops-vehicle site-id "2026-08-01" "34나5678" "쏘렌토" nil
                      "2026-08-01T13:30:00" "2026-08-01T13:30:00" "2026-08-01T14:30:00" "2026-08-01T14:35:00"
-                     60 0 "기본 세차" nil "박 직원" nil nil nil 55000 false)]
+                     60 0 "기본 세차" nil "박 직원" nil nil nil 55000 false false)]
     (assert (= (get auto-sized :vehicle_size) "SUV") "차량명만 입력하면 DB 기준표에서 크기를 자동 판정해야 한다"))
   (let [vehicle-id (get (first (db_query DB
                           "SELECT id FROM wash_ops_vehicle_jobs WHERE site_id = ? AND plate_number = ?"
@@ -67,20 +67,34 @@
     (assert (= (get (get weekly :metrics) :rework_count) 1) "주간 재작업을 집계해야 한다")
     (assert (= (get (first (get weekly :causes)) :cause) "INSPECTION_MISSED") "반복 원인을 빈도순으로 보여줘야 한다"))
   (let [returning (create-wash-ops-vehicle site-id "2026-08-02" "34나-5678" nil nil
-                    nil nil nil nil 0 0 "기본 세차" nil nil nil nil nil 0 false)
+                    nil nil nil nil 0 0 "기본 세차" nil nil nil nil nil 0 false false)
         suggestions (list-wash-ops-vehicle-suggestions site-id "34나")]
     (assert (= (get returning :vehicle_model) "쏘렌토") "재방문 차량번호는 최근 차량명을 자동 상속해야 한다")
     (assert (= (get returning :vehicle_size) "SUV") "재방문 차량번호는 최근 크기를 자동 상속해야 한다")
     (assert (= (length suggestions) 1) "정규화된 차량번호 검색은 가까운 기존 차량을 찾아야 한다")
     (assert (= (get (first suggestions) :visit_count) 2) "차량번호 제안에 누적 방문 횟수를 포함해야 한다"))
   (let [learned (create-wash-ops-vehicle site-id "2026-08-02" "77라7777" "테스트카" "대형"
-                  nil nil nil nil 0 0 "기본 세차" nil nil nil nil nil 0 false)
+                  nil nil nil nil 0 0 "기본 세차" nil nil nil nil nil 0 false true)
         model-suggestions (list-wash-ops-vehicle-models "테스트")]
     (assert (= (get learned :vehicle_size) "대형") "현장 수동 크기는 차량 작업에 저장해야 한다")
     (assert (= (get (first model-suggestions) :vehicle_size) "대형") "현장 저장 차량명과 크기를 DB 기준표가 학습해야 한다"))
-  (create-wash-ops-vehicle site-id "2026-08-02" "11가1234" "아반떼" nil nil nil nil nil 0 0 nil nil nil nil nil nil 0 false)
-  (create-wash-ops-vehicle site-id "2026-08-02" "22나1235" "K5" nil nil nil nil nil 0 0 nil nil nil nil nil nil 0 false)
-  (create-wash-ops-vehicle site-id "2026-08-02" "33다1236" "레이" nil nil nil nil nil 0 0 nil nil nil nil nil nil 0 false)
+  (create-wash-ops-vehicle site-id "2026-08-02" "11가1234" "아반떼" nil nil nil nil nil 0 0 nil nil nil nil nil nil 0 false false)
+  (create-wash-ops-vehicle site-id "2026-08-02" "22나1235" "K5" nil nil nil nil nil 0 0 nil nil nil nil nil nil 0 false false)
+  (create-wash-ops-vehicle site-id "2026-08-02" "33다1236" "레이" nil nil nil nil nil 0 0 nil nil nil nil nil nil 0 false false)
+  (let [system-k5 (first (db_query DB
+                    "SELECT source,use_count FROM wash_ops_vehicle_models WHERE model_key='k5'" []))]
+    (assert (= (get system-k5 :source) "SYSTEM") "자동 판정 저장은 SYSTEM 기준을 HISTORY로 바꾸면 안 된다")
+    (assert (= (get system-k5 :use_count) 0) "자동 판정 저장은 학습 횟수를 올리면 안 된다"))
+  (let [before (get (first (db_query DB "SELECT COUNT(*) AS count FROM wash_ops_vehicle_jobs WHERE site_id=?" [site-id])) :count)
+        rejected (try
+                   (do
+                     (create-wash-ops-vehicle site-id "2026-08-02" "44라1237" "K" nil
+                       nil nil nil nil 0 0 nil nil nil nil nil nil 0 false false)
+                     false)
+                   (catch [e] true))
+        after (get (first (db_query DB "SELECT COUNT(*) AS count FROM wash_ops_vehicle_jobs WHERE site_id=?" [site-id])) :count)]
+    (assert rejected "일부 글자인 fuzzy 제안은 차량 크기 확정값으로 사용하면 안 된다")
+    (assert (= before after) "확정되지 않은 차량명은 임의 크기로 차량 작업을 저장하면 안 된다"))
   (assert (= (length (list-wash-ops-vehicle-suggestions site-id "123")) 3)
     "차량번호 자동완성은 가까운 저장 이력을 최대 3개만 제시해야 한다")
   (let [before (get (first (db_query DB "SELECT COUNT(*) AS count FROM wash_ops_vehicle_jobs WHERE site_id=?" [site-id])) :count)

@@ -44,6 +44,24 @@
    VALUES (999,'2026-07-31','12가-3456','그랜저','중형')"
   [])
 
+;; 구버전은 영문 차량명 키에 대소문자가 섞여 중복 행을 만들 수 있었다.
+(db_exec DB
+  "CREATE TABLE IF NOT EXISTS wash_ops_vehicle_models (
+    id INTEGER PRIMARY KEY,
+    model_name TEXT NOT NULL,
+    model_key TEXT NOT NULL UNIQUE,
+    vehicle_size TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'SYSTEM',
+    use_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )" [])
+(db_exec DB
+  "INSERT OR IGNORE INTO wash_ops_vehicle_models
+   (model_name,model_key,vehicle_size,source,use_count)
+   VALUES ('K5','K5','중형','SYSTEM',0),('k5 현장교정','k5','대형','HISTORY',3)"
+  [])
+
 (load (str REPO-ROOT "/src/phase1-db.fl"))
 
 ;; db/contracts.sqlite는 테스트 간 리셋되지 않는 공유 파일이라, 이전 실행에서 남은
@@ -64,6 +82,9 @@
       migrated-vehicle (first (db_query DB
                          "SELECT plate_number_key,vehicle_model_key
                           FROM wash_ops_vehicle_jobs WHERE site_id=999" []))
+      normalized-k5 (db_query DB
+                      "SELECT model_key,vehicle_size,source,use_count
+                       FROM wash_ops_vehicle_models WHERE LOWER(model_key)='k5'" [])
       fk-errors (db_query DB "PRAGMA foreign_key_check" [])]
   (assert (= (length customers) 2) "distinct client_id마다 Customer가 하나씩 생성되어야 한다")
   (assert (= (get (get customers 0) :name) "레거시 고객-101") "고객 101 별칭을 보존해야 한다")
@@ -77,6 +98,10 @@
     "기존 차량 작업 표에 차량번호 검색 키를 추가하고 백필해야 한다")
   (assert (= (get migrated-vehicle :vehicle_model_key) "그랜저")
     "기존 차량 작업 표에 차량명 검색 키를 추가하고 백필해야 한다")
+  (assert (= (length normalized-k5) 1) "대소문자만 다른 차량명 키는 하나로 병합해야 한다")
+  (assert (= (get (first normalized-k5) :model_key) "k5") "영문 차량명 키는 소문자로 정규화해야 한다")
+  (assert (= (get (first normalized-k5) :source) "HISTORY") "중복 병합 시 현장 교정값을 우선 보존해야 한다")
+  (assert (= (get (first normalized-k5) :vehicle_size) "대형") "중복 병합 시 현장 교정 크기를 보존해야 한다")
   (assert (= (length fk-errors) 0) "Phase 1 마이그레이션 후 FK 오류가 없어야 한다"))
 
 ;; 재실행해도 고객 중복이 생기지 않아야 한다 (전체 카운트가 아니라 이 테스트가 만든
