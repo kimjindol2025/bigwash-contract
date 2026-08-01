@@ -74,7 +74,7 @@
       (assert (= (get metrics :rework_count) 1) "재작업을 집계해야 한다")
       (assert (= (get metrics :issue_count) 1) "장비 이상을 집계해야 한다")
       (assert (= (get metrics :owner_work_minutes) 260) "사업주 직접 작업시간을 보여줘야 한다")
-      (assert (= (length (get dashboard :notes)) 1) "원본 운영 메모를 보존해야 한다")
+      (assert (= (length (get dashboard :notes)) 1) "원본 운영일지를 보존해야 한다")
       (assert (= (length (get dashboard :conditions)) 3) "차량별 외부·내부 상태 체크포인트를 조회해야 한다"))
     (resolve-wash-ops-equipment-issue (get issue :id))
     (let [dashboard (get-wash-ops-dashboard site-id "2026-08-01")]

@@ -163,6 +163,27 @@
   .condition-chip-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:11px; }
   .condition-chip { border-radius:999px; padding:5px 8px; background:#F1EFF5; color:#6F6C78; font-size:9px; font-weight:800; }
   .condition-chip.attention { background:var(--red-soft); color:var(--red); }
+  .photo-capture-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; }
+  .photo-capture-btn { min-height:72px; border:1px solid #D9D2EE; border-radius:12px; background:#fff; color:var(--primary); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; font-size:11px; font-weight:900; }
+  .photo-capture-btn:hover { border-color:var(--primary); background:var(--primary-soft); }
+  .photo-capture-btn svg { width:22px; height:22px; }
+  .photo-local-notice { display:flex; align-items:flex-start; gap:8px; margin-top:11px; padding:10px 11px; border-radius:10px; background:var(--amber-soft); color:#765016; font-size:10px; line-height:1.55; }
+  .photo-preview-grid,.visit-photo-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(104px,1fr)); gap:9px; margin-top:12px; }
+  .photo-preview { position:relative; min-width:0; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:#F3F1F7; aspect-ratio:1/1; }
+  .photo-preview img { width:100%; height:100%; object-fit:cover; display:block; }
+  .photo-preview-stage { position:absolute; left:6px; bottom:6px; max-width:calc(100% - 12px); padding:4px 7px; border-radius:999px; background:rgba(34,30,45,.78); color:#fff; font-size:9px; font-weight:850; white-space:nowrap; }
+  .photo-preview-remove { position:absolute; right:6px; top:6px; width:27px; height:27px; border:0; border-radius:999px; background:rgba(26,23,34,.78); color:#fff; font-size:16px; line-height:1; display:grid; place-items:center; }
+  .visit-photo-section { margin-top:12px; padding-top:11px; border-top:1px solid #F0EDF4; }
+  .visit-photo-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .visit-photo-title { color:#666270; font-size:10.5px; font-weight:900; }
+  .visit-photo-state { color:var(--amber); font-size:9px; font-weight:850; }
+  .visit-photo-button { position:relative; min-width:0; padding:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#F3F1F7; aspect-ratio:1/1; }
+  .visit-photo-button img { width:100%; height:100%; display:block; object-fit:cover; }
+  .visit-photo-delete { position:absolute; right:5px; top:5px; width:26px; height:26px; border:0; border-radius:999px; background:rgba(26,23,34,.78); color:#fff; display:grid; place-items:center; font-size:15px; z-index:1; }
+  .photo-viewer { position:fixed; inset:0; z-index:180; display:none; place-items:center; padding:18px; background:rgba(15,13,20,.92); }
+  .photo-viewer.open { display:grid; }
+  .photo-viewer img { max-width:100%; max-height:calc(100vh - 36px); object-fit:contain; border-radius:12px; }
+  .photo-viewer-close { position:absolute; right:18px; top:18px; width:42px; height:42px; border:0; border-radius:999px; background:rgba(255,255,255,.16); color:#fff; font-size:25px; display:grid; place-items:center; }
   .clickable-record { cursor:pointer; }
   .clickable-record:hover { background:#FAF8FF; }
   .primary-btn,.secondary-btn,.danger-btn { border:0; border-radius:10px; min-height:40px; padding:0 15px; font-size:12px; font-weight:850; }
@@ -173,6 +194,17 @@
   .record-row { padding:16px 19px; border-bottom:1px solid #F0EEF3; display:grid; grid-template-columns:minmax(130px,.8fr) minmax(180px,1.4fr) minmax(120px,.7fr) auto; align-items:center; gap:14px; }
   .record-primary { font-size:12.5px; font-weight:850; }
   .record-secondary { color:#918F9A; font-size:10.5px; margin-top:4px; line-height:1.45; }
+  .journal-list { display:grid; gap:12px; padding:16px 19px 19px; background:#FAF9FC; }
+  .journal-entry { padding:20px; border:1px solid #E2DDEB; border-radius:15px; background:#fff; box-shadow:0 5px 16px rgba(43,36,72,.035); }
+  .journal-entry-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding-bottom:12px; border-bottom:1px solid #F0EDF4; }
+  .journal-entry-date { display:block; color:#55515E; font-size:13px; font-weight:900; }
+  .journal-entry-time { display:block; margin-top:4px; color:#9A97A2; font-size:10px; }
+  .journal-entry-content { margin:16px 0 0; color:#4D4955; font-size:13.5px; line-height:1.85; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .journal-writing-guide { grid-column:1/-1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .journal-writing-guide div { padding:12px; border:1px solid #E6E1ED; border-radius:11px; background:#FAF8FD; }
+  .journal-writing-guide strong { display:block; color:var(--primary); font-size:10.5px; }
+  .journal-writing-guide span { display:block; margin-top:4px; color:#918E9A; font-size:9.5px; line-height:1.5; }
+  .journal-textarea { min-height:240px!important; font-size:15px!important; line-height:1.8!important; }
   .tag { display:inline-flex; align-items:center; width:max-content; border-radius:999px; padding:5px 9px; font-size:9.5px; font-weight:850; background:#F1EFF5; color:#73717B; }
   .tag.red { background:var(--red-soft); color:var(--red); }
   .tag.amber { background:var(--amber-soft); color:var(--amber); }
@@ -307,9 +339,15 @@
     .record-row { grid-template-columns:1fr auto; }
     .record-row > :nth-child(2) { grid-column:1/-1; grid-row:2; }
     .record-row > :nth-child(3) { grid-column:1; }
+    .journal-list { padding:11px; }
+    .journal-entry { padding:16px; }
+    .journal-writing-guide { grid-template-columns:1fr; }
+    .photo-capture-actions { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .photo-capture-btn { min-height:68px; padding:7px 4px; font-size:10px; }
+    .photo-preview-grid,.visit-photo-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
     .weekly-grid { grid-template-columns:repeat(2,1fr); }
     .equipment-grid { grid-template-columns:1fr; padding:12px; }
-    .bottom-nav { position:fixed; z-index:50; bottom:0; left:0; right:0; height:72px; padding:7px max(10px,env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); display:grid; grid-template-columns:repeat(5,1fr); background:rgba(255,255,255,.96); border-top:1px solid var(--line); backdrop-filter:blur(15px); }
+    .bottom-nav { position:fixed; z-index:50; bottom:0; left:0; right:0; height:72px; padding:7px max(10px,env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); display:grid; grid-template-columns:repeat(6,1fr); background:rgba(255,255,255,.96); border-top:1px solid var(--line); backdrop-filter:blur(15px); }
     .bottom-btn { border:0; background:transparent; color:#96939E; border-radius:9px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; font-size:9px; font-weight:750; }
     .bottom-btn.active { color:var(--primary); }
     .bottom-btn svg { width:19px; height:19px; }
@@ -334,7 +372,7 @@
       <button class="nav-btn" data-view="vehicles"><span data-icon="car"></span>차량 CRM</button>
       <button class="nav-btn" data-view="reworks"><span data-icon="refresh"></span>재작업</button>
       <button class="nav-btn" data-view="equipment"><span data-icon="tool"></span>장비 이상</button>
-      <button class="nav-btn" data-view="notes"><span data-icon="note"></span>운영 메모</button>
+      <button class="nav-btn" data-view="notes"><span data-icon="note"></span>운영일지</button>
     </nav>
     <div class="nav-label">분석</div>
     <nav class="nav">
@@ -365,6 +403,7 @@
   <button class="bottom-btn" data-view="vehicles"><span data-icon="car"></span>차량</button>
   <button class="bottom-btn" data-view="reworks"><span data-icon="refresh"></span>재작업</button>
   <button class="bottom-btn" data-view="equipment"><span data-icon="tool"></span>장비</button>
+  <button class="bottom-btn" data-view="notes"><span data-icon="note"></span>일지</button>
   <button class="bottom-btn" data-view="weekly"><span data-icon="report"></span>주간</button>
 </nav>
 
@@ -377,6 +416,10 @@
     <form id="modalForm" class="form"></form>
   </div>
 </div>
+<div id="photoViewer" class="photo-viewer" role="dialog" aria-modal="true" aria-label="차량 사진 크게 보기">
+  <button type="button" class="photo-viewer-close" data-action="close-photo-viewer" aria-label="사진 닫기">×</button>
+  <img id="photoViewerImage" alt="차량 작업 사진">
+</div>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -384,6 +427,7 @@ const icons = {
   drop:'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.2S6.7 9.5 6.7 14.1a5.3 5.3 0 0 0 10.6 0C17.3 9.5 12 3.2 12 3.2Z" stroke="currentColor" stroke-width="1.9"/><path d="M9.4 15.1c.4 1.2 1.3 1.8 2.5 2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
   dashboard:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
   car:'<svg viewBox="0 0 24 24" fill="none"><path d="m5 15 1.7-5.3A2.5 2.5 0 0 1 9.1 8h5.8a2.5 2.5 0 0 1 2.4 1.7L19 15M4 15h16v4H4v-4Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M7 19v1m10-1v1M7.5 15h.01m8.99 0h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  camera:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 8.5h3l1.4-2h7.2l1.4 2h3v10H4v-10Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg>',
   refresh:'<svg viewBox="0 0 24 24" fill="none"><path d="M19 8.5A7.5 7.5 0 0 0 6.5 6L4 8.5m1 7A7.5 7.5 0 0 0 17.5 18l2.5-2.5M4 4v4.5h4.5M20 20v-4.5h-4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   tool:'<svg viewBox="0 0 24 24" fill="none"><path d="M14.8 6.2a4 4 0 0 0-5 5L4 17v3h3l5.8-5.8a4 4 0 0 0 5-5l-2.5 2.5-3-3 2.5-2.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
   note:'<svg viewBox="0 0 24 24" fill="none"><path d="M6 3.5h9l3 3V20H6V3.5Z" stroke="currentColor" stroke-width="1.7"/><path d="M9 10h6m-6 3h6m-6 3h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
@@ -397,11 +441,12 @@ const icons = {
 document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icons[el.dataset.icon] || ''; });
 
 const initialSiteId=new URLSearchParams(location.search).get('site_id');
-const state = { sites:[], siteId:null, date:'', data:null, equipment:[], view:'dashboard', weekly:null, vehicleDetail:null, vehicleSearchTimer:null };
+const state = { sites:[], siteId:null, date:'', data:null, equipment:[], view:'dashboard', weekly:null, vehicleDetail:null, vehicleSearchTimer:null, pendingVehiclePhotos:[], pendingPhotoUrls:[], detailPhotoUrls:[], viewerPhotoUrl:null };
 const el = {
   main:document.querySelector('#main'), site:document.querySelector('#siteSelect'), date:document.querySelector('#dateInput'),
   modal:document.querySelector('#modalBackdrop'), form:document.querySelector('#modalForm'),
-  modalTitle:document.querySelector('#modalTitle'), modalSub:document.querySelector('#modalSub'), toast:document.querySelector('#toast')
+  modalTitle:document.querySelector('#modalTitle'), modalSub:document.querySelector('#modalSub'), toast:document.querySelector('#toast'),
+  photoViewer:document.querySelector('#photoViewer'), photoViewerImage:document.querySelector('#photoViewerImage')
 };
 function localDate(d=new Date()){const z=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;}
 state.date=localDate(); el.date.value=state.date;
@@ -410,8 +455,9 @@ function n(v){const x=Number(v);return Number.isFinite(x)?x:0;}
 function fmtMinutes(v){const m=n(v);if(m>=60)return `${Math.floor(m/60)}시간 ${m%60?m%60+'분':''}`.trim();return `${m}분`;}
 function fmtMoney(v){return `${Math.round(n(v)).toLocaleString('ko-KR')}원`;}
 function timeOnly(v){if(!v)return '-';return String(v).slice(11,16)||String(v).slice(0,5);}
+function journalTime(v){if(!v)return '작성 시각 미확인';const raw=String(v).trim().replace(' ','T');const date=new Date(raw.endsWith('Z')?raw:`${raw}Z`);if(Number.isNaN(date.getTime()))return String(v).slice(11,16)||'작성 시각 미확인';return new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit'}).format(date);}
 function causeLabel(v){return ({REQUEST_MISSED:'고객 요청 전달 누락',WORK_STEP_MISSED:'작업 순서 누락',INSPECTION_MISSED:'검수 누락',TIME_SHORTAGE:'시간 부족',EXTRA_CONTAMINATION:'추가 오염 미확인',EQUIPMENT:'장비 문제',EXPLANATION_MISMATCH:'설명 기준 불일치',OTHER:'기타'})[v]||v||'-';}
-function categoryLabel(v){return ({UNSORTED:'미분류',STAFF:'직원',EQUIPMENT:'장비',FLOW:'동선',CUSTOMER:'고객',PRICE:'가격',BOOKING:'예약',REWORK:'재작업',IDEA:'개선 아이디어'})[v]||v||'-';}
+function categoryLabel(v){return ({UNSORTED:'하루 기록',STAFF:'직원',EQUIPMENT:'장비',FLOW:'동선',CUSTOMER:'고객',PRICE:'가격',BOOKING:'예약',REWORK:'재작업',IDEA:'개선 아이디어'})[v]||v||'-';}
 function stateLabel(v){return ({OBSERVE:'관찰 필요',STOPPED:'사용 중지',REPAIR_REQUESTED:'수리 요청',RESOLVED:'해결'})[v]||v||'-';}
 function equipmentLabel(v,prefix=''){if(!v)return '장비 미지정';const category=v.category||v.equipment_category||'장비',number=v.category_number||v.equipment_category_number;return `${prefix}${category}${number?' '+number:''}`;}
 function statusLabel(v){return ({NORMAL:'정상',CAUTION:'주의',PROBLEM:'문제 발생'})[v]||'기록 전';}
@@ -423,6 +469,41 @@ async function api(method,path,body){
   if(body)opts.body=JSON.stringify(body);
   const res=await fetch(path,opts);let data={};try{data=await res.json();}catch(_e){}
   if(!res.ok)throw new Error(data.error||`요청 실패 (${res.status})`);return data.data;
+}
+const VEHICLE_PHOTO_DB='bigwash-operations-local';
+const VEHICLE_PHOTO_STORE='vehicle_photos';
+const VEHICLE_PHOTO_LIMIT=20;
+const VEHICLE_PHOTO_MAX_BYTES=30*1024*1024;
+function openVehiclePhotoDb(){
+  return new Promise((resolve,reject)=>{
+    if(!('indexedDB' in window))return reject(new Error('이 브라우저는 로컬 사진 저장을 지원하지 않습니다'));
+    const request=indexedDB.open(VEHICLE_PHOTO_DB,1);
+    request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains(VEHICLE_PHOTO_STORE)){const store=db.createObjectStore(VEHICLE_PHOTO_STORE,{keyPath:'id'});store.createIndex('vehicleId','vehicleId');store.createIndex('vehicleJobId','vehicleJobId');}};
+    request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error||new Error('로컬 사진함을 열 수 없습니다'));
+  });
+}
+function vehiclePhotoId(){return globalThis.crypto?.randomUUID?.()||`photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;}
+function photoStageLabel(stage){return ({BEFORE:'작업 전',AFTER:'작업 후',DETAIL:'특이 부위'})[stage]||'작업 사진';}
+async function savePendingVehiclePhotos(job){
+  if(!state.pendingVehiclePhotos.length)return 0;
+  const db=await openVehiclePhotoDb(),now=new Date().toISOString(),items=state.pendingVehiclePhotos.map(item=>({id:vehiclePhotoId(),siteId:Number(state.siteId),vehicleId:Number(job.vehicle_id),vehicleJobId:Number(job.id),plateNumber:job.plate_number,jobDate:job.job_date,stage:item.stage,capturedAt:now,updatedAt:now,version:1,syncState:'LOCAL_ONLY',name:item.file.name||'vehicle-photo',mimeType:item.file.type,size:item.file.size,blob:item.file}));
+  await new Promise((resolve,reject)=>{const tx=db.transaction(VEHICLE_PHOTO_STORE,'readwrite'),store=tx.objectStore(VEHICLE_PHOTO_STORE);items.forEach(item=>store.put(item));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('사진을 기기에 저장하지 못했습니다'));tx.onabort=()=>reject(tx.error||new Error('사진 로컬 저장이 중단됐습니다'));});
+  db.close();return items.length;
+}
+async function listLocalVehiclePhotos(vehicleId){
+  const db=await openVehiclePhotoDb();
+  const rows=await new Promise((resolve,reject)=>{const request=db.transaction(VEHICLE_PHOTO_STORE,'readonly').objectStore(VEHICLE_PHOTO_STORE).index('vehicleId').getAll(Number(vehicleId));request.onsuccess=()=>resolve(request.result||[]);request.onerror=()=>reject(request.error);});
+  db.close();return rows.sort((a,b)=>String(a.capturedAt).localeCompare(String(b.capturedAt)));
+}
+async function getLocalVehiclePhoto(id){
+  const db=await openVehiclePhotoDb();
+  const row=await new Promise((resolve,reject)=>{const request=db.transaction(VEHICLE_PHOTO_STORE,'readonly').objectStore(VEHICLE_PHOTO_STORE).get(id);request.onsuccess=()=>resolve(request.result||null);request.onerror=()=>reject(request.error);});
+  db.close();return row;
+}
+async function deleteLocalVehiclePhoto(id){
+  const db=await openVehiclePhotoDb();
+  await new Promise((resolve,reject)=>{const tx=db.transaction(VEHICLE_PHOTO_STORE,'readwrite');tx.objectStore(VEHICLE_PHOTO_STORE).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
 }
 function showToast(message,error=false){el.toast.textContent=message;el.toast.className=`toast show${error?' error':''}`;clearTimeout(showToast.t);showToast.t=setTimeout(()=>el.toast.className='toast',2600);}
 function loading(){el.main.innerHTML='<div class="loading"><div><div class="spinner"></div>기록을 정리하는 중입니다</div></div>';}
@@ -480,7 +561,7 @@ function renderDashboard(){
       ${quick('vehicle','q-purple','car','오늘 작업 추가','차량번호 중심으로 빠르게')}
       ${quick('rework','q-red','refresh','재작업 기록','불만과 반복 원인 남기기')}
       ${quick('issue','q-amber','tool','장비 이상','중단 시간까지 기록')}
-      ${quick('note','q-green','note','운영 메모','현장에서 느낀 점 한 줄')}
+      ${quick('note','q-green','note','운영일지','하루를 일기처럼 남기기')}
     </section>
     <section class="metric-grid">
       ${metric('오늘 작업 차량',n(m.vehicle_count),'대')}${metric('평균 작업시간',n(m.avg_work_minutes),'분')}
@@ -521,15 +602,39 @@ function visitConditionChips(detail,visit){
   if(!rows.length)return '<div class="record-secondary">차량 상태 체크 없음</div>';
   return `<div class="condition-chip-list">${rows.map(x=>`<span class="condition-chip ${['NORMAL','NOT_APPLICABLE'].includes(x.condition_status)?'':'attention'}">${esc(x.checkpoint_label)} · ${esc(conditionStatusLabel(x.condition_status))}</span>`).join('')}</div>`;
 }
+function visitPhotoHost(visit){return `<section class="visit-photo-section"><div class="visit-photo-head"><span class="visit-photo-title">이 방문의 작업 사진</span><span class="visit-photo-state">현재 기기 로컬 사진</span></div><div class="visit-photo-grid" data-visit-photo-host="${visit.id}"><div class="record-secondary">사진함 확인 중…</div></div></section>`;}
+function clearDetailPhotoUrls(){state.detailPhotoUrls.forEach(url=>URL.revokeObjectURL(url));state.detailPhotoUrls=[];}
+async function hydrateVehiclePhotos(vehicleId){
+  clearDetailPhotoUrls();
+  try{
+    const rows=await listLocalVehiclePhotos(vehicleId);
+    document.querySelectorAll('[data-visit-photo-host]').forEach(host=>{
+      const photos=rows.filter(row=>n(row.vehicleJobId)===n(host.dataset.visitPhotoHost));
+      if(!photos.length){host.innerHTML='<div class="record-secondary">이 기기에 저장된 사진이 없습니다.</div>';return;}
+      host.innerHTML=photos.map(row=>{const url=URL.createObjectURL(row.blob);state.detailPhotoUrls.push(url);return `<div class="photo-preview"><button type="button" class="visit-photo-button" data-action="view-local-photo" data-id="${esc(row.id)}" aria-label="${esc(photoStageLabel(row.stage))} 사진 크게 보기"><img src="${esc(url)}" alt="${esc(photoStageLabel(row.stage))} 차량 사진"><span class="photo-preview-stage">${esc(photoStageLabel(row.stage))}</span></button><button type="button" class="visit-photo-delete" data-action="delete-local-photo" data-id="${esc(row.id)}" aria-label="이 사진 삭제">×</button></div>`;}).join('');
+    });
+  }catch(error){document.querySelectorAll('[data-visit-photo-host]').forEach(host=>host.innerHTML=`<div class="record-secondary">${esc(error.message||'로컬 사진함을 열 수 없습니다.')}</div>`);}
+}
+async function viewLocalPhoto(id){
+  try{const row=await getLocalVehiclePhoto(id);if(!row)return showToast('사진을 찾지 못했습니다',true);if(state.viewerPhotoUrl)URL.revokeObjectURL(state.viewerPhotoUrl);state.viewerPhotoUrl=URL.createObjectURL(row.blob);el.photoViewerImage.src=state.viewerPhotoUrl;el.photoViewer.classList.add('open');}
+  catch(error){showToast(error.message||'사진을 열지 못했습니다',true);}
+}
+function closePhotoViewer(){el.photoViewer.classList.remove('open');el.photoViewerImage.removeAttribute('src');if(state.viewerPhotoUrl)URL.revokeObjectURL(state.viewerPhotoUrl);state.viewerPhotoUrl=null;}
+async function removeLocalPhoto(id){
+  if(!window.confirm('이 사진을 현재 기기에서 삭제할까요? 삭제하면 복구할 수 없습니다.'))return;
+  try{await deleteLocalVehiclePhoto(id);showToast('현재 기기에서 사진을 삭제했습니다');if(state.vehicleDetail)await hydrateVehiclePhotos(state.vehicleDetail.vehicle.id);}
+  catch(error){showToast(error.message||'사진을 삭제하지 못했습니다',true);}
+}
 function renderVehicleDetail(){
   const d=state.vehicleDetail;if(!d)return switchView('vehicles');
   const v=d.vehicle,m=d.metrics||{},visits=d.visits||[],reworks=d.reworks||[];
   const visitCards=visits.map(visit=>{
     const linkedReworks=reworks.filter(x=>n(x.vehicle_job_id)===n(visit.id));
     const notes=[visit.special_contamination?`특이 오염 · ${visit.special_contamination}`:'',visit.customer_request?`고객 요청 · ${visit.customer_request}`:'',visit.return_note?`다음 방문 주의 · ${visit.return_note}`:''].filter(Boolean);
-    return `<article class="visit-card"><div class="visit-head"><div><div class="visit-date">${esc(visit.job_date)}</div><div class="visit-site">${esc(visit.site_name)} · 입고 ${timeOnly(visit.arrived_at)} → 출차 ${timeOnly(visit.departed_at)}</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${n(visit.rework_count)>0?`<span class="tag red">재작업 ${n(visit.rework_count)}건</span>`:'<span class="tag green">방문 완료</span>'}${n(visit.attention_count)>0?`<span class="tag amber">상태 확인 ${n(visit.attention_count)}건</span>`:''}</div></div><div class="visit-grid"><div class="visit-fact"><span>작업</span><strong>${esc(visit.base_work||'기본 세차')}${visit.extra_work?`<br>${esc(visit.extra_work)}`:''}</strong></div><div class="visit-fact"><span>시간</span><strong>작업 ${n(visit.work_minutes)}분 · 대기 ${n(visit.wait_minutes)}분</strong></div><div class="visit-fact"><span>담당</span><strong>${esc(visit.assigned_staff||'-')}</strong></div><div class="visit-fact"><span>결제</span><strong>${fmtMoney(visit.payment_amount)}</strong></div><div class="visit-fact"><span>사업주 개입</span><strong>${n(visit.owner_involved)?'있음':'없음'}</strong></div><div class="visit-fact"><span>차량 기준</span><strong>${esc([visit.vehicle_model,visit.vehicle_size].filter(Boolean).join(' · ')||'-')}</strong></div></div>${notes.length?`<div class="visit-notes">${notes.map(note=>`<div class="visit-note">${esc(note)}</div>`).join('')}</div>`:''}${visitConditionChips(d,visit)}${linkedReworks.length?`<div class="visit-notes">${linkedReworks.map(x=>`<div class="visit-note" style="border-color:var(--red)">재작업 · ${esc(x.complaint_area)} · ${esc(causeLabel(x.cause))} · 무료 ${n(x.free_minutes)}분${x.prevention_action?` · ${esc(x.prevention_action)}`:''}</div>`).join('')}</div>`:''}</article>`;
+    return `<article class="visit-card"><div class="visit-head"><div><div class="visit-date">${esc(visit.job_date)}</div><div class="visit-site">${esc(visit.site_name)} · 입고 ${timeOnly(visit.arrived_at)} → 출차 ${timeOnly(visit.departed_at)}</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${n(visit.rework_count)>0?`<span class="tag red">재작업 ${n(visit.rework_count)}건</span>`:'<span class="tag green">방문 완료</span>'}${n(visit.attention_count)>0?`<span class="tag amber">상태 확인 ${n(visit.attention_count)}건</span>`:''}</div></div><div class="visit-grid"><div class="visit-fact"><span>작업</span><strong>${esc(visit.base_work||'기본 세차')}${visit.extra_work?`<br>${esc(visit.extra_work)}`:''}</strong></div><div class="visit-fact"><span>시간</span><strong>작업 ${n(visit.work_minutes)}분 · 대기 ${n(visit.wait_minutes)}분</strong></div><div class="visit-fact"><span>담당</span><strong>${esc(visit.assigned_staff||'-')}</strong></div><div class="visit-fact"><span>결제</span><strong>${fmtMoney(visit.payment_amount)}</strong></div><div class="visit-fact"><span>사업주 개입</span><strong>${n(visit.owner_involved)?'있음':'없음'}</strong></div><div class="visit-fact"><span>차량 기준</span><strong>${esc([visit.vehicle_model,visit.vehicle_size].filter(Boolean).join(' · ')||'-')}</strong></div></div>${notes.length?`<div class="visit-notes">${notes.map(note=>`<div class="visit-note">${esc(note)}</div>`).join('')}</div>`:''}${visitConditionChips(d,visit)}${linkedReworks.length?`<div class="visit-notes">${linkedReworks.map(x=>`<div class="visit-note" style="border-color:var(--red)">재작업 · ${esc(x.complaint_area)} · ${esc(causeLabel(x.cause))} · 무료 ${n(x.free_minutes)}분${x.prevention_action?` · ${esc(x.prevention_action)}`:''}</div>`).join('')}</div>`:''}${visitPhotoHost(visit)}</article>`;
   }).join('');
   el.main.innerHTML=pageHead(`${v.plate_number} 차량 이력`,'이 차량이 어느 사업장에 와도 과거 작업과 주의사항을 같은 카드에서 확인합니다.',`<div style="display:flex;gap:8px"><button class="secondary-btn" data-action="switch-view" data-view-target="vehicles">← 차량 찾기</button><button class="primary-btn" data-action="open-form" data-form="vehicle" data-prefill-plate="${esc(v.plate_number)}" data-prefill-model="${esc(v.vehicle_model||'')}" data-prefill-size="${esc(v.vehicle_size||'')}">+ 새 방문 기록</button></div>`)+`<section class="vehicle-crm-detail"><aside class="vehicle-profile-card"><div class="vehicle-profile-mark">${icons.car}</div><div class="vehicle-profile-plate">${esc(v.plate_number)}</div><div class="vehicle-profile-model">${esc([v.vehicle_model,v.vehicle_size].filter(Boolean).join(' · ')||'차종 정보 없음')}</div><div class="vehicle-profile-list"><div class="vehicle-profile-row"><span>최초 방문</span><strong>${esc(v.first_seen_on)}</strong></div><div class="vehicle-profile-row"><span>최근 방문</span><strong>${esc(v.last_seen_on)}</strong></div><div class="vehicle-profile-row"><span>누적 방문</span><strong>${n(m.visit_count)}회</strong></div><div class="vehicle-profile-row"><span>방문 사업장</span><strong>${n(m.site_count)}곳</strong></div></div><div class="vehicle-attention"><strong>항상 확인할 주의사항</strong>${esc(v.attention_note||'아직 등록된 주의사항이 없습니다.')}</div></aside><div class="vehicle-history"><div class="vehicle-crm-metrics"><div class="vehicle-crm-metric"><span>누적 작업시간</span><strong>${fmtMinutes(m.total_work_minutes)}</strong></div><div class="vehicle-crm-metric"><span>누적 결제</span><strong>${fmtMoney(m.total_payment_amount)}</strong></div><div class="vehicle-crm-metric"><span>재작업</span><strong>${n(m.rework_count)}건</strong></div><div class="vehicle-crm-metric"><span>사업주 개입</span><strong>${n(m.owner_involved_count)}회</strong></div></div><div class="panel-head" style="border:1px solid var(--line);border-radius:14px 14px 0 0;background:#fff"><div><h2 class="panel-title">전체 방문 타임라인</h2><div class="panel-meta">최근 방문부터 ${visits.length}건</div></div></div><div class="visit-timeline" style="margin-top:10px">${visitCards||empty('car','아직 연결된 방문 기록이 없습니다.')}</div></div></section>`;
+  hydrateVehiclePhotos(v.id);
 }
 function renderReworks(){const rows=state.data.reworks;el.main.innerHTML=pageHead('고객 불만·재작업','건수를 세는 데서 끝내지 않고 원인과 재발 방지 조치를 함께 남깁니다.',`<button class="primary-btn" data-action="open-form" data-form="rework">+ 재작업 기록</button>`)+`<section class="view-panel"><div class="view-toolbar"><p>${state.date} · 무료 재작업 ${rows.length}건</p><span class="tag red">원인 추적</span></div><div class="record-list">${rows.length?rows.map(x=>`<div class="record-row"><div><div class="record-primary">${esc(x.plate_number)}</div><div class="record-secondary">${esc(x.complaint_area)}</div></div><div><div class="record-primary">${causeLabel(x.cause)}</div><div class="record-secondary">${esc(x.prevention_action||'재발 방지 조치 미입력')}</div></div><div><div class="record-primary">무료 ${n(x.free_minutes)}분</div><div class="record-secondary">작업 ${esc(x.initial_worker||'-')} · 검수 ${esc(x.inspector||'-')}</div></div><span class="tag ${x.prevention_action?'green':'red'}">${x.prevention_action?'조치 기록':'조치 필요'}</span></div>`).join(''):empty('refresh','오늘 재작업 기록이 없습니다.')}</div></section>`;}
 function renderEquipment(){
@@ -537,7 +642,7 @@ function renderEquipment(){
   const equipmentCards=state.equipment.length?state.equipment.map(x=>`<article class="equipment-card"><div class="equipment-card-head"><div><div class="equipment-card-name">${esc(equipmentLabel(x))}</div><div class="equipment-card-meta">${esc(x.model||'모델 미입력')}${x.serial_number?`<br>관리번호 ${esc(x.serial_number)}`:''}</div></div><span class="tag ${x.status==='REPAIR'?'red':'green'}">${x.status==='REPAIR'?'수리 중':'사용 중'}</span></div><button type="button" class="equipment-card-action" data-action="open-equipment-issue" data-id="${x.id}">이 장비 이상 기록</button></article>`).join(''):empty('tool','등록된 장비가 없습니다. 장비를 먼저 등록하면 이상 기록에서 터치로 선택할 수 있습니다.');
   el.main.innerHTML=pageHead('내 장비·이상 기록','사업장 장비를 먼저 등록하고, 이상이 생기면 해당 장비를 터치해 기록합니다.',`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="secondary-btn" data-action="open-form" data-form="equipment">+ 장비 등록</button><button class="primary-btn" data-action="open-form" data-form="issue">+ 장비 이상</button></div>`)+`<section class="view-panel" style="margin-bottom:18px"><div class="view-toolbar"><p>내 장비 목록 · 같은 종류도 여러 대 등록 가능</p><span class="tag purple">${state.equipment.length}대</span></div><div class="equipment-grid">${equipmentCards}</div></section><section class="view-panel"><div class="view-toolbar"><p>${state.date} · 이상 ${rows.length}건</p><span class="tag amber">이상 이력</span></div><div class="record-list">${rows.length?rows.map(x=>`<div class="record-row"><div><div class="record-primary">${esc(x.issue_title)}</div><div class="record-secondary">${esc(equipmentLabel(x))}${x.equipment_model?' · '+esc(x.equipment_model):''}</div></div><div><div class="record-primary">${esc(x.action_taken||'조치 내용 미입력')}</div><div class="record-secondary">${esc(x.note||'추가 메모 없음')}</div></div><div><div class="record-primary">중단 ${n(x.downtime_minutes)}분</div><div class="record-secondary">${stateLabel(x.state)}</div></div>${x.state==='RESOLVED'?'<span class="tag green">해결</span>':`<button class="danger-btn" data-action="resolve-issue" data-id="${x.id}">해결 처리</button>`}</div>`).join(''):empty('tool','오늘 장비 이상 기록이 없습니다.')}</div></section>`;
 }
-function renderNotes(){const rows=state.data.notes;el.main.innerHTML=pageHead('운영 메모','현장에서 느낀 사실을 짧게 남기고 직원·장비·동선·고객·예약 주제로 모읍니다.',`<button class="primary-btn" data-action="open-form" data-form="note">+ 메모 남기기</button>`)+`<section class="view-panel"><div class="view-toolbar"><p>${state.date} · 메모 ${rows.length}건</p><span class="tag purple">원문 보존</span></div><div class="record-list">${rows.length?rows.map(x=>`<div class="record-row" style="grid-template-columns:120px 1fr auto"><div><span class="tag purple">${categoryLabel(x.category)}</span></div><div><div class="record-primary" style="line-height:1.6">${esc(x.content)}</div><div class="record-secondary">${esc(String(x.created_at||'').slice(11,16))}</div></div><span class="tag green">기록됨</span></div>`).join(''):empty('note','오늘 운영 메모가 없습니다.')}</div></section>`;}
+function renderNotes(){const rows=state.data.notes;el.main.innerHTML=pageHead('운영일지','하루 동안 있었던 일과 느낀 점, 내일 기억할 것을 날짜별로 자유롭게 남깁니다.',`<button class="primary-btn" data-action="open-form" data-form="note">+ 일지 쓰기</button>`)+`<section class="view-panel"><div class="view-toolbar"><p>${state.date} · 일지 ${rows.length}편</p><span class="tag purple">날짜별 원문 보존</span></div><div class="journal-list">${rows.length?rows.map(x=>`<article class="journal-entry"><header class="journal-entry-head"><div><span class="journal-entry-date">${esc(x.note_date||state.date)}</span><small class="journal-entry-time">${esc(journalTime(x.created_at))} 작성</small></div><span class="tag purple">${categoryLabel(x.category)}</span></header><p class="journal-entry-content">${esc(x.content)}</p></article>`).join(''):empty('note','이 날짜에 쓴 운영일지가 없습니다.<br>오늘 있었던 일을 편하게 적어보세요.')}</div></section>`;}
 
 function renderWeekly(){
   const w=state.weekly,m=w.metrics||{},max=Math.max(1,...w.causes.map(x=>n(x.count)));
@@ -549,7 +654,7 @@ function renderWeekly(){
     <div class="panel"><div class="panel-head"><div><h2 class="panel-title">일별 작업 흐름</h2><div class="panel-meta">작업 차량 · 평균시간 · 지연</div></div></div><div class="record-list">${w.daily.length?w.daily.map(x=>`<div class="vehicle-item"><div><div class="plate">${esc(x.date)}</div><div class="vehicle-note">평균 작업 ${n(x.avg_work_minutes)}분</div></div><div class="vehicle-time"><div class="vehicle-min">${n(x.vehicle_count)}대</div><div class="vehicle-delay">지연 ${n(x.delay_count)}건</div></div></div>`).join(''):empty('report','최근 7일 차량 기록이 없습니다.')}</div></div></section>`;
 }
 
-function switchView(view){state.view=view;if(view!=='vehicle-detail')state.vehicleDetail=null;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));if(view==='weekly')loadWeekly();else render();window.scrollTo({top:0,behavior:'smooth'});}
+function switchView(view){clearDetailPhotoUrls();state.view=view;if(view!=='vehicle-detail')state.vehicleDetail=null;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));if(view==='weekly')loadWeekly();else render();window.scrollTo({top:0,behavior:'smooth'});}
 document.querySelectorAll('[data-view]').forEach(b=>{if(!b.disabled)b.addEventListener('click',()=>switchView(b.dataset.view));});
 document.addEventListener('click',e=>{
   const conditionTab=e.target.closest('[data-condition-tab]');if(conditionTab){e.preventDefault();switchConditionTab(conditionTab.dataset.conditionTab);return;}
@@ -570,6 +675,11 @@ document.addEventListener('click',e=>{
   if(action==='open-equipment-issue')openEquipmentIssue(Number(target.dataset.id));
   if(action==='resolve-issue')resolveIssue(Number(target.dataset.id));
   if(action==='open-vehicle-detail')openVehicleDetail(Number(target.dataset.id));
+  if(action==='choose-vehicle-photo')chooseVehiclePhoto(target);
+  if(action==='remove-pending-photo'){state.pendingVehiclePhotos.splice(Number(target.dataset.photoIndex),1);renderPendingVehiclePhotos();}
+  if(action==='view-local-photo')viewLocalPhoto(target.dataset.id);
+  if(action==='delete-local-photo')removeLocalPhoto(target.dataset.id);
+  if(action==='close-photo-viewer')closePhotoViewer();
   if(action==='close-modal')closeModal();
   if(action==='toggle-details')toggleTouchDetails(target);
   if(action==='select-vehicle-suggestion')applyVehicleSuggestion(target);
@@ -591,6 +701,20 @@ const CONDITION_OPTIONS={
   INTERIOR:[['NORMAL','정상'],['CONTAMINATED','오염'],['WET_ODOR','냄새·습기'],['DAMAGE','손상'],['RECHECK','재확인']]
 };
 function vehicleConditionHtml(){return `<section class="touch-section" id="vehicleConditionSection"><div class="touch-title">차량 상태 체크포인트</div><div class="touch-help">확인한 항목만 선택하세요. 한 번에 처리하려면 전체 정상을 누릅니다.</div><input type="hidden" name="condition_stage" value="ARRIVAL"><div class="choice-grid" data-choice-group="condition_stage"><button type="button" class="choice-chip active" data-choice-target="condition_stage" data-choice-value="ARRIVAL">입고 상태</button><button type="button" class="choice-chip" data-choice-target="condition_stage" data-choice-value="FINAL">출차 검수</button></div><div class="condition-tabs"><button type="button" class="condition-tab active" data-condition-tab="EXTERIOR">외부 10항목</button><button type="button" class="condition-tab" data-condition-tab="INTERIOR">내부 10항목</button></div><div id="vehicleConditionHost"></div></section>`;}
+function vehiclePhotoCaptureHtml(){return `<section class="touch-section" id="vehiclePhotoSection"><div class="touch-title">작업 사진</div><div class="touch-help">작업 전·후와 특이 부위를 누르면 카메라 또는 사진 선택이 열립니다. 여러 번 추가할 수 있습니다.</div><div class="photo-capture-actions"><button type="button" class="photo-capture-btn" data-action="choose-vehicle-photo" data-photo-stage="BEFORE">${icons.camera}<span>작업 전</span></button><button type="button" class="photo-capture-btn" data-action="choose-vehicle-photo" data-photo-stage="AFTER">${icons.camera}<span>작업 후</span></button><button type="button" class="photo-capture-btn" data-action="choose-vehicle-photo" data-photo-stage="DETAIL">${icons.camera}<span>특이 부위</span></button></div><input id="vehiclePhotoInput" type="file" accept="image/*" capture="environment" multiple hidden><div class="photo-local-notice"><strong>로컬 저장</strong><span>사진은 우선 현재 휴대폰·PC에만 저장됩니다. 다른 기기 연동은 서버 동기화 기능에서 제공할 예정입니다.</span></div><div id="vehiclePhotoPreview" class="photo-preview-grid"></div></section>`;}
+function clearPendingVehiclePhotos(){state.pendingPhotoUrls.forEach(url=>URL.revokeObjectURL(url));state.pendingPhotoUrls=[];state.pendingVehiclePhotos=[];}
+function renderPendingVehiclePhotos(){
+  const host=el.form.querySelector('#vehiclePhotoPreview');if(!host)return;
+  state.pendingPhotoUrls.forEach(url=>URL.revokeObjectURL(url));state.pendingPhotoUrls=[];
+  host.innerHTML=state.pendingVehiclePhotos.map((item,index)=>{const url=URL.createObjectURL(item.file);state.pendingPhotoUrls.push(url);return `<div class="photo-preview"><img src="${esc(url)}" alt="${esc(photoStageLabel(item.stage))} 미리보기"><span class="photo-preview-stage">${esc(photoStageLabel(item.stage))}</span><button type="button" class="photo-preview-remove" data-action="remove-pending-photo" data-photo-index="${index}" aria-label="선택한 사진 제거">×</button></div>`;}).join('');
+}
+function chooseVehiclePhoto(button){const input=el.form.querySelector('#vehiclePhotoInput');if(!input)return;input.dataset.photoStage=button.dataset.photoStage||'DETAIL';input.click();}
+function addPendingVehiclePhotos(input){
+  const stage=input.dataset.photoStage||'DETAIL',files=[...(input.files||[])];let rejected=0;
+  files.forEach(file=>{if(!String(file.type||'').startsWith('image/')||file.size>VEHICLE_PHOTO_MAX_BYTES||state.pendingVehiclePhotos.length>=VEHICLE_PHOTO_LIMIT){rejected+=1;return;}state.pendingVehiclePhotos.push({stage,file});});
+  input.value='';renderPendingVehiclePhotos();if(rejected)showToast(`사진은 최대 ${VEHICLE_PHOTO_LIMIT}장, 장당 30MB까지 추가할 수 있습니다`,true);
+}
+function setupVehiclePhotoCapture(){clearPendingVehiclePhotos();const input=el.form.querySelector('#vehiclePhotoInput');input?.addEventListener('change',()=>addPendingVehiclePhotos(input));renderPendingVehiclePhotos();}
 function renderVehicleConditionChecks(){
   const host=el.form.querySelector('#vehicleConditionHost');if(!host)return;
   host.innerHTML=Object.entries(VEHICLE_CONDITION_CATALOG).map(([area,items])=>`<div class="condition-panel" data-condition-panel="${area}" ${area==='INTERIOR'?'hidden':''}><div class="condition-toolbar"><span>${area==='EXTERIOR'?'외부 상태':'내부 상태'} · 확인한 항목만 저장</span><button type="button" class="condition-all" data-condition-all="${area}">${area==='EXTERIOR'?'외부':'내부'} 전체 정상</button></div><div class="checkpoint-list">${items.map(([code,label])=>`<div class="checkpoint-row" data-condition-row data-area="${area}" data-code="${code}" data-label="${label}"><div class="checkpoint-name">${label}</div><div class="checkpoint-options">${CONDITION_OPTIONS[area].map(([value,text])=>`<button type="button" class="condition-status" data-condition-status data-condition-value="${value}">${text}</button>`).join('')}</div></div>`).join('')}</div></div>`).join('');
@@ -662,10 +786,10 @@ const fields={
   rework:{title:'재작업 기록',sub:'차량·부위·원인·무료 시간을 터치해서 남깁니다.',html:`<div class="form-grid"><section class="touch-section"><div class="touch-title">오늘 차량 선택</div><input type="hidden" name="vehicle_job_id"><input type="hidden" name="plate_number"><div id="reworkVehicleChoices" class="choice-grid" data-choice-group="vehicle_job_id"></div><div class="field" style="margin-top:12px"><label>목록에 없으면 차량번호 입력</label><input name="manual_plate_number" placeholder="12가3456"></div></section><section class="touch-section"><div class="touch-title">불만 부위</div><input type="hidden" name="complaint_area" value="문틈 물기"><div class="choice-grid" data-choice-group="complaint_area"><button type="button" class="choice-chip active" data-choice-target="complaint_area" data-choice-value="문틈 물기">문틈 물기</button><button type="button" class="choice-chip" data-choice-target="complaint_area" data-choice-value="휠·타이어">휠·타이어</button><button type="button" class="choice-chip" data-choice-target="complaint_area" data-choice-value="실내 바닥">실내 바닥</button><button type="button" class="choice-chip" data-choice-target="complaint_area" data-choice-value="유리">유리</button><button type="button" class="choice-chip" data-choice-target="complaint_area" data-choice-value="외부 오염">외부 오염</button><button type="button" class="choice-chip" data-choice-target="complaint_area" data-choice-value="고객 요청">고객 요청</button></div></section><section class="touch-section"><div class="touch-title">원인 분류</div><input type="hidden" name="cause" value="INSPECTION_MISSED"><div class="choice-grid" data-choice-group="cause"><button type="button" class="choice-chip" data-choice-target="cause" data-choice-value="REQUEST_MISSED">요청 전달 누락</button><button type="button" class="choice-chip" data-choice-target="cause" data-choice-value="WORK_STEP_MISSED">작업 순서 누락</button><button type="button" class="choice-chip active" data-choice-target="cause" data-choice-value="INSPECTION_MISSED">검수 누락</button><button type="button" class="choice-chip" data-choice-target="cause" data-choice-value="TIME_SHORTAGE">시간 부족</button><button type="button" class="choice-chip" data-choice-target="cause" data-choice-value="EXTRA_CONTAMINATION">추가 오염</button><button type="button" class="choice-chip" data-choice-target="cause" data-choice-value="EQUIPMENT">장비 문제</button><button type="button" class="choice-chip" data-choice-target="cause" data-choice-value="EXPLANATION_MISMATCH">설명 불일치</button><button type="button" class="choice-chip" data-choice-target="cause" data-choice-value="OTHER">기타</button></div></section><section class="touch-section"><div class="touch-title">무료 재작업 시간</div><input type="hidden" name="free_minutes" value="10"><div class="choice-grid" data-choice-group="free_minutes"><button type="button" class="choice-chip" data-choice-target="free_minutes" data-choice-value="5">5분</button><button type="button" class="choice-chip active" data-choice-target="free_minutes" data-choice-value="10">10분</button><button type="button" class="choice-chip" data-choice-target="free_minutes" data-choice-value="15">15분</button><button type="button" class="choice-chip" data-choice-target="free_minutes" data-choice-value="20">20분</button><button type="button" class="choice-chip" data-choice-target="free_minutes" data-choice-value="30">30분+</button></div></section><button type="button" class="touch-toggle" data-action="toggle-details" data-panel="reworkDetails" aria-expanded="false">처리·재발 방지 상세 남기기</button><div id="reworkDetails" class="touch-details" hidden><div class="form-grid"><div class="field"><label>최초 작업자</label><input name="initial_worker"></div><div class="field"><label>검수 담당자</label><input name="inspector"></div><div class="field full"><label>처리 결과</label><input name="result" placeholder="재세척 후 출차"></div><div class="field full"><label>고객 요청</label><textarea name="customer_request"></textarea></div><div class="field full"><label>재발 방지 조치</label><textarea name="prevention_action" placeholder="예: 오후 출차 검수 담당자 고정"></textarea></div></div></div></div>`},
   equipment:{title:'내 장비 등록',sub:'같은 종류를 여러 대 등록하면 고압세척기 1·2·3처럼 자동 구분합니다.',html:`<div class="form-grid"><section class="touch-section"><div class="touch-title">장비 종류</div><div class="touch-help">자주 쓰는 종류는 한 번 터치하세요.</div><input type="hidden" name="category" value="고압세척기"><div class="choice-grid" data-choice-group="category"><button type="button" class="choice-chip active" data-choice-target="category" data-choice-value="고압세척기">고압세척기</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="콤프레셔">콤프레셔</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="진공청소기">진공청소기</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="광택기">광택기</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="매트세척기">매트세척기</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="폐수처리시설">폐수처리시설</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="온수기">온수기</button></div><div class="field" style="margin-top:12px"><label>목록에 없는 장비 종류</label><input name="custom_category" placeholder="예: 스팀세척기"></div></section><div class="field"><label>제조사·모델 · 선택</label><input name="model" placeholder="예: HP-100"></div><div class="field"><label>관리번호·시리얼 · 선택</label><input name="serial_number" placeholder="예: HP-A-01"></div><div class="field"><label>설치일 · 선택</label><input name="installed_at" type="date"></div><div class="field"><label>보증 종료일 · 선택</label><input name="warranty_ends_at" type="date"></div></div>`},
   issue:{title:'장비 이상 기록',sub:'등록한 장비·증상·상태·중단시간을 터치해서 기록합니다.',html:`<div class="form-grid"><section class="touch-section"><div class="touch-title">장비 선택</div><input type="hidden" name="equipment_id"><div id="equipmentChoices" class="choice-grid" data-choice-group="equipment_id"></div></section><section class="touch-section"><div class="touch-title">이상 증상</div><input type="hidden" name="issue_title" value="누수"><div class="choice-grid" data-choice-group="issue_title"><button type="button" class="choice-chip active" data-choice-target="issue_title" data-choice-value="누수">누수</button><button type="button" class="choice-chip" data-choice-target="issue_title" data-choice-value="압력 저하">압력 저하</button><button type="button" class="choice-chip" data-choice-target="issue_title" data-choice-value="흡입력 저하">흡입력 저하</button><button type="button" class="choice-chip" data-choice-target="issue_title" data-choice-value="회전 이상">회전 이상</button><button type="button" class="choice-chip" data-choice-target="issue_title" data-choice-value="전원 이상">전원 이상</button><button type="button" class="choice-chip" data-choice-target="issue_title" data-choice-value="이상 소음">이상 소음</button><button type="button" class="choice-chip" data-choice-target="issue_title" data-choice-value="작동 중지">작동 중지</button><button type="button" class="choice-chip" data-choice-target="issue_title" data-choice-value="악취·넘침">악취·넘침</button><button type="button" class="choice-chip" data-choice-target="issue_title" data-choice-value="기타 이상">기타</button></div></section><section class="touch-section"><div class="touch-title">현재 상태</div><input type="hidden" name="state" value="OBSERVE"><div class="choice-grid" data-choice-group="state"><button type="button" class="choice-chip warning active" data-choice-target="state" data-choice-value="OBSERVE">관찰 필요</button><button type="button" class="choice-chip danger" data-choice-target="state" data-choice-value="STOPPED">사용 중지</button><button type="button" class="choice-chip danger" data-choice-target="state" data-choice-value="REPAIR_REQUESTED">수리 요청</button><button type="button" class="choice-chip" data-choice-target="state" data-choice-value="RESOLVED">현장 해결</button></div></section><section class="touch-section"><div class="touch-title">영업 중단시간</div><input type="hidden" name="downtime_minutes" value="0"><div class="choice-grid" data-choice-group="downtime_minutes"><button type="button" class="choice-chip active" data-choice-target="downtime_minutes" data-choice-value="0">중단 없음</button><button type="button" class="choice-chip" data-choice-target="downtime_minutes" data-choice-value="10">10분</button><button type="button" class="choice-chip" data-choice-target="downtime_minutes" data-choice-value="20">20분</button><button type="button" class="choice-chip" data-choice-target="downtime_minutes" data-choice-value="30">30분</button><button type="button" class="choice-chip" data-choice-target="downtime_minutes" data-choice-value="60">1시간+</button></div></section><button type="button" class="touch-toggle" data-action="toggle-details" data-panel="issueDetails" aria-expanded="false">조치 내용·상세 메모 남기기</button><div id="issueDetails" class="touch-details" hidden><div class="field"><label>구체적인 이상 내용</label><input name="issue_title_detail" placeholder="예: 고압호스 연결부 누수"></div><div class="field" style="margin-top:12px"><label>현장 조치</label><input name="action_taken" placeholder="예비 호스로 교체"></div><div class="field" style="margin-top:12px"><label>메모</label><textarea name="note" placeholder="소리, 누수 위치, 재발 여부 등"></textarea></div></div></div>`},
-  note:{title:'운영 메모',sub:'말하듯 한 줄만 입력하고 주제는 터치로 고릅니다.',html:`<div class="form-grid"><section class="touch-section"><div class="touch-title">메모 주제</div><input type="hidden" name="category" value="UNSORTED"><div class="choice-grid" data-choice-group="category"><button type="button" class="choice-chip active" data-choice-target="category" data-choice-value="UNSORTED">나중에 분류</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="STAFF">직원</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="EQUIPMENT">장비</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="FLOW">동선</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="CUSTOMER">고객</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="PRICE">가격</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="BOOKING">예약</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="REWORK">재작업</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="IDEA">개선 아이디어</button></div></section><div class="field full"><label class="required">현장에서 본 것을 말하듯 입력</label><textarea class="chat-input" name="content" required autofocus placeholder="예: 오후 3시부터 SUV 두 대가 겹쳐서 출차 검수가 밀렸어"></textarea></div></div>`}
+  note:{title:'운영일지 쓰기',sub:'짧은 메모가 아니라 하루의 흐름을 일기처럼 남겨도 됩니다.',html:`<div class="form-grid"><section class="journal-writing-guide"><div><strong>오늘 있었던 일</strong><span>바빴던 시간, 차량, 직원, 장비 상황</span></div><div><strong>마음에 남은 점</strong><span>잘된 일, 아쉬운 일, 새로 알게 된 것</span></div><div><strong>내일 기억할 것</strong><span>확인할 일과 바꾸고 싶은 한 가지</span></div></section><section class="touch-section"><div class="touch-title">오늘의 주제 · 선택</div><div class="touch-help">일지에서 가장 가까운 주제 하나를 고르세요.</div><input type="hidden" name="category" value="UNSORTED"><div class="choice-grid" data-choice-group="category"><button type="button" class="choice-chip active" data-choice-target="category" data-choice-value="UNSORTED">하루 기록</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="STAFF">직원</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="EQUIPMENT">장비</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="FLOW">동선</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="CUSTOMER">고객</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="PRICE">가격</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="BOOKING">예약</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="REWORK">재작업</button><button type="button" class="choice-chip" data-choice-target="category" data-choice-value="IDEA">개선 아이디어</button></div></section><div class="field full"><label class="required">오늘의 운영을 자유롭게 적어주세요</label><textarea class="journal-textarea" name="content" maxlength="10000" required autofocus placeholder="오늘은 어떤 하루였나요?&#10;&#10;있었던 일과 느낀 점을 편하게 적고, 내일 기억할 것이 있다면 함께 남겨보세요."></textarea></div></div>`}
 };
 function openForm(type){
-  const f=fields[type];if(!f)return;el.form.dataset.type=type;el.modalTitle.textContent=f.title;el.modalSub.textContent=f.sub;el.form.innerHTML=f.html+`<div class="form-actions"><button type="button" class="secondary-btn" data-action="close-modal">취소</button><button type="submit" class="primary-btn">저장</button></div>`;
+  const f=fields[type];if(!f)return;el.form.dataset.type=type;el.modalTitle.textContent=f.title;el.modalSub.textContent=type==='note'?`${state.date} · ${f.sub}`:f.sub;el.form.innerHTML=f.html+`<div class="form-actions"><button type="button" class="secondary-btn" data-action="close-modal">취소</button><button type="submit" class="primary-btn">저장</button></div>`;
   if(type==='issue'){
     const box=el.form.querySelector('#equipmentChoices'),first=state.equipment[0];
     el.form.elements.equipment_id.value=first?String(first.id):'';
@@ -679,15 +803,15 @@ function openForm(type){
   }
   if(type==='vehicle'){
     const ownerSection=el.form.querySelector('[data-choice-group="owner_involved"]')?.closest('.touch-section');
-    ownerSection?.insertAdjacentHTML('beforebegin',vehicleConditionHtml());renderVehicleConditionChecks();setupVehicleLookup();
+    ownerSection?.insertAdjacentHTML('beforebegin',vehiclePhotoCaptureHtml()+vehicleConditionHtml());renderVehicleConditionChecks();setupVehicleLookup();setupVehiclePhotoCapture();
   }
   if(type==='day'&&state.data?.day){Object.entries(state.data.day).forEach(([k,v])=>{const input=el.form.elements[k];if(input&&v!=null)input.value=String(v).slice(0,input.type==='time'?5:999);});}
   syncTouchForm();
   el.modal.classList.add('open');setTimeout(()=>el.form.querySelector('[autofocus]')?.focus(),80);
 }
 function openEquipmentIssue(id){openForm('issue');if(el.form.dataset.type!=='issue')return;const input=el.form.elements.equipment_id;input.value=String(id);el.form.querySelectorAll('[data-choice-target="equipment_id"]').forEach(x=>x.classList.toggle('active',String(x.dataset.choiceValue)===String(id)));}
-function closeModal(){el.modal.classList.remove('open');}
-document.querySelector('#closeModal').addEventListener('click',closeModal);el.modal.addEventListener('click',e=>{if(e.target===el.modal)closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+function closeModal(){if(el.form.dataset.type==='vehicle')clearPendingVehiclePhotos();el.modal.classList.remove('open');}
+document.querySelector('#closeModal').addEventListener('click',closeModal);el.modal.addEventListener('click',e=>{if(e.target===el.modal)closeModal();});el.photoViewer.addEventListener('click',e=>{if(e.target===el.photoViewer)closePhotoViewer();});document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(el.photoViewer.classList.contains('open'))closePhotoViewer();else closeModal();}});
 
 function selectTouchChoice(button){
   const name=button.dataset.choiceTarget,input=el.form.elements[name];if(!input)return;
@@ -738,12 +862,13 @@ el.form.addEventListener('submit',async e=>{
     if(type==='day')await api('POST','/care/operations/day',{...base,operation_date:state.date,opened_at:val(fd,'opened_at'),closed_at:val(fd,'closed_at'),reserved_count:num(fd,'reserved_count'),staff_count:num(fd,'staff_count'),weather:val(fd,'weather'),busiest_period:val(fd,'busiest_period'),status:val(fd,'status'),owner_work_minutes:num(fd,'owner_work_minutes'),owner_memo:val(fd,'owner_memo')});
     if(type==='vehicle'){
       const arrived=val(fd,'arrived_at'),started=val(fd,'started_at'),finished=val(fd,'finished_at'),departed=val(fd,'departed_at');
-      await api('POST','/care/operations/vehicles',{...base,job_date:state.date,plate_number:val(fd,'plate_number'),vehicle_model:val(fd,'vehicle_model'),vehicle_size:val(fd,'vehicle_size'),manual_size_override:el.form.elements.vehicle_size?.dataset.source==='수동 선택',arrived_at:dateTime(arrived),started_at:dateTime(started),finished_at:dateTime(finished),departed_at:dateTime(departed),work_minutes:minutesBetween(started,finished),wait_minutes:minutesBetween(arrived,started),base_work:val(fd,'base_work')||'기본 손세차',extra_work:val(fd,'extra_work'),assigned_staff:val(fd,'assigned_staff'),special_contamination:val(fd,'special_contamination'),customer_request:val(fd,'customer_request'),return_note:val(fd,'return_note'),payment_amount:num(fd,'payment_amount'),owner_involved:val(fd,'owner_involved')==='1',conditions:collectVehicleConditions()});
+      const created=await api('POST','/care/operations/vehicles',{...base,job_date:state.date,plate_number:val(fd,'plate_number'),vehicle_model:val(fd,'vehicle_model'),vehicle_size:val(fd,'vehicle_size'),manual_size_override:el.form.elements.vehicle_size?.dataset.source==='수동 선택',arrived_at:dateTime(arrived),started_at:dateTime(started),finished_at:dateTime(finished),departed_at:dateTime(departed),work_minutes:minutesBetween(started,finished),wait_minutes:minutesBetween(arrived,started),base_work:val(fd,'base_work')||'기본 손세차',extra_work:val(fd,'extra_work'),assigned_staff:val(fd,'assigned_staff'),special_contamination:val(fd,'special_contamination'),customer_request:val(fd,'customer_request'),return_note:val(fd,'return_note'),payment_amount:num(fd,'payment_amount'),owner_involved:val(fd,'owner_involved')==='1',conditions:collectVehicleConditions()});
+      if(state.pendingVehiclePhotos.length){try{const count=await savePendingVehiclePhotos(created);closeModal();showToast(`작업과 사진 ${count}장을 저장했습니다 · 사진은 현재 기기 보관`);await loadAll();return;}catch(photoError){closeModal();showToast(`작업은 저장됐지만 사진 저장 실패: ${photoError.message}`,true);await loadAll();return;}}
     }
     if(type==='rework')await api('POST','/care/operations/reworks',{...base,vehicle_job_id:val(fd,'vehicle_job_id')?Number(val(fd,'vehicle_job_id')):null,occurred_date:state.date,plate_number:val(fd,'manual_plate_number')||val(fd,'plate_number'),complaint_area:val(fd,'complaint_area'),customer_request:val(fd,'customer_request'),initial_worker:val(fd,'initial_worker'),inspector:val(fd,'inspector'),free_minutes:num(fd,'free_minutes'),cause:val(fd,'cause'),result:val(fd,'result'),prevention_action:val(fd,'prevention_action')});
     if(type==='issue'){if(!val(fd,'equipment_id'))throw new Error('장비를 먼저 등록해 주세요');await api('POST','/care/operations/equipment-issues',{...base,equipment_id:Number(val(fd,'equipment_id')),occurred_date:state.date,issue_title:val(fd,'issue_title_detail')||val(fd,'issue_title'),state:val(fd,'state'),downtime_minutes:num(fd,'downtime_minutes'),action_taken:val(fd,'action_taken'),note:val(fd,'note')});}
     if(type==='note')await api('POST','/care/operations/notes',{...base,note_date:state.date,content:val(fd,'content'),category:val(fd,'category')});
-    closeModal();showToast('운영 기록을 저장했습니다');await loadAll();
+    closeModal();showToast(type==='note'?'운영일지를 저장했습니다':'운영 기록을 저장했습니다');await loadAll();
   }catch(err){showToast(err.message,true);submit.disabled=false;submit.textContent='저장';}
 });
 async function resolveIssue(id){try{await api('PUT',`/care/operations/equipment-issues/${id}/resolve`);showToast('장비 문제를 해결 처리했습니다');await loadAll();}catch(e){showToast(e.message,true);}}

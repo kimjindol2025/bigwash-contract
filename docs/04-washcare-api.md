@@ -122,7 +122,7 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | POST | `/care/operations/reworks` | 고객 불만·무료 재작업 기록 | O |
 | POST | `/care/operations/equipment-issues` | 장비 이상·중단시간 기록 | O |
 | PUT | `/care/operations/equipment-issues/:id/resolve` | 장비 이상 해결 처리 | O |
-| POST | `/care/operations/notes` | 운영 메모 원문 기록 | O |
+| POST | `/care/operations/notes` | 운영일지 원문 기록 | O |
 | GET | `/care/operations/dashboard?site_id=X&date=YYYY-MM-DD` | 일일 지표·원본 목록·기록 기반 브리핑 | O |
 | GET | `/care/operations/weekly?site_id=X&end_date=YYYY-MM-DD` | 최근 7일 지표·재작업 원인·일별 흐름 | O |
 

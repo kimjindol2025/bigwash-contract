@@ -1686,7 +1686,7 @@ paths:
 
   /care/operations/notes:
     post:
-      summary: 운영 메모 원문 기록
+      summary: 운영일지 원문 기록
       security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
       requestBody:
         required: true

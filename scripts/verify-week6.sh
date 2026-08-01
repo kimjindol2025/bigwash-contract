@@ -210,6 +210,12 @@ for (const required of ["장비 이상 기록", "이상 증상", "현재 상태"
     process.exit(1);
   }
 }
+for (const required of ["작업 사진", "작업 전", "작업 후", "특이 부위", "bigwash-operations-local", "hydrateVehiclePhotos", "현재 휴대폰·PC에만 저장됩니다"]) {
+  if (!operationsScript.includes(required)) {
+    console.error(`operations local photo requirement missing: ${required}`);
+    process.exit(1);
+  }
+}
 console.log("admin and operations inline script syntax + equipment modal boundary ok");
 ' "${ADMIN_HTML}" "${OPERATIONS_HTML}")"; then
   echo "  ${ADMIN_CHECK_OUT}"
