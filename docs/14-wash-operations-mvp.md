@@ -105,6 +105,8 @@ wash_ops_vehicles               전 사업장 공용 차량 CRM 카드
    └─ wash_ops_vehicle_condition_checks
         └─ 입고/출차 × 외부/내부 × 항목별 상태
 sites
+├─ equipment                    창업 자료 + 점주가 직접 등록한 사업장 장비
+│  └─ 같은 종류는 등록 순서로 1·2·3 자동 구분
 ├─ wash_ops_daily_records       하루 운영 상태와 사업주 작업시간
 ├─ wash_ops_vehicle_models      차량명 → 크기 정본·현장 학습표
 ├─ wash_ops_reworks             불만·원인·무료시간·재발방지
@@ -118,6 +120,9 @@ sites
 - 일일 운영 상태만 사업장·날짜당 하나이며 수정 저장(upsert)한다.
 - 차량·재작업·장비 이상·메모는 append 방식으로 누적한다.
 - 장비나 차량 작업을 다른 사업장 기록에 연결할 수 없도록 서버에서 확인한다.
+- 장비는 고압세척기로 고정하지 않는다. 고압세척기·콤프레셔·진공청소기·광택기
+  등 종류를 점주가 직접 등록하고, 같은 종류도 여러 대 보유할 수 있다. 이상기록은
+  자유 텍스트 장비명이 아니라 등록 장비 ID를 터치로 선택해 연결한다.
 - 차량번호 원문과 별도로 공백·하이픈을 제거한 검색 키를 보존한다.
 - 차량명·크기는 재방문 이력 → 차량 기준 DB 순서로 자동 보완한다.
 
@@ -220,7 +225,7 @@ JavaScript는 IndexedDB, 카메라, 오프라인 큐처럼 브라우저 API를 �
 |---|---|---|
 | GET/POST | `/care/operations/sites` | 운영 사업장 목록 / 신규 등록 |
 | POST | `/care/operations/sites/:id/activate` | 후보지 운영 전환 |
-| GET | `/care/operations/equipment?site_id=` | 사업장 장비 선택 목록 |
+| GET/POST | `/care/operations/equipment` | 사업장별 내 장비 목록 / 장비 직접 등록 |
 | GET | `/care/operations/vehicle-suggestions?site_id=&q=` | 저장 차량번호 근접 이력 3개 |
 | GET | `/care/operations/vehicle-models?q=` | 차량명 기준 크기 제안 3개 |
 | GET | `/care/operations/vehicles/:id` | 차량 CRM 카드와 전체 사업장 방문·상태·재작업 이력 |

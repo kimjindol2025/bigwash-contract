@@ -1484,13 +1484,36 @@ paths:
 
   /care/operations/equipment:
     get:
-      summary: 운영 사업장의 장비 목록
+      summary: 운영 사업장의 내 장비 목록
       security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
       parameters:
         - { name: site_id, in: query, required: true, schema: { type: integer } }
       responses:
         "200": { description: 목록 }
         "400": { description: 잘못된 사업장 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: 운영 사업장에 장비 등록
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, category]
+              properties:
+                site_id: { type: integer }
+                category:
+                  type: string
+                  description: 고압세척기, 콤프레셔, 진공청소기, 광택기 또는 직접 입력한 종류
+                model: { type: string, nullable: true }
+                serial_number: { type: string, nullable: true }
+                installed_at: { type: string, format: date, nullable: true }
+                warranty_ends_at: { type: string, format: date, nullable: true }
+      responses:
+        "200": { description: 같은 종류 내 순번(category_number)을 포함해 등록됨 }
+        "400": { description: 잘못된 사업장 또는 입력값 }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/operations/day:

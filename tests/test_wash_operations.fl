@@ -17,6 +17,23 @@
 (let [site (create-wash-ops-site "양주 운영테스트점" "경기도 양주시" "김대표" "010-0000-0000")
       site-id (get site :id)
       equipment (create-equipment site-id nil "고압세척기" "HP-100" "WASH-OPS-TEST-001" "2026-08-01" "2027-08-01")]
+  (let [second-washer (create-wash-ops-equipment site-id "고압세척기" "HP-200" "WASH-OPS-TEST-002" nil nil)
+        compressor (create-wash-ops-equipment site-id "콤프레셔" "AC-10" "WASH-OPS-TEST-003" nil nil)
+        vacuum (create-wash-ops-equipment site-id "진공청소기" nil "WASH-OPS-TEST-004" nil nil)
+        polisher-1 (create-wash-ops-equipment site-id "광택기" "P-100" "WASH-OPS-TEST-005" nil nil)
+        polisher-2 (create-wash-ops-equipment site-id "광택기" "P-100" "WASH-OPS-TEST-006" nil nil)
+        polisher-3 (create-wash-ops-equipment site-id "광택기" "P-200" "WASH-OPS-TEST-007" nil nil)
+        equipment-list (list-wash-ops-equipment site-id)]
+    (assert (= (get second-washer :category_number) 2)
+      "같은 종류 두 번째 장비는 고압세척기 2로 구분돼야 한다")
+    (assert (= (get polisher-3 :category_number) 3)
+      "광택기 세 대를 각각 광택기 1·2·3으로 구분해야 한다")
+    (assert (= (length equipment-list) 7)
+      "고압세척기·콤프레셔·진공청소기·광택기를 한 사업장 목록에 함께 보여줘야 한다")
+    (assert (= (get compressor :category) "콤프레셔") "콤프레셔 등록을 보존해야 한다")
+    (assert (= (get vacuum :category) "진공청소기") "진공청소기 등록을 보존해야 한다")
+    (assert (= (get polisher-1 :category_number) 1) "첫 광택기는 광택기 1이어야 한다")
+    (assert (= (get polisher-2 :category_number) 2) "두 번째 광택기는 광택기 2여야 한다"))
   (save-wash-ops-day site-id "2026-08-01" "08:00" "19:00" 10 2 "맑음" "14:00~16:00" "CAUTION" 260 "오후 출차 검수 겹침")
   (let [vehicle (create-wash-ops-vehicle-bundle
                   {:site_id site-id :job_date "2026-08-01" :plate_number "12가3456"

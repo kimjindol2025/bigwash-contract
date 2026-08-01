@@ -573,6 +573,20 @@
       (catch [e] (safe-error-response "handle-wash-ops-equipment" e)))
     (unauthorized)))
 
+(defn handle-create-wash-ops-equipment [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true :data (create-wash-ops-equipment
+          (parse-int-param (get body :site_id) "site_id")
+          (get body :category)
+          (get body :model)
+          (get body :serial_number)
+          (get body :installed_at)
+          (get body :warranty_ends_at))}))
+      (catch [e] (safe-error-response "handle-create-wash-ops-equipment" e)))
+    (unauthorized)))
+
 (defn handle-wash-ops-vehicle-suggestions [req]
   (if (wash-ops-authorized? req)
     (try
@@ -1119,6 +1133,7 @@
 (server_post "/care/operations/sites" "handle-create-wash-ops-site")
 (server_post "/care/operations/sites/:id/activate" "handle-activate-wash-ops-site")
 (server_get  "/care/operations/equipment" "handle-wash-ops-equipment")
+(server_post "/care/operations/equipment" "handle-create-wash-ops-equipment")
 (server_get  "/care/operations/vehicle-suggestions" "handle-wash-ops-vehicle-suggestions")
 (server_get  "/care/operations/vehicle-models" "handle-wash-ops-vehicle-models")
 (server_post "/care/operations/day" "handle-save-wash-ops-day")
