@@ -147,5 +147,5 @@ Chrome에서 차량번호 후보 3개, 기존 `쏘렌토/SUV` 복원, `그랜저
 먼저 만들어 마이그레이션 회귀를 통과해야 한다. PM2 자동 재시작도 시작 단계의
 결정론적 오류 앞에서는 복구가 아니라 실패 증폭기가 될 수 있다.
 
-이 후속 기록은 계획된 `feat(washcare): add vehicle history lookup and size rules`
-체크포인트에 포함한다.
+이 후속 기능 체크포인트는 `12388a4`
+(`feat(washcare): add vehicle history lookup and size rules`)다.
