@@ -80,8 +80,12 @@
       contract-202 (first (db_query DB
                      "SELECT client_id, customer_id FROM contracts WHERE number = 'MIGRATION-202'" []))
       migrated-vehicle (first (db_query DB
-                         "SELECT plate_number_key,vehicle_model_key
+                         "SELECT vehicle_id,plate_number_key,vehicle_model_key
                           FROM wash_ops_vehicle_jobs WHERE site_id=999" []))
+      migrated-vehicle-master (first (db_query DB
+                                "SELECT id,plate_number_key,vehicle_model,vehicle_size,
+                                        first_seen_on,last_seen_on
+                                 FROM wash_ops_vehicles WHERE plate_number_key='12가3456'" []))
       normalized-k5 (db_query DB
                       "SELECT model_key,vehicle_size,source,use_count
                        FROM wash_ops_vehicle_models WHERE LOWER(model_key)='k5'" [])
@@ -98,6 +102,12 @@
     "기존 차량 작업 표에 차량번호 검색 키를 추가하고 백필해야 한다")
   (assert (= (get migrated-vehicle :vehicle_model_key) "그랜저")
     "기존 차량 작업 표에 차량명 검색 키를 추가하고 백필해야 한다")
+  (assert (= (get migrated-vehicle :vehicle_id) (get migrated-vehicle-master :id))
+    "기존 방문 기록을 차량 CRM 마스터에 연결해야 한다")
+  (assert (= (get migrated-vehicle-master :vehicle_model) "그랜저")
+    "기존 방문의 차량명·크기를 차량 CRM 카드로 승격해야 한다")
+  (assert (= (get migrated-vehicle-master :first_seen_on) "2026-07-31")
+    "기존 방문일을 차량 CRM 최초·최근 방문일로 보존해야 한다")
   (assert (= (length normalized-k5) 1) "대소문자만 다른 차량명 키는 하나로 병합해야 한다")
   (assert (= (get (first normalized-k5) :model_key) "k5") "영문 차량명 키는 소문자로 정규화해야 한다")
   (assert (= (get (first normalized-k5) :source) "HISTORY") "중복 병합 시 현장 교정값을 우선 보존해야 한다")

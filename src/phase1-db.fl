@@ -43,13 +43,17 @@
 (defn phase1-add-wash-ops-model-key-column []
   (db_exec DB "ALTER TABLE wash_ops_vehicle_jobs ADD COLUMN vehicle_model_key TEXT" []))
 
+(defn phase1-add-wash-ops-vehicle-id-column []
+  (db_exec DB "ALTER TABLE wash_ops_vehicle_jobs ADD COLUMN vehicle_id INTEGER" []))
+
 (defn phase1-ensure-wash-ops-vehicle-search-columns []
   (do
     ;; SQLite에는 ADD COLUMN IF NOT EXISTS가 없다. 두 ALTER를 각각 시도하고,
     ;; 이미 존재한다는 오류만 포함해 일단 다음 단계로 진행한다. 실제 실패나
     ;; 누락은 바로 뒤 UPDATE/INDEX가 같은 트랜잭션 안에서 감지해 전체 롤백한다.
     (try (phase1-add-wash-ops-plate-key-column) (catch [e] true))
-    (try (phase1-add-wash-ops-model-key-column) (catch [e] true))))
+    (try (phase1-add-wash-ops-model-key-column) (catch [e] true))
+    (try (phase1-add-wash-ops-vehicle-id-column) (catch [e] true))))
 
 ;; 기존 Contract와 WashCare 통합 계약 API가 공유하는 단일 상태전이 정본.
 (defn valid-contract-transition? [from to]
@@ -488,9 +492,29 @@
         FOREIGN KEY(site_id) REFERENCES sites(id)
       )" [])
 
+    ;; 사람 대신 차량을 CRM 고객으로 삼는 전 사업장 공용 차량 카드다. 방문별
+    ;; 작업은 아래 wash_ops_vehicle_jobs가 담당하고, 이 표는 번호·현재 기준정보와
+    ;; 다음 방문에 항상 보여줄 주의사항만 보존한다.
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS wash_ops_vehicles (
+        id INTEGER PRIMARY KEY,
+        plate_number TEXT NOT NULL,
+        plate_number_key TEXT NOT NULL UNIQUE,
+        vehicle_model TEXT,
+        vehicle_model_key TEXT,
+        vehicle_size TEXT
+          CHECK (vehicle_size IN ('경형','소형','중형','SUV','대형','승합')),
+        attention_note TEXT,
+        first_seen_on TEXT NOT NULL,
+        last_seen_on TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )" [])
+
     (db_exec DB
       "CREATE TABLE IF NOT EXISTS wash_ops_vehicle_jobs (
         id INTEGER PRIMARY KEY,
+        vehicle_id INTEGER,
         site_id INTEGER NOT NULL,
         job_date TEXT NOT NULL,
         plate_number TEXT NOT NULL,
@@ -513,6 +537,7 @@
         payment_amount REAL NOT NULL DEFAULT 0 CHECK (payment_amount >= 0),
         owner_involved INTEGER NOT NULL DEFAULT 0 CHECK (owner_involved IN (0,1)),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(vehicle_id) REFERENCES wash_ops_vehicles(id),
         FOREIGN KEY(site_id) REFERENCES sites(id)
       )" [])
 
@@ -524,6 +549,44 @@
        SET plate_number_key = LOWER(REPLACE(REPLACE(TRIM(plate_number), ' ', ''), '-', '')),
            vehicle_model_key = CASE WHEN vehicle_model IS NULL THEN NULL
              ELSE LOWER(REPLACE(REPLACE(TRIM(vehicle_model), ' ', ''), '-', '')) END"
+      [])
+
+    ;; 기존 방문 행을 차량 CRM 카드로 묶는다. 같은 번호의 가장 최근 방문을
+    ;; 기본정보로 쓰고, 최초·최근 방문일과 가장 최근의 비어 있지 않은 주의사항을
+    ;; 보존한다. 재실행 시에도 같은 plate_number_key 카드 하나만 갱신된다.
+    (db_exec DB
+      "INSERT INTO wash_ops_vehicles
+       (plate_number,plate_number_key,vehicle_model,vehicle_model_key,vehicle_size,
+        attention_note,first_seen_on,last_seen_on)
+       SELECT j.plate_number,j.plate_number_key,j.vehicle_model,j.vehicle_model_key,j.vehicle_size,
+              (SELECT h.return_note FROM wash_ops_vehicle_jobs h
+               WHERE h.plate_number_key=j.plate_number_key
+                 AND h.return_note IS NOT NULL AND TRIM(h.return_note)<>''
+               ORDER BY h.job_date DESC,h.id DESC LIMIT 1),
+              (SELECT MIN(h.job_date) FROM wash_ops_vehicle_jobs h
+               WHERE h.plate_number_key=j.plate_number_key),
+              (SELECT MAX(h.job_date) FROM wash_ops_vehicle_jobs h
+               WHERE h.plate_number_key=j.plate_number_key)
+       FROM wash_ops_vehicle_jobs j
+       WHERE j.plate_number_key<>''
+         AND j.id=(SELECT h2.id FROM wash_ops_vehicle_jobs h2
+                   WHERE h2.plate_number_key=j.plate_number_key
+                   ORDER BY h2.job_date DESC,h2.id DESC LIMIT 1)
+       ON CONFLICT(plate_number_key) DO UPDATE SET
+         plate_number=excluded.plate_number,
+         vehicle_model=COALESCE(excluded.vehicle_model,wash_ops_vehicles.vehicle_model),
+         vehicle_model_key=COALESCE(excluded.vehicle_model_key,wash_ops_vehicles.vehicle_model_key),
+         vehicle_size=COALESCE(excluded.vehicle_size,wash_ops_vehicles.vehicle_size),
+         attention_note=COALESCE(excluded.attention_note,wash_ops_vehicles.attention_note),
+         first_seen_on=MIN(wash_ops_vehicles.first_seen_on,excluded.first_seen_on),
+         last_seen_on=MAX(wash_ops_vehicles.last_seen_on,excluded.last_seen_on),
+         updated_at=CURRENT_TIMESTAMP"
+      [])
+    (db_exec DB
+      "UPDATE wash_ops_vehicle_jobs
+       SET vehicle_id=(SELECT v.id FROM wash_ops_vehicles v
+                       WHERE v.plate_number_key=wash_ops_vehicle_jobs.plate_number_key)
+       WHERE vehicle_id IS NULL"
       [])
 
     ;; 차량명만 입력하면 크기를 자동 판정하는 정본. SYSTEM 행은 기본 기준표,
@@ -692,6 +755,8 @@
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_daily_site_date ON wash_ops_daily_records(site_id, operation_date)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_vehicle_site_date ON wash_ops_vehicle_jobs(site_id, job_date)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_vehicle_plate_key ON wash_ops_vehicle_jobs(site_id, plate_number_key, job_date DESC, id DESC)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_vehicle_master_plate ON wash_ops_vehicles(plate_number_key)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_vehicle_job_master ON wash_ops_vehicle_jobs(vehicle_id, job_date DESC, id DESC)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_vehicle_model_key ON wash_ops_vehicle_models(model_key)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_vehicle_condition_job ON wash_ops_vehicle_condition_checks(vehicle_job_id, inspection_stage, area_group)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_rework_site_date ON wash_ops_reworks(site_id, occurred_date)" [])
@@ -728,11 +793,17 @@
                     FROM contracts c
                     LEFT JOIN customers u ON u.id = c.customer_id
                     WHERE c.customer_id IS NOT NULL AND u.id IS NULL"
+                   [])
+        unmapped-vehicle-jobs (db_query DB
+                   "SELECT COUNT(*) AS count FROM wash_ops_vehicle_jobs
+                    WHERE plate_number_key<>'' AND vehicle_id IS NULL"
                    [])]
     (if (> (get (first unmapped) :count) 0)
       (error "Phase 1 migration failed: unmapped contracts remain"))
     (if (> (get (first orphaned) :count) 0)
       (error "Phase 1 migration failed: orphaned customer references remain"))
+    (if (> (get (first unmapped-vehicle-jobs) :count) 0)
+      (error "Phase 1 migration failed: unmapped wash operation vehicle jobs remain"))
     true))
 
 (defn init-phase1-db []

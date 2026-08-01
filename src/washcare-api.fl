@@ -590,6 +590,14 @@
       (catch [e] (safe-error-response "handle-wash-ops-vehicle-models" e)))
     (unauthorized)))
 
+(defn handle-wash-ops-vehicle-detail [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (server_json {:ok true :data (get-wash-ops-vehicle-detail
+        (parse-int-param (server_req_param req "id") "id"))})
+      (catch [e] (safe-error-response "handle-wash-ops-vehicle-detail" e)))
+    (unauthorized)))
+
 (defn handle-save-wash-ops-day [req]
   (if (wash-ops-authorized? req)
     (try
@@ -1115,6 +1123,7 @@
 (server_get  "/care/operations/vehicle-models" "handle-wash-ops-vehicle-models")
 (server_post "/care/operations/day" "handle-save-wash-ops-day")
 (server_post "/care/operations/vehicles" "handle-create-wash-ops-vehicle")
+(server_get  "/care/operations/vehicles/:id" "handle-wash-ops-vehicle-detail")
 (server_post "/care/operations/reworks" "handle-create-wash-ops-rework")
 (server_post "/care/operations/equipment-issues" "handle-create-wash-ops-issue")
 (server_put  "/care/operations/equipment-issues/:id/resolve" "handle-resolve-wash-ops-issue")

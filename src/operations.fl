@@ -83,28 +83,31 @@
        ORDER BY category, model, id"
       [site-id])))
 
-;; 차량번호 입력 중에는 같은 사업장의 저장 이력만 검색한다. 번호별 가장 최근
-;; 작업 한 건을 대표로 삼고 정확 일치 → 앞자리 일치 → 포함 → 최근 방문 순으로
+;; 차량번호는 사업장별 방문행이 아니라 전 사업장 공용 차량 CRM 카드에서 찾는다.
+;; 현재 선택 사업장은 권한·운영 맥락 확인용이고, 재방문 차량은 어느 지점에 와도
+;; 이전 정보를 찾을 수 있다. 정확 일치 → 앞자리 일치 → 포함 → 최근 방문 순으로
 ;; 최대 3개만 반환한다.
 (defn list-wash-ops-vehicle-suggestions [site-id query]
   (let [key (wash-ops-search-key query)]
     (ensure-wash-ops-site site-id)
     (db_query DB
-      "SELECT v.id AS last_vehicle_job_id, v.plate_number, v.vehicle_model,
-              v.vehicle_size, v.job_date AS last_job_date,
+      "SELECT m.id AS vehicle_id,j.id AS last_vehicle_job_id,m.plate_number,
+              m.vehicle_model,m.vehicle_size,m.attention_note,
+              m.first_seen_on,m.last_seen_on,j.job_date AS last_job_date,
+              j.site_id AS last_site_id,s.name AS last_site_name,
               (SELECT COUNT(*) FROM wash_ops_vehicle_jobs h
-               WHERE h.site_id=v.site_id AND h.plate_number_key=v.plate_number_key) AS visit_count
-       FROM wash_ops_vehicle_jobs v
-       WHERE v.site_id=?
-         AND v.id=(SELECT h2.id FROM wash_ops_vehicle_jobs h2
-                   WHERE h2.site_id=v.site_id AND h2.plate_number_key=v.plate_number_key
-                   ORDER BY h2.job_date DESC,h2.id DESC LIMIT 1)
-         AND (?='' OR v.plate_number_key LIKE ?)
-       ORDER BY CASE WHEN v.plate_number_key=? THEN 0
-                     WHEN v.plate_number_key LIKE ? THEN 1 ELSE 2 END,
-                v.job_date DESC,v.id DESC
+               WHERE h.vehicle_id=m.id) AS visit_count
+       FROM wash_ops_vehicles m
+       LEFT JOIN wash_ops_vehicle_jobs j
+         ON j.id=(SELECT h2.id FROM wash_ops_vehicle_jobs h2
+                  WHERE h2.vehicle_id=m.id ORDER BY h2.job_date DESC,h2.id DESC LIMIT 1)
+       LEFT JOIN sites s ON s.id=j.site_id
+       WHERE (?='' OR m.plate_number_key LIKE ?)
+       ORDER BY CASE WHEN m.plate_number_key=? THEN 0
+                     WHEN m.plate_number_key LIKE ? THEN 1 ELSE 2 END,
+                m.last_seen_on DESC,m.id DESC
        LIMIT 3"
-      [site-id key (str "%" key "%") key (str key "%")])))
+      [key (str "%" key "%") key (str key "%")])))
 
 ;; 차량명 기준표도 최대 3개만 제시한다. 완전 일치를 우선하고, 그랜저IG처럼
 ;; 세부 형식이 붙은 이름은 정본 키가 입력 안에 포함돼도 찾는다.
@@ -125,11 +128,76 @@
         [key key key key key]))))
 
 (defn latest-wash-ops-vehicle-by-plate [site-id plate-key]
-  (first (db_query DB
-    "SELECT vehicle_model,vehicle_size FROM wash_ops_vehicle_jobs
-     WHERE site_id=? AND plate_number_key=?
-     ORDER BY job_date DESC,id DESC LIMIT 1"
-    [site-id plate-key])))
+  (do
+    (ensure-wash-ops-site site-id)
+    (first (db_query DB
+      "SELECT id AS vehicle_id,plate_number,vehicle_model,vehicle_size,attention_note,
+              first_seen_on,last_seen_on
+       FROM wash_ops_vehicles WHERE plate_number_key=? LIMIT 1"
+      [plate-key]))))
+
+(defn upsert-wash-ops-vehicle-master [plate-number plate-key vehicle-model vehicle-size job-date attention-note]
+  (do
+    (db_exec DB
+      "INSERT INTO wash_ops_vehicles
+       (plate_number,plate_number_key,vehicle_model,vehicle_model_key,vehicle_size,
+        attention_note,first_seen_on,last_seen_on)
+       VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(plate_number_key) DO UPDATE SET
+         plate_number=excluded.plate_number,
+         vehicle_model=COALESCE(excluded.vehicle_model,wash_ops_vehicles.vehicle_model),
+         vehicle_model_key=COALESCE(excluded.vehicle_model_key,wash_ops_vehicles.vehicle_model_key),
+         vehicle_size=COALESCE(excluded.vehicle_size,wash_ops_vehicles.vehicle_size),
+         attention_note=COALESCE(excluded.attention_note,wash_ops_vehicles.attention_note),
+         first_seen_on=MIN(wash_ops_vehicles.first_seen_on,excluded.first_seen_on),
+         last_seen_on=MAX(wash_ops_vehicles.last_seen_on,excluded.last_seen_on),
+         updated_at=CURRENT_TIMESTAMP"
+      [plate-number plate-key vehicle-model
+       (wash-ops-search-key vehicle-model) vehicle-size
+       (normalize-trimmed-string attention-note) job-date job-date])
+    (first (db_query DB
+      "SELECT * FROM wash_ops_vehicles WHERE plate_number_key=? LIMIT 1" [plate-key]))))
+
+(defn get-wash-ops-vehicle-detail [vehicle-id]
+  (let [vehicle (first (db_query DB
+                  "SELECT * FROM wash_ops_vehicles WHERE id=?" [vehicle-id]))]
+    (if (nil? vehicle)
+      (error "Vehicle not found")
+      (let [metrics (first (db_query DB
+                      "SELECT COUNT(*) AS visit_count,
+                              COUNT(DISTINCT site_id) AS site_count,
+                              COALESCE(SUM(work_minutes),0) AS total_work_minutes,
+                              COALESCE(SUM(payment_amount),0) AS total_payment_amount,
+                              COALESCE(SUM(owner_involved),0) AS owner_involved_count
+                       FROM wash_ops_vehicle_jobs WHERE vehicle_id=?" [vehicle-id]))
+            visits (db_query DB
+                     "SELECT j.*,s.name AS site_name,
+                             (SELECT COUNT(*) FROM wash_ops_reworks r
+                              WHERE r.vehicle_job_id=j.id) AS rework_count,
+                             (SELECT COUNT(*) FROM wash_ops_vehicle_condition_checks c
+                              WHERE c.vehicle_job_id=j.id
+                                AND c.condition_status NOT IN ('NORMAL','NOT_APPLICABLE')) AS attention_count
+                      FROM wash_ops_vehicle_jobs j
+                      JOIN sites s ON s.id=j.site_id
+                      WHERE j.vehicle_id=?
+                      ORDER BY j.job_date DESC,j.id DESC" [vehicle-id])
+            conditions (db_query DB
+                         "SELECT c.* FROM wash_ops_vehicle_condition_checks c
+                          JOIN wash_ops_vehicle_jobs j ON j.id=c.vehicle_job_id
+                          WHERE j.vehicle_id=?
+                          ORDER BY j.job_date DESC,j.id DESC,c.inspection_stage,c.area_group,c.id"
+                         [vehicle-id])
+            reworks (db_query DB
+                      "SELECT r.*,j.vehicle_id,s.name AS site_name
+                       FROM wash_ops_reworks r
+                       LEFT JOIN wash_ops_vehicle_jobs j ON j.id=r.vehicle_job_id
+                       LEFT JOIN sites s ON s.id=r.site_id
+                       WHERE j.vehicle_id=?
+                          OR LOWER(REPLACE(REPLACE(TRIM(r.plate_number),' ',''),'-',''))=?
+                       ORDER BY r.occurred_date DESC,r.id DESC"
+                      [vehicle-id (get vehicle :plate_number_key)])]
+        {:vehicle vehicle :metrics (assoc metrics :rework_count (length reworks))
+         :visits visits :conditions conditions :reworks reworks}))))
 
 (defn resolve-wash-ops-vehicle-model [vehicle-model]
   ;; suggestion의 "입력값이 정본명의 일부" 조건은 확정 판정에 쓰지 않는다.
@@ -229,28 +297,30 @@
       (error "Unknown vehicle model; choose vehicle_size manually"))
     (if (and (not (nil? resolved-size)) (not (valid-wash-ops-vehicle-size? resolved-size)))
       (error "vehicle_size must be one of 경형, 소형, 중형, SUV, 대형, 승합"))
-    (db_exec DB
-      "INSERT INTO wash_ops_vehicle_jobs
-       (site_id, job_date, plate_number, plate_number_key, vehicle_model, vehicle_model_key, vehicle_size, arrived_at,
-        started_at, finished_at, departed_at, work_minutes, wait_minutes, base_work,
-        extra_work, assigned_staff, special_contamination, customer_request,
-        return_note, payment_amount, owner_involved)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      [site-id resolved-date resolved-plate plate-key resolved-model (wash-ops-search-key resolved-model)
-       resolved-size arrived-at started-at
-       finished-at departed-at (wash-ops-nonnegative work-minutes "work_minutes")
-       (wash-ops-nonnegative wait-minutes "wait_minutes") base-work extra-work assigned-staff
-       special-contamination customer-request return-note
-       (wash-ops-nonnegative payment-amount "payment_amount")
-       (if (= owner-involved true) 1 (if (= owner-involved 1) 1 0))])
-    (let [id (inserted-id "wash_ops_vehicle_jobs")]
-      ;; 자동 판정과 최근 이력 복원은 기준표를 다시 학습시키지 않는다. 현장에서
-      ;; 사용자가 직접 크기를 수정했다고 명시한 저장만 HISTORY로 반영한다.
-      (if (= manual-size-override true)
-        (do
-          (learn-wash-ops-vehicle-model resolved-model resolved-size)
-          (first (db_query DB "SELECT * FROM wash_ops_vehicle_jobs WHERE id = ?" [id])))
-        (first (db_query DB "SELECT * FROM wash_ops_vehicle_jobs WHERE id = ?" [id]))))))
+    (let [vehicle-master (upsert-wash-ops-vehicle-master
+                           resolved-plate plate-key resolved-model resolved-size resolved-date return-note)]
+      (db_exec DB
+        "INSERT INTO wash_ops_vehicle_jobs
+         (vehicle_id,site_id,job_date,plate_number,plate_number_key,vehicle_model,vehicle_model_key,vehicle_size,arrived_at,
+          started_at,finished_at,departed_at,work_minutes,wait_minutes,base_work,
+          extra_work,assigned_staff,special_contamination,customer_request,
+          return_note,payment_amount,owner_involved)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        [(get vehicle-master :id) site-id resolved-date resolved-plate plate-key resolved-model
+         (wash-ops-search-key resolved-model) resolved-size arrived-at started-at
+         finished-at departed-at (wash-ops-nonnegative work-minutes "work_minutes")
+         (wash-ops-nonnegative wait-minutes "wait_minutes") base-work extra-work assigned-staff
+         special-contamination customer-request return-note
+         (wash-ops-nonnegative payment-amount "payment_amount")
+         (if (= owner-involved true) 1 (if (= owner-involved 1) 1 0))])
+      (let [id (inserted-id "wash_ops_vehicle_jobs")]
+        ;; 자동 판정과 최근 이력 복원은 기준표를 다시 학습시키지 않는다. 현장에서
+        ;; 사용자가 직접 크기를 수정했다고 명시한 저장만 HISTORY로 반영한다.
+        (if (= manual-size-override true)
+          (do
+            (learn-wash-ops-vehicle-model resolved-model resolved-size)
+            (first (db_query DB "SELECT * FROM wash_ops_vehicle_jobs WHERE id = ?" [id])))
+          (first (db_query DB "SELECT * FROM wash_ops_vehicle_jobs WHERE id = ?" [id])))))))
 
 (defn valid-wash-ops-condition-stage? [stage]
   (or (= stage "ARRIVAL") (= stage "FINAL")))

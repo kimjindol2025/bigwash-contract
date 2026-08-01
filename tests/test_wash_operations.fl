@@ -118,6 +118,24 @@
                        "다른 사업장 장비" "OBSERVE" 0 nil nil)
                      false)
                    (catch [e] true))]
-    (assert rejected "다른 사업장의 장비를 운영 이상 기록에 연결하면 안 된다")))
+    (assert rejected "다른 사업장의 장비를 운영 이상 기록에 연결하면 안 된다")
+    (let [cross-site-return (create-wash-ops-vehicle
+                              (get other-site :id) "2026-08-03" "12가-3456" nil nil
+                              nil nil nil nil 0 0 "기본 세차" nil nil nil nil nil 0 false false)
+          suggestions (list-wash-ops-vehicle-suggestions (get other-site :id) "12가")
+          vehicle-id (get (first suggestions) :vehicle_id)
+          detail (get-wash-ops-vehicle-detail vehicle-id)]
+      (assert (= (get cross-site-return :vehicle_model) "그랜저")
+        "다른 사업장에 재방문해도 차량 CRM의 차종을 복원해야 한다")
+      (assert (= (get (get detail :metrics) :visit_count) 2)
+        "차량 상세는 여러 사업장의 누적 방문 수를 보여줘야 한다")
+      (assert (= (get (get detail :metrics) :site_count) 2)
+        "차량 상세는 방문 사업장 수를 집계해야 한다")
+      (assert (= (get (get detail :vehicle) :attention_note) "문틈 물기 재확인")
+        "다음 방문 주의사항은 차량 CRM 카드에 계속 남아야 한다")
+      (assert (= (length (get detail :conditions)) 3)
+        "차량 상세는 과거 외부·내부 상태 체크를 모두 보여줘야 한다")
+      (assert (= (length (get detail :reworks)) 1)
+        "차량 상세는 과거 재작업 이력을 함께 보여줘야 한다"))))
 
 (println "✓ Wash operations MVP domain tests passed")

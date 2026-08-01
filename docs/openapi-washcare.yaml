@@ -1588,6 +1588,20 @@ paths:
         "400": { description: 잘못된 요청 }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /care/operations/vehicles/{id}:
+    get:
+      summary: 차량 CRM 카드와 전체 사업장 방문·상태·재작업 이력
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: 차량 기본정보·누적 지표·방문 타임라인·상태·재작업 }
+        "400": { description: 존재하지 않는 차량 또는 잘못된 ID }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /care/operations/reworks:
     post:
       summary: 고객 불만·무료 재작업과 원인 기록

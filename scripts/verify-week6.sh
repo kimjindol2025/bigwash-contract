@@ -11,7 +11,7 @@ set -euo pipefail
 #
 # 검증 순서: (1) tests/test_*.fl 17종 직렬 실행(mktemp 격리 DB)
 #            (2) Admin/운영 기록실 UI 인라인 <script> 구문 검사(new Function)
-#            (3) OpenAPI YAML parse + 코드↔spec API 라우트 75개 완전일치
+#            (3) OpenAPI YAML parse + 코드↔spec API 라우트 76개 완전일치
 #            (4) git diff --check (공백 오류)
 #            (5) 격리 HTTP 인증·오류 노출 공격 검증
 #            (6) 격리 DB 백업·변경·복원 리허설
@@ -208,9 +208,9 @@ else
 fi
 
 # ============================================================
-# 3. OpenAPI YAML parse + 코드↔spec API 라우트 75개 완전일치
+# 3. OpenAPI YAML parse + 코드↔spec API 라우트 76개 완전일치
 # ============================================================
-section "3. OpenAPI YAML parse + 코드↔spec API 라우트 75개 완전일치"
+section "3. OpenAPI YAML parse + 코드↔spec API 라우트 76개 완전일치"
 
 if ROUTE_CHECK_OUT="$(python3 - "${ROOT_DIR}" <<'PY'
 import sys, re, json
@@ -246,14 +246,14 @@ for m in re.finditer(r'\(server_(get|post|put|delete|patch)\s+"([^"]+)"', code):
 only_in_code = sorted(code_ops - spec_ops)
 only_in_spec = sorted(spec_ops - code_ops)
 
-print(f"  spec operation count: {len(spec_ops)} (기대 75)")
-print(f"  code operation count: {len(code_ops)} (기대 75)")
+print(f"  spec operation count: {len(spec_ops)} (기대 76)")
+print(f"  code operation count: {len(code_ops)} (기대 76)")
 print(f"  code에만 있음: {only_in_code}")
 print(f"  spec에만 있음: {only_in_spec}")
 
 ok = (
-    len(spec_ops) == 75
-    and len(code_ops) == 75
+    len(spec_ops) == 76
+    and len(code_ops) == 76
     and not only_in_code
     and not only_in_spec
 )
@@ -261,11 +261,11 @@ sys.exit(0 if ok else 1)
 PY
 )"; then
   echo "${ROUTE_CHECK_OUT}"
-  SUMMARY+=("OpenAPI YAML parse + 라우트 75개 대조: OK (완전일치)")
+  SUMMARY+=("OpenAPI YAML parse + 라우트 76개 대조: OK (완전일치)")
 else
   echo "${ROUTE_CHECK_OUT}"
   FAILED=1
-  SUMMARY+=("OpenAPI YAML parse + 라우트 75개 대조: FAIL")
+  SUMMARY+=("OpenAPI YAML parse + 라우트 76개 대조: FAIL")
 fi
 
 # ============================================================

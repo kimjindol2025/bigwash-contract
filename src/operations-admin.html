@@ -119,6 +119,52 @@
   .view-panel { background:#fff; border:1px solid var(--line); border-radius:16px; overflow:hidden; }
   .view-toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; padding:17px 19px; border-bottom:1px solid var(--line); }
   .view-toolbar p { margin:0; color:var(--muted); font-size:12px; }
+  .vehicle-crm-search { margin-bottom:18px; padding:18px; border:1px solid #DCD6F0; border-radius:16px; background:linear-gradient(135deg,#fff,#F8F5FF); box-shadow:0 7px 22px rgba(64,45,130,.06); }
+  .vehicle-crm-search-head { display:flex; align-items:flex-end; justify-content:space-between; gap:14px; margin-bottom:12px; }
+  .vehicle-crm-search-title { font-size:14px; font-weight:900; }
+  .vehicle-crm-search-help { margin-top:4px; color:var(--muted); font-size:10.5px; }
+  .vehicle-crm-search-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:9px; }
+  .vehicle-crm-search-input { width:100%; min-height:48px; border:1px solid #D7D1E6; border-radius:12px; background:#fff; padding:0 14px; color:var(--ink); font-size:15px; font-weight:800; outline:none; }
+  .vehicle-crm-search-input:focus { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
+  .vehicle-crm-results { display:grid; gap:8px; margin-top:10px; }
+  .vehicle-crm-results:empty { display:none; }
+  .vehicle-crm-result { width:100%; min-height:62px; border:1px solid #E4DFEC; border-radius:12px; background:#fff; padding:11px 13px; display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; text-align:left; color:var(--ink); }
+  .vehicle-crm-result:hover { border-color:#C4B8EE; background:var(--primary-soft); }
+  .vehicle-crm-result-plate { font-size:14px; font-weight:950; letter-spacing:.02em; }
+  .vehicle-crm-result-meta { margin-top:4px; color:var(--muted); font-size:10.5px; line-height:1.45; }
+  .vehicle-crm-detail { display:grid; grid-template-columns:290px minmax(0,1fr); gap:17px; align-items:start; }
+  .vehicle-profile-card { position:sticky; top:88px; padding:21px; border:1px solid var(--line); border-radius:17px; background:#fff; box-shadow:var(--shadow); }
+  .vehicle-profile-mark { width:52px; height:52px; border-radius:15px; display:grid; place-items:center; color:var(--primary); background:var(--primary-soft); }
+  .vehicle-profile-mark svg { width:27px; height:27px; }
+  .vehicle-profile-plate { margin-top:14px; font-size:22px; font-weight:950; letter-spacing:.015em; }
+  .vehicle-profile-model { margin-top:4px; color:var(--muted); font-size:12px; }
+  .vehicle-profile-list { display:grid; gap:10px; margin-top:18px; padding-top:16px; border-top:1px solid var(--line); }
+  .vehicle-profile-row { display:flex; justify-content:space-between; gap:12px; font-size:11px; }
+  .vehicle-profile-row span:first-child { color:var(--muted); }
+  .vehicle-profile-row strong { text-align:right; }
+  .vehicle-attention { margin-top:17px; padding:13px; border-radius:12px; background:var(--amber-soft); color:#765016; font-size:11px; line-height:1.55; }
+  .vehicle-attention strong { display:block; margin-bottom:4px; color:var(--amber); }
+  .vehicle-history { min-width:0; }
+  .vehicle-crm-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin-bottom:13px; }
+  .vehicle-crm-metric { padding:14px; border:1px solid var(--line); border-radius:13px; background:#fff; }
+  .vehicle-crm-metric span { display:block; color:var(--muted); font-size:9.5px; }
+  .vehicle-crm-metric strong { display:block; margin-top:6px; font-size:17px; }
+  .visit-timeline { display:flex; flex-direction:column; gap:11px; }
+  .visit-card { padding:17px; border:1px solid var(--line); border-radius:15px; background:#fff; }
+  .visit-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding-bottom:11px; border-bottom:1px solid #F0EDF4; }
+  .visit-date { font-size:14px; font-weight:900; }
+  .visit-site { margin-top:3px; color:var(--muted); font-size:10.5px; }
+  .visit-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin-top:12px; }
+  .visit-fact { padding:9px 10px; border-radius:10px; background:#F8F7FA; }
+  .visit-fact span { display:block; color:var(--muted); font-size:9px; }
+  .visit-fact strong { display:block; margin-top:4px; font-size:11px; line-height:1.4; }
+  .visit-notes { display:grid; gap:7px; margin-top:11px; }
+  .visit-note { padding:9px 10px; border-left:3px solid var(--primary); border-radius:0 9px 9px 0; background:#F8F6FD; font-size:10.5px; line-height:1.5; }
+  .condition-chip-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:11px; }
+  .condition-chip { border-radius:999px; padding:5px 8px; background:#F1EFF5; color:#6F6C78; font-size:9px; font-weight:800; }
+  .condition-chip.attention { background:var(--red-soft); color:var(--red); }
+  .clickable-record { cursor:pointer; }
+  .clickable-record:hover { background:#FAF8FF; }
   .primary-btn,.secondary-btn,.danger-btn { border:0; border-radius:10px; min-height:40px; padding:0 15px; font-size:12px; font-weight:850; }
   .primary-btn { color:#fff; background:var(--primary); }
   .primary-btn:hover { background:var(--primary-dark); }
@@ -248,6 +294,10 @@
     .brief-link { display:none; }
     .brief-text { font-size:12.5px; line-height:1.65; }
     .content-grid { grid-template-columns:1fr; }
+    .vehicle-crm-detail { grid-template-columns:1fr; }
+    .vehicle-profile-card { position:static; }
+    .vehicle-crm-metrics { grid-template-columns:repeat(2,1fr); }
+    .visit-grid { grid-template-columns:repeat(2,1fr); }
     .record-row { grid-template-columns:1fr auto; }
     .record-row > :nth-child(2) { grid-column:1/-1; grid-row:2; }
     .record-row > :nth-child(3) { grid-column:1; }
@@ -274,7 +324,7 @@
     <div class="nav-label">오늘</div>
     <nav class="nav">
       <button class="nav-btn active" data-view="dashboard"><span data-icon="dashboard"></span>운영 대시보드</button>
-      <button class="nav-btn" data-view="vehicles"><span data-icon="car"></span>차량 작업</button>
+      <button class="nav-btn" data-view="vehicles"><span data-icon="car"></span>차량 CRM</button>
       <button class="nav-btn" data-view="reworks"><span data-icon="refresh"></span>재작업</button>
       <button class="nav-btn" data-view="equipment"><span data-icon="tool"></span>장비 이상</button>
       <button class="nav-btn" data-view="notes"><span data-icon="note"></span>운영 메모</button>
@@ -340,7 +390,7 @@ const icons = {
 document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icons[el.dataset.icon] || ''; });
 
 const initialSiteId=new URLSearchParams(location.search).get('site_id');
-const state = { sites:[], siteId:null, date:'', data:null, equipment:[], view:'dashboard', weekly:null };
+const state = { sites:[], siteId:null, date:'', data:null, equipment:[], view:'dashboard', weekly:null, vehicleDetail:null, vehicleSearchTimer:null };
 const el = {
   main:document.querySelector('#main'), site:document.querySelector('#siteSelect'), date:document.querySelector('#dateInput'),
   modal:document.querySelector('#modalBackdrop'), form:document.querySelector('#modalForm'),
@@ -351,11 +401,13 @@ state.date=localDate(); el.date.value=state.date;
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function n(v){const x=Number(v);return Number.isFinite(x)?x:0;}
 function fmtMinutes(v){const m=n(v);if(m>=60)return `${Math.floor(m/60)}시간 ${m%60?m%60+'분':''}`.trim();return `${m}분`;}
+function fmtMoney(v){return `${Math.round(n(v)).toLocaleString('ko-KR')}원`;}
 function timeOnly(v){if(!v)return '-';return String(v).slice(11,16)||String(v).slice(0,5);}
 function causeLabel(v){return ({REQUEST_MISSED:'고객 요청 전달 누락',WORK_STEP_MISSED:'작업 순서 누락',INSPECTION_MISSED:'검수 누락',TIME_SHORTAGE:'시간 부족',EXTRA_CONTAMINATION:'추가 오염 미확인',EQUIPMENT:'장비 문제',EXPLANATION_MISMATCH:'설명 기준 불일치',OTHER:'기타'})[v]||v||'-';}
 function categoryLabel(v){return ({UNSORTED:'미분류',STAFF:'직원',EQUIPMENT:'장비',FLOW:'동선',CUSTOMER:'고객',PRICE:'가격',BOOKING:'예약',REWORK:'재작업',IDEA:'개선 아이디어'})[v]||v||'-';}
 function stateLabel(v){return ({OBSERVE:'관찰 필요',STOPPED:'사용 중지',REPAIR_REQUESTED:'수리 요청',RESOLVED:'해결'})[v]||v||'-';}
 function statusLabel(v){return ({NORMAL:'정상',CAUTION:'주의',PROBLEM:'문제 발생'})[v]||'기록 전';}
+function conditionStatusLabel(v){return ({NORMAL:'정상',CONTAMINATED:'오염',WET_ODOR:'냄새·습기',DAMAGE:'손상',RECHECK:'재확인',NOT_APPLICABLE:'해당 없음'})[v]||v||'-';}
 function tagClass(v){if(['PROBLEM','STOPPED','REPAIR_REQUESTED'].includes(v))return 'red';if(['CAUTION','OBSERVE'].includes(v))return 'amber';if(['NORMAL','RESOLVED'].includes(v))return 'green';return 'purple';}
 
 async function api(method,path,body){
@@ -395,9 +447,19 @@ function pageHead(title,desc,action=''){
 }
 function metric(label,value,unit='',alert=false){return `<div class="metric${alert?' alert':''}"><div class="metric-label">${label}</div><div class="metric-value">${esc(value)}<span class="metric-unit">${unit}</span></div></div>`;}
 function empty(icon,text){return `<div class="empty"><div class="empty-icon">${icons[icon]||''}</div>${text}</div>`;}
+function vehicleCrmSearchHtml(){return `<section class="vehicle-crm-search"><div class="vehicle-crm-search-head"><div><div class="vehicle-crm-search-title">차량번호로 전체 이력 찾기</div><div class="vehicle-crm-search-help">전체 번호가 기억나지 않으면 1234처럼 일부만 입력하세요. 최대 3대를 보여줍니다.</div></div><span class="tag purple">차량이 고객</span></div><form class="vehicle-crm-search-form" data-vehicle-crm-form><input class="vehicle-crm-search-input" data-vehicle-crm-search inputmode="text" autocomplete="off" placeholder="예: 1234 또는 12가3456" aria-label="차량번호 검색"><button class="primary-btn" type="submit">차량 찾기</button></form><div class="vehicle-crm-results" data-vehicle-crm-results></div></section>`;}
+async function searchVehicleCrm(query){
+  const box=document.querySelector('[data-vehicle-crm-results]');if(!box||!state.siteId)return;
+  const q=String(query||'').trim();if(!q){box.innerHTML='<div class="record-secondary">번호를 입력하면 이전 방문 차량을 찾습니다.</div>';return;}
+  box.innerHTML='<div class="record-secondary">차량 이력을 찾는 중입니다…</div>';
+  try{
+    const rows=await api('GET',`/care/operations/vehicle-suggestions?site_id=${encodeURIComponent(state.siteId)}&q=${encodeURIComponent(q)}`);if(!document.body.contains(box))return;
+    box.innerHTML=rows.length?rows.map(x=>`<button type="button" class="vehicle-crm-result" data-action="open-vehicle-detail" data-id="${x.vehicle_id}"><span><span class="vehicle-crm-result-plate">${esc(x.plate_number)}</span><span class="vehicle-crm-result-meta">${esc([x.vehicle_model,x.vehicle_size,x.last_site_name,x.last_job_date].filter(Boolean).join(' · '))}</span>${x.attention_note?`<span class="lookup-meta">주의 · ${esc(x.attention_note)}</span>`:''}</span><span class="lookup-count">누적 ${n(x.visit_count)}회</span></button>`).join(''):empty('car','일치하는 차량 이력이 없습니다.');
+  }catch(e){if(document.body.contains(box))box.innerHTML=`<div class="record-secondary">${esc(e.message)}</div>`;}
+}
 
 function render(){
-  ({dashboard:renderDashboard,vehicles:renderVehicles,reworks:renderReworks,equipment:renderEquipment,notes:renderNotes}[state.view]||renderDashboard)();
+  ({dashboard:renderDashboard,vehicles:renderVehicles,'vehicle-detail':renderVehicleDetail,reworks:renderReworks,equipment:renderEquipment,notes:renderNotes}[state.view]||renderDashboard)();
 }
 function renderDashboard(){
   const d=state.data,m=d.metrics||{},day=d.day||{};
@@ -405,7 +467,7 @@ function renderDashboard(){
   d.issues.filter(x=>x.state!=='RESOLVED').forEach(x=>problems.push({bar:x.state==='STOPPED'?'':'amber',title:x.issue_title,desc:`${stateLabel(x.state)} · 중단 ${n(x.downtime_minutes)}분`,time:x.equipment_category||'장비'}));
   d.reworks.forEach(x=>problems.push({bar:'',title:`${x.plate_number} · ${x.complaint_area}`,desc:`${causeLabel(x.cause)} · 무료 ${n(x.free_minutes)}분`,time:'재작업'}));
   d.vehicles.filter(x=>n(x.wait_minutes)>0).forEach(x=>problems.push({bar:'purple',title:`${x.plate_number} 대기 ${x.wait_minutes}분`,desc:x.extra_work||'지연 원인 상세기록 필요',time:'차량'}));
-  el.main.innerHTML=pageHead('오늘, 무엇이 운영을 흔들었나요?','차량 수보다 지연·재작업·장비 이상과 사업주 개입을 먼저 확인합니다.')+`
+  el.main.innerHTML=pageHead('오늘, 무엇이 운영을 흔들었나요?','차량 수보다 지연·재작업·장비 이상과 사업주 개입을 먼저 확인합니다.')+vehicleCrmSearchHtml()+`
     <section class="quick-grid">
       ${quick('vehicle','q-purple','car','오늘 작업 추가','차량번호 중심으로 빠르게')}
       ${quick('rework','q-red','refresh','재작업 기록','불만과 반복 원인 남기기')}
@@ -433,9 +495,34 @@ function renderDashboard(){
 }
 function quick(action,cls,icon,title,sub){return `<button class="quick-btn" data-action="open-form" data-form="${action}"><span class="quick-icon ${cls}">${icons[icon]}</span><span><div class="quick-title">${title}</div><div class="quick-sub">${sub}</div></span></button>`;}
 function vehicleConditionSummary(v){const rows=(state.data?.conditions||[]).filter(x=>n(x.vehicle_job_id)===n(v.id)),external=rows.filter(x=>x.area_group==='EXTERIOR'),internal=rows.filter(x=>x.area_group==='INTERIOR'),attention=rows.filter(x=>!['NORMAL','NOT_APPLICABLE'].includes(x.condition_status));if(!rows.length)return '차량 상태 미점검';return `외부 ${external.length}/10 · 내부 ${internal.length}/10${attention.length?' · 확인 '+attention.length+'건':' · 이상 없음'}`;}
-function vehicleItem(v){return `<div class="vehicle-item"><div class="vehicle-main"><div class="car-mark">${icons.car}</div><div style="min-width:0"><div class="plate">${esc(v.plate_number)}</div><div class="vehicle-note">${esc([v.vehicle_model,v.vehicle_size,v.extra_work].filter(Boolean).join(' · ')||'기본 작업')}</div><div class="vehicle-condition-note">${esc(vehicleConditionSummary(v))}</div></div></div><div class="vehicle-time"><div class="vehicle-min">${n(v.work_minutes)}분</div>${n(v.wait_minutes)>0?`<div class="vehicle-delay">대기 ${n(v.wait_minutes)}분</div>`:''}</div></div>`;}
+function vehicleItem(v){return `<div class="vehicle-item ${v.vehicle_id?'clickable-record':''}" ${v.vehicle_id?`data-action="open-vehicle-detail" data-id="${v.vehicle_id}" role="button" tabindex="0"`:''}><div class="vehicle-main"><div class="car-mark">${icons.car}</div><div style="min-width:0"><div class="plate">${esc(v.plate_number)}</div><div class="vehicle-note">${esc([v.vehicle_model,v.vehicle_size,v.extra_work].filter(Boolean).join(' · ')||'기본 작업')}</div><div class="vehicle-condition-note">${esc(vehicleConditionSummary(v))}</div></div></div><div class="vehicle-time"><div class="vehicle-min">${n(v.work_minutes)}분</div>${n(v.wait_minutes)>0?`<div class="vehicle-delay">대기 ${n(v.wait_minutes)}분</div>`:''}</div></div>`;}
 
-function renderVehicles(){const rows=state.data.vehicles;el.main.innerHTML=pageHead('차량 작업 기록','기본 입력은 짧게, 문제가 있었던 차량만 상세 내용을 남깁니다.',`<button class="primary-btn" data-action="open-form" data-form="vehicle">+ 작업 추가</button>`)+`<section class="view-panel"><div class="view-toolbar"><p>${state.date} · 총 ${rows.length}대</p><span class="tag purple">차량번호 중심</span></div><div class="record-list">${rows.length?rows.map(v=>`<div class="record-row"><div><div class="record-primary">${esc(v.plate_number)}</div><div class="record-secondary">${esc(v.vehicle_model||'차종 미입력')} · ${esc(v.vehicle_size||'크기 미입력')}</div></div><div><div class="record-primary">${esc(v.extra_work||v.base_work||'기본 세차')}</div><div class="record-secondary">담당 ${esc(v.assigned_staff||'-')} · 입고 ${timeOnly(v.arrived_at)} → 출차 ${timeOnly(v.departed_at)}</div></div><div><div class="record-primary">작업 ${n(v.work_minutes)}분</div><div class="record-secondary">대기 ${n(v.wait_minutes)}분</div></div><span class="tag ${n(v.wait_minutes)>0?'red':'green'}">${n(v.wait_minutes)>0?'지연':'기록 완료'}</span></div>`).join(''):empty('car','오늘 차량 기록이 없습니다.')}</div></section>`;}
+function renderVehicles(){const rows=state.data.vehicles;el.main.innerHTML=pageHead('차량 CRM','차량번호가 고객번호입니다. 어느 사업장에 다시 와도 이전 작업과 주의사항을 확인합니다.',`<button class="primary-btn" data-action="open-form" data-form="vehicle">+ 오늘 작업 추가</button>`)+vehicleCrmSearchHtml()+`<section class="view-panel"><div class="view-toolbar"><p>${state.date} · 오늘 방문 ${rows.length}대</p><span class="tag purple">방문 기록</span></div><div class="record-list">${rows.length?rows.map(v=>`<div class="record-row ${v.vehicle_id?'clickable-record':''}" ${v.vehicle_id?`data-action="open-vehicle-detail" data-id="${v.vehicle_id}" role="button" tabindex="0"`:''}><div><div class="record-primary">${esc(v.plate_number)}</div><div class="record-secondary">${esc(v.vehicle_model||'차종 미입력')} · ${esc(v.vehicle_size||'크기 미입력')}</div></div><div><div class="record-primary">${esc(v.extra_work||v.base_work||'기본 세차')}</div><div class="record-secondary">담당 ${esc(v.assigned_staff||'-')} · 입고 ${timeOnly(v.arrived_at)} → 출차 ${timeOnly(v.departed_at)}</div></div><div><div class="record-primary">작업 ${n(v.work_minutes)}분</div><div class="record-secondary">대기 ${n(v.wait_minutes)}분</div></div><span class="tag ${n(v.wait_minutes)>0?'red':'green'}">${n(v.wait_minutes)>0?'지연':'상세 보기'}</span></div>`).join(''):empty('car','오늘 차량 방문 기록이 없습니다.')}</div></section>`;}
+
+async function openVehicleDetail(vehicleId){
+  loading();
+  try{
+    state.vehicleDetail=await api('GET',`/care/operations/vehicles/${encodeURIComponent(vehicleId)}`);
+    state.view='vehicle-detail';
+    document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='vehicles'));
+    renderVehicleDetail();window.scrollTo({top:0,behavior:'smooth'});
+  }catch(e){renderError(e);}
+}
+function visitConditionChips(detail,visit){
+  const rows=(detail.conditions||[]).filter(x=>n(x.vehicle_job_id)===n(visit.id));
+  if(!rows.length)return '<div class="record-secondary">차량 상태 체크 없음</div>';
+  return `<div class="condition-chip-list">${rows.map(x=>`<span class="condition-chip ${['NORMAL','NOT_APPLICABLE'].includes(x.condition_status)?'':'attention'}">${esc(x.checkpoint_label)} · ${esc(conditionStatusLabel(x.condition_status))}</span>`).join('')}</div>`;
+}
+function renderVehicleDetail(){
+  const d=state.vehicleDetail;if(!d)return switchView('vehicles');
+  const v=d.vehicle,m=d.metrics||{},visits=d.visits||[],reworks=d.reworks||[];
+  const visitCards=visits.map(visit=>{
+    const linkedReworks=reworks.filter(x=>n(x.vehicle_job_id)===n(visit.id));
+    const notes=[visit.special_contamination?`특이 오염 · ${visit.special_contamination}`:'',visit.customer_request?`고객 요청 · ${visit.customer_request}`:'',visit.return_note?`다음 방문 주의 · ${visit.return_note}`:''].filter(Boolean);
+    return `<article class="visit-card"><div class="visit-head"><div><div class="visit-date">${esc(visit.job_date)}</div><div class="visit-site">${esc(visit.site_name)} · 입고 ${timeOnly(visit.arrived_at)} → 출차 ${timeOnly(visit.departed_at)}</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${n(visit.rework_count)>0?`<span class="tag red">재작업 ${n(visit.rework_count)}건</span>`:'<span class="tag green">방문 완료</span>'}${n(visit.attention_count)>0?`<span class="tag amber">상태 확인 ${n(visit.attention_count)}건</span>`:''}</div></div><div class="visit-grid"><div class="visit-fact"><span>작업</span><strong>${esc(visit.base_work||'기본 세차')}${visit.extra_work?`<br>${esc(visit.extra_work)}`:''}</strong></div><div class="visit-fact"><span>시간</span><strong>작업 ${n(visit.work_minutes)}분 · 대기 ${n(visit.wait_minutes)}분</strong></div><div class="visit-fact"><span>담당</span><strong>${esc(visit.assigned_staff||'-')}</strong></div><div class="visit-fact"><span>결제</span><strong>${fmtMoney(visit.payment_amount)}</strong></div><div class="visit-fact"><span>사업주 개입</span><strong>${n(visit.owner_involved)?'있음':'없음'}</strong></div><div class="visit-fact"><span>차량 기준</span><strong>${esc([visit.vehicle_model,visit.vehicle_size].filter(Boolean).join(' · ')||'-')}</strong></div></div>${notes.length?`<div class="visit-notes">${notes.map(note=>`<div class="visit-note">${esc(note)}</div>`).join('')}</div>`:''}${visitConditionChips(d,visit)}${linkedReworks.length?`<div class="visit-notes">${linkedReworks.map(x=>`<div class="visit-note" style="border-color:var(--red)">재작업 · ${esc(x.complaint_area)} · ${esc(causeLabel(x.cause))} · 무료 ${n(x.free_minutes)}분${x.prevention_action?` · ${esc(x.prevention_action)}`:''}</div>`).join('')}</div>`:''}</article>`;
+  }).join('');
+  el.main.innerHTML=pageHead(`${v.plate_number} 차량 이력`,'이 차량이 어느 사업장에 와도 과거 작업과 주의사항을 같은 카드에서 확인합니다.',`<div style="display:flex;gap:8px"><button class="secondary-btn" data-action="switch-view" data-view-target="vehicles">← 차량 찾기</button><button class="primary-btn" data-action="open-form" data-form="vehicle" data-prefill-plate="${esc(v.plate_number)}" data-prefill-model="${esc(v.vehicle_model||'')}" data-prefill-size="${esc(v.vehicle_size||'')}">+ 새 방문 기록</button></div>`)+`<section class="vehicle-crm-detail"><aside class="vehicle-profile-card"><div class="vehicle-profile-mark">${icons.car}</div><div class="vehicle-profile-plate">${esc(v.plate_number)}</div><div class="vehicle-profile-model">${esc([v.vehicle_model,v.vehicle_size].filter(Boolean).join(' · ')||'차종 정보 없음')}</div><div class="vehicle-profile-list"><div class="vehicle-profile-row"><span>최초 방문</span><strong>${esc(v.first_seen_on)}</strong></div><div class="vehicle-profile-row"><span>최근 방문</span><strong>${esc(v.last_seen_on)}</strong></div><div class="vehicle-profile-row"><span>누적 방문</span><strong>${n(m.visit_count)}회</strong></div><div class="vehicle-profile-row"><span>방문 사업장</span><strong>${n(m.site_count)}곳</strong></div></div><div class="vehicle-attention"><strong>항상 확인할 주의사항</strong>${esc(v.attention_note||'아직 등록된 주의사항이 없습니다.')}</div></aside><div class="vehicle-history"><div class="vehicle-crm-metrics"><div class="vehicle-crm-metric"><span>누적 작업시간</span><strong>${fmtMinutes(m.total_work_minutes)}</strong></div><div class="vehicle-crm-metric"><span>누적 결제</span><strong>${fmtMoney(m.total_payment_amount)}</strong></div><div class="vehicle-crm-metric"><span>재작업</span><strong>${n(m.rework_count)}건</strong></div><div class="vehicle-crm-metric"><span>사업주 개입</span><strong>${n(m.owner_involved_count)}회</strong></div></div><div class="panel-head" style="border:1px solid var(--line);border-radius:14px 14px 0 0;background:#fff"><div><h2 class="panel-title">전체 방문 타임라인</h2><div class="panel-meta">최근 방문부터 ${visits.length}건</div></div></div><div class="visit-timeline" style="margin-top:10px">${visitCards||empty('car','아직 연결된 방문 기록이 없습니다.')}</div></div></section>`;
+}
 function renderReworks(){const rows=state.data.reworks;el.main.innerHTML=pageHead('고객 불만·재작업','건수를 세는 데서 끝내지 않고 원인과 재발 방지 조치를 함께 남깁니다.',`<button class="primary-btn" data-action="open-form" data-form="rework">+ 재작업 기록</button>`)+`<section class="view-panel"><div class="view-toolbar"><p>${state.date} · 무료 재작업 ${rows.length}건</p><span class="tag red">원인 추적</span></div><div class="record-list">${rows.length?rows.map(x=>`<div class="record-row"><div><div class="record-primary">${esc(x.plate_number)}</div><div class="record-secondary">${esc(x.complaint_area)}</div></div><div><div class="record-primary">${causeLabel(x.cause)}</div><div class="record-secondary">${esc(x.prevention_action||'재발 방지 조치 미입력')}</div></div><div><div class="record-primary">무료 ${n(x.free_minutes)}분</div><div class="record-secondary">작업 ${esc(x.initial_worker||'-')} · 검수 ${esc(x.inspector||'-')}</div></div><span class="tag ${x.prevention_action?'green':'red'}">${x.prevention_action?'조치 기록':'조치 필요'}</span></div>`).join(''):empty('refresh','오늘 재작업 기록이 없습니다.')}</div></section>`;}
 function renderEquipment(){const rows=state.data.issues;el.main.innerHTML=pageHead('장비 이상 기록','복잡한 정비 시스템보다 정상과 이상, 실제 중단 시간을 먼저 구분합니다.',`<button class="primary-btn" data-action="open-form" data-form="issue">+ 장비 이상</button>`)+`<section class="view-panel"><div class="view-toolbar"><p>${state.date} · 이상 ${rows.length}건</p><span class="tag amber">${state.equipment.length}대 등록</span></div><div class="record-list">${rows.length?rows.map(x=>`<div class="record-row"><div><div class="record-primary">${esc(x.issue_title)}</div><div class="record-secondary">${esc([x.equipment_category,x.equipment_model].filter(Boolean).join(' · ')||'장비 미지정')}</div></div><div><div class="record-primary">${esc(x.action_taken||'조치 내용 미입력')}</div><div class="record-secondary">${esc(x.note||'추가 메모 없음')}</div></div><div><div class="record-primary">중단 ${n(x.downtime_minutes)}분</div><div class="record-secondary">${stateLabel(x.state)}</div></div>${x.state==='RESOLVED'?'<span class="tag green">해결</span>':`<button class="danger-btn" data-action="resolve-issue" data-id="${x.id}">해결 처리</button>`}</div>`).join(''):empty('tool','오늘 장비 이상 기록이 없습니다.')}</div></section>`;}
 function renderNotes(){const rows=state.data.notes;el.main.innerHTML=pageHead('운영 메모','현장에서 느낀 사실을 짧게 남기고 직원·장비·동선·고객·예약 주제로 모읍니다.',`<button class="primary-btn" data-action="open-form" data-form="note">+ 메모 남기기</button>`)+`<section class="view-panel"><div class="view-toolbar"><p>${state.date} · 메모 ${rows.length}건</p><span class="tag purple">원문 보존</span></div><div class="record-list">${rows.length?rows.map(x=>`<div class="record-row" style="grid-template-columns:120px 1fr auto"><div><span class="tag purple">${categoryLabel(x.category)}</span></div><div><div class="record-primary" style="line-height:1.6">${esc(x.content)}</div><div class="record-secondary">${esc(String(x.created_at||'').slice(11,16))}</div></div><span class="tag green">기록됨</span></div>`).join(''):empty('note','오늘 운영 메모가 없습니다.')}</div></section>`;}
@@ -450,7 +537,7 @@ function renderWeekly(){
     <div class="panel"><div class="panel-head"><div><h2 class="panel-title">일별 작업 흐름</h2><div class="panel-meta">작업 차량 · 평균시간 · 지연</div></div></div><div class="record-list">${w.daily.length?w.daily.map(x=>`<div class="vehicle-item"><div><div class="plate">${esc(x.date)}</div><div class="vehicle-note">평균 작업 ${n(x.avg_work_minutes)}분</div></div><div class="vehicle-time"><div class="vehicle-min">${n(x.vehicle_count)}대</div><div class="vehicle-delay">지연 ${n(x.delay_count)}건</div></div></div>`).join(''):empty('report','최근 7일 차량 기록이 없습니다.')}</div></div></section>`;
 }
 
-function switchView(view){state.view=view;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));if(view==='weekly')loadWeekly();else render();window.scrollTo({top:0,behavior:'smooth'});}
+function switchView(view){state.view=view;if(view!=='vehicle-detail')state.vehicleDetail=null;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));if(view==='weekly')loadWeekly();else render();window.scrollTo({top:0,behavior:'smooth'});}
 document.querySelectorAll('[data-view]').forEach(b=>{if(!b.disabled)b.addEventListener('click',()=>switchView(b.dataset.view));});
 document.addEventListener('click',e=>{
   const conditionTab=e.target.closest('[data-condition-tab]');if(conditionTab){e.preventDefault();switchConditionTab(conditionTab.dataset.conditionTab);return;}
@@ -463,9 +550,13 @@ document.addEventListener('click',e=>{
   const target=e.target.closest('[data-action]');if(!target)return;e.preventDefault();
   const action=target.dataset.action;
   if(action==='reload')loadAll();
-  if(action==='open-form')openForm(target.dataset.form);
+  if(action==='open-form'){
+    openForm(target.dataset.form);
+    if(target.dataset.form==='vehicle'&&target.dataset.prefillPlate){const plate=el.form.elements.plate_number,model=el.form.elements.vehicle_model;if(plate)plate.value=target.dataset.prefillPlate;if(model)model.value=target.dataset.prefillModel||'';updateVehicleSizeDisplay(target.dataset.prefillSize||'',target.dataset.prefillSize?'차량 CRM':'');}
+  }
   if(action==='switch-view')switchView(target.dataset.viewTarget);
   if(action==='resolve-issue')resolveIssue(Number(target.dataset.id));
+  if(action==='open-vehicle-detail')openVehicleDetail(Number(target.dataset.id));
   if(action==='close-modal')closeModal();
   if(action==='toggle-details')toggleTouchDetails(target);
   if(action==='select-vehicle-suggestion')applyVehicleSuggestion(target);
@@ -474,6 +565,9 @@ document.addEventListener('click',e=>{
     const grid=el.form.querySelector('.manual-size-grid');if(grid){grid.hidden=!grid.hidden;target.textContent=grid.hidden?'직접 수정':'선택 닫기';}
   }
 });
+document.addEventListener('submit',e=>{const form=e.target.closest('[data-vehicle-crm-form]');if(!form)return;e.preventDefault();searchVehicleCrm(form.querySelector('[data-vehicle-crm-search]')?.value||'');});
+document.addEventListener('input',e=>{const input=e.target.closest('[data-vehicle-crm-search]');if(!input)return;clearTimeout(state.vehicleSearchTimer);state.vehicleSearchTimer=setTimeout(()=>searchVehicleCrm(input.value),180);});
+document.addEventListener('keydown',e=>{const row=e.target.closest('.clickable-record[data-action="open-vehicle-detail"]');if(row&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openVehicleDetail(Number(row.dataset.id));}});
 
 const VEHICLE_CONDITION_CATALOG={
   EXTERIOR:[['EXT_FRONT_BUMPER','앞 범퍼'],['EXT_HOOD','보닛'],['EXT_WINDSHIELD','전면 유리'],['EXT_ROOF','루프'],['EXT_LEFT_SIDE','좌측 차체'],['EXT_RIGHT_SIDE','우측 차체'],['EXT_REAR','후면·트렁크 외부'],['EXT_WHEELS','휠·타이어'],['EXT_DOOR_GAPS','문틈·몰딩'],['EXT_PAINT_DAMAGE','도장 손상']],
