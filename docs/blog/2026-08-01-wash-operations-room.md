@@ -93,7 +93,9 @@ vehicle_job_id
 - 현재 브리핑은 외부 LLM이 아니라 AFJ가 만드는 `기록 기반 초안`이다.
 - 직원 역할·교육, 소모품, 개선 과제, 실제 오너 리포트는 다음 단계다.
 - 실제 GPT를 연결할 때에는 근거 기록 ID와 사용자 승인 상태를 함께 저장해야 한다.
-- 저장소에는 이 작업 전부터 계약·보안 변경과 런타임 DB가 섞여 있으므로
-  체크포인트에는 운영 기록실 관련 파일과 hunks만 포함한다.
+- 저장소에는 이 작업 전부터 계약·보안·현장점검 변경이 같은 API/DB 파일에
+  누적돼 있었다. 재현 가능한 체크포인트를 위해 통합 검증을 통과한 선행 변경은
+  함께 묶고, 실행 중 생성된 `db/contracts.sqlite`만 명시적으로 제외했다.
 
-이 문서는 `feat(operations): add carwash operations room` 체크포인트에 포함한다.
+이 문서는 `feat(washcare): add secure operations management checkpoint`
+체크포인트에 포함한다.
