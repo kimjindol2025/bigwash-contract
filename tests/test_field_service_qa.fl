@@ -1,0 +1,223 @@
+;;; BigWash: field service backend hardening QA test
+
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+(load (str REPO-ROOT "/src/washcare.fl"))
+
+(if (= DB (str REPO-ROOT "/db/contracts.sqlite"))
+  (error "test_field_service_qa.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
+
+(db_exec DB "DELETE FROM service_visits WHERE ticket_id IN (SELECT id FROM service_tickets WHERE site_id IN (SELECT id FROM sites WHERE name LIKE 'QA%'))" [])
+(db_exec DB "DELETE FROM service_ticket_history WHERE ticket_id IN (SELECT id FROM service_tickets WHERE site_id IN (SELECT id FROM sites WHERE name LIKE 'QA%'))" [])
+(db_exec DB "DELETE FROM link_access_logs WHERE ticket_id IN (SELECT id FROM service_tickets WHERE site_id IN (SELECT id FROM sites WHERE name LIKE 'QA%'))" [])
+(db_exec DB "DELETE FROM service_tickets WHERE site_id IN (SELECT id FROM sites WHERE name LIKE 'QA%')" [])
+(db_exec DB "DELETE FROM equipment WHERE serial_number LIKE 'QA-%'" [])
+(db_exec DB "DELETE FROM sites WHERE name LIKE 'QA%'" [])
+(db_exec DB "DELETE FROM customers WHERE name LIKE 'QA%'" [])
+
+(defn safe-call [thunk]
+  (try
+    (let [value (thunk)]
+      (list true value))
+    (catch [e]
+      (list false (str e)))))
+
+(defn make-customer-site []
+  (let [customer (create-customer "QA field service owner" "010-9999-0001" "qa@example.com" "" "CUSTOMER" "서울시 테스터구")
+        customer-id (get customer :id)
+        site (create-site customer-id "QA 현장" "서울시 강남구" "02-5555-0000")
+        site-id (get site :id)]
+    [customer-id site-id]))
+
+(defn make-site-with-equipment [label]
+  (let [customer (create-customer (str "QA " label " owner") "010-9999-0002" "qa-eq@example.com" "" "CUSTOMER" "서울시 테스트구")
+        customer-id (get customer :id)
+        site (create-site customer-id (str "QA " label) "서울시 테스트구" "02-5555-0001")
+        site-id (get site :id)
+        equipment (create-equipment site-id nil "세차기" (str "세차기-" label) (str "QA-" label "-" customer-id) "2026-01-01" "2027-01-01")]
+    [site-id (get equipment :id)]))
+
+(defn can-transition? [from to]
+  (cond
+    [(= from TICKET-RECEIVED)
+     (or (= to TICKET-RECEIVED)
+         (= to TICKET-SCHEDULED)
+         (= to TICKET-IN-PROGRESS)
+         (= to TICKET-CANCELLED))]
+    [(= from TICKET-SCHEDULED)
+     (or (= to TICKET-SCHEDULED)
+         (= to TICKET-IN-PROGRESS)
+         (= to TICKET-CANCELLED))]
+    [(= from TICKET-IN-PROGRESS)
+     (or (= to TICKET-IN-PROGRESS)
+         (= to TICKET-COMPLETED)
+         (= to TICKET-CANCELLED))]
+    [(= from TICKET-COMPLETED) (= to TICKET-COMPLETED)]
+    [(= from TICKET-CANCELLED) (= to TICKET-CANCELLED)]
+    [true false]))
+
+(defn make-ticket-at-status [site-id status]
+  (let [base-ticket (create-service-ticket site-id nil (str "QA " status) "NORMAL" "PHONE" nil)
+        ticket-id (get base-ticket :id)]
+    (cond
+      [(= status TICKET-RECEIVED) ticket-id]
+      [(= status TICKET-SCHEDULED)
+       (do (update-ticket-status ticket-id TICKET-SCHEDULED) ticket-id)]
+      [(= status TICKET-IN-PROGRESS)
+       (do
+         (update-ticket-status ticket-id TICKET-SCHEDULED)
+         (update-ticket-status ticket-id TICKET-IN-PROGRESS)
+         ticket-id)]
+      [(= status TICKET-COMPLETED)
+       (do
+         (update-ticket-status ticket-id TICKET-SCHEDULED)
+         (update-ticket-status ticket-id TICKET-IN-PROGRESS)
+         (update-ticket-status ticket-id TICKET-COMPLETED)
+         ticket-id)]
+      [(= status TICKET-CANCELLED)
+       (do
+         (update-ticket-status ticket-id TICKET-SCHEDULED)
+         (update-ticket-status ticket-id TICKET-CANCELLED)
+         ticket-id)]
+      [true (error (str "invalid target status: " status))])))
+
+(defn ticket-row [ticket-id]
+  (first (db_query DB "SELECT status, closed_at FROM service_tickets WHERE id = ?" [ticket-id])))
+
+(defn ticket-history-count [ticket-id]
+  (get (first (db_query DB "SELECT COUNT(*) AS c FROM service_ticket_history WHERE ticket_id = ?" [ticket-id])) :c))
+
+(defn run-transition-matrix [site-id status-list]
+  (map
+    (fn [from-status]
+      (map
+        (fn [to-status]
+          (let [ticket-id (make-ticket-at-status site-id from-status)
+                before-row (ticket-row ticket-id)
+                before-closed (get before-row :closed_at)
+                before-history (ticket-history-count ticket-id)
+                result (safe-call (fn [] (update-ticket-status ticket-id to-status)))
+                after-row (ticket-row ticket-id)
+                after-closed (get after-row :closed_at)
+                after-history (ticket-history-count ticket-id)
+                should-succeed (can-transition? from-status to-status)
+                ok (first result)
+                value-or-error (second result)]
+            (if should-succeed
+              (let [res value-or-error]
+                (assert ok "예상 전이는 성공해야 함")
+                (assert (= (get res :success) true) "성공 응답은 success=true 이어야 함")
+                (assert (= (get after-row :status) to-status) "상태가 바뀌어야 함")
+                (if (= from-status to-status)
+                  (do
+                    (assert (= (get res :idempotent) true) "동일 상태 요청은 idempotent=true이어야 함")
+                    (assert (= before-history after-history) "동일 상태 요청은 history 중복 금지")
+                    (assert (= before-closed after-closed) "동일 상태 요청은 closed_at 중복 갱신 금지"))
+                  (if (or (= to-status TICKET-COMPLETED) (= to-status TICKET-CANCELLED))
+                    (assert (not (str-blank? after-closed)) "완료/취소 전이는 closed_at 필수")
+                    (assert (= before-closed after-closed) "비완료 상태 유지 시 closed_at 변경 금지"))))
+            (do
+              (assert (= ok false) "잘못된 전이는 실패해야 함")
+              (assert (regex_match (str value-or-error) "Invalid service ticket status transition|Invalid ticket status transition|Invalid status transition") "잘못된 전이는 400 도메인 메시지")
+              (assert (= (get before-row :status) (get after-row :status)) "실패 시 상태 유지")
+              (assert (= before-history after-history) "실패 시 history 중복 금지")
+              (assert (= before-closed after-closed) "실패 시 closed_at 중복 갱신 금지")))))
+        status-list))
+    status-list))
+
+(defn run-date-validations [site-id dt-valid dt-valid-offset dt-empty dt-leap dt-hour dt-format dt-garbage]
+  (let [scheduled-valid (safe-call (fn [] (create-service-ticket site-id nil "scheduled valid dt" "NORMAL" "PHONE" dt-valid)))
+        scheduled-valid-offset (safe-call (fn [] (create-service-ticket site-id nil "scheduled valid offset dt" "NORMAL" "PHONE" dt-valid-offset)))
+        scheduled-valid-empty (safe-call (fn [] (create-service-ticket site-id nil "scheduled empty dt" "NORMAL" "PHONE" dt-empty)))
+        scheduled-invalid-leap (safe-call (fn [] (create-service-ticket site-id nil "scheduled invalid dt" "NORMAL" "PHONE" dt-leap)))
+        scheduled-invalid-hour (safe-call (fn [] (create-service-ticket site-id nil "scheduled invalid hour" "NORMAL" "PHONE" dt-hour)))
+        scheduled-invalid-format (safe-call (fn [] (create-service-ticket site-id nil "scheduled invalid format" "NORMAL" "PHONE" dt-format)))
+        scheduled-invalid-garbage (safe-call (fn [] (create-service-ticket site-id nil "scheduled invalid garbage" "NORMAL" "PHONE" dt-garbage)))
+        inprogress-ticket-id (make-ticket-at-status site-id TICKET-IN-PROGRESS)
+        visit-valid (safe-call (fn [] (add-service-visit inprogress-ticket-id "기사" dt-valid "진단" "조치" nil 1000 0 nil)))
+        visit-empty (safe-call (fn [] (add-service-visit inprogress-ticket-id "기사" dt-empty "진단" "조치" nil 1000 0 nil)))
+        visit-hour (safe-call (fn [] (add-service-visit inprogress-ticket-id "기사" dt-hour "진단" "조치" nil 1000 0 nil)))
+        visit-format (safe-call (fn [] (add-service-visit inprogress-ticket-id "기사" dt-format "진단" "조치" nil 1000 0 nil)))
+        visit-garbage (safe-call (fn [] (add-service-visit inprogress-ticket-id "기사" dt-garbage "진단" "조치" nil 1000 0 nil)))
+    ]
+    (assert (= (first scheduled-valid) true) "scheduled_at 유효형식은 생성 가능")
+    (assert (= (first scheduled-valid-offset) true) "scheduled_at 오프셋은 생성 가능")
+    (assert (= (first scheduled-valid-empty) true) "scheduled_at 빈 값은 허용")
+    (assert (= (first scheduled-invalid-leap) false) "실존하지 않는 scheduled_at 거부")
+    (assert (= (first scheduled-invalid-hour) false) "시간 범위 벗어난 scheduled_at 거부")
+    (assert (= (first scheduled-invalid-format) false) "형식 오류 scheduled_at 거부")
+    (assert (= (first scheduled-invalid-garbage) false) "임의 문자열 scheduled_at 거부")
+    (assert (= (first visit-valid) true) "valid visited_at 방문 추가 가능")
+    (assert (= (first visit-empty) true) "빈 visited_at은 허용")
+    (assert (= (first visit-hour) false) "시간 범위 벗어난 visited_at 거부")
+    (assert (= (first visit-format) false) "형식 오류 visited_at 거부")
+    (assert (= (first visit-garbage) false) "임의 문자열 visited_at 거부")))
+
+(defn run-visit-gate [site-id status-list]
+  (map
+    (fn [status]
+      (let [ticket-id (make-ticket-at-status site-id status)
+            result (safe-call (fn []
+                               (add-service-visit ticket-id "기사" "2026-07-30T10:00:00Z" "정기점검" "부품교체" nil 5000 2000 nil)))
+            ok (first result)
+            err (second result)]
+        (if (or (= status TICKET-SCHEDULED) (= status TICKET-IN-PROGRESS))
+          (assert (= ok true) "SCHEDULED/IN_PROGRESS는 방문 추가 허용")
+          (do
+            (assert (= ok false) "그 외 상태는 방문 추가 불가")
+            (assert (regex_match (str err) "Cannot add visit unless ticket is SCHEDULED or IN_PROGRESS") "방문 게이트 메시지 유지")))))
+    status-list))
+
+(defn run-ownership-check [customer-id]
+  (let [site-b (create-site customer-id "QA 장비 소유 mismatch" "서울시 테스트구" "02-5555-0002")
+        site-b-id (get site-b :id)
+        site-a (make-site-with-equipment "장비 이탈검사")
+        site-a-id (get site-a 0)
+        bad-eq (create-equipment site-b-id nil "펌프" "EQ-BAD" "QA-BAD" "2026-01-01" "2026-12-31")
+        mismatch (safe-call (fn [] (create-service-ticket site-a-id (get bad-eq :id) "소유권오류" "NORMAL" "PHONE" nil)))
+        good-eq (create-equipment site-a-id nil "펌프" "EQ-GOOD" "QA-GOOD" "2026-01-01" "2026-12-31")
+        good (safe-call (fn [] (create-service-ticket site-a-id (get good-eq :id) "소유권정상" "NORMAL" "PHONE" nil)))]
+    (assert (= (first mismatch) false) "site 불일치 장비로 생성은 거부")
+    (assert (regex_match (str (second mismatch)) "equipment_id must belong to site_id") "소유권 불일치 메시지 일치")
+    (assert (= (first good) true) "site 일치 장비로 생성 허용")))
+
+(defn run-error-harden [site-id dt-valid]
+  (let [missing-ticket-id 999999
+        missing-status (safe-call (fn [] (update-ticket-status missing-ticket-id TICKET-COMPLETED)))
+        missing-visit (safe-call (fn []
+                                  (add-service-visit missing-ticket-id "기사" "2026-07-30T10:00:00Z" "진단" "조치" nil 1000 0 nil)))
+        bad-transition-ticket (safe-call (fn []
+                                          (let [base-id (get (create-service-ticket site-id nil "bad transition" "NORMAL" "PHONE" dt-valid) :id)]
+                                            (update-ticket-status base-id TICKET-CANCELLED)
+                                            (update-ticket-status base-id TICKET-SCHEDULED))))]
+    (assert (= (first missing-status) false) "미존재 티켓 상태 변경 실패")
+    (assert (regex_match (str (second missing-status)) "Service ticket not found") "미존재 티켓 메시지")
+    (assert (= (first missing-visit) false) "미존재 티켓 방문 추가 실패")
+    (assert (regex_match (str (second missing-visit)) "Service ticket not found") "미존재 티켓 방문 메시지")
+  (assert (= (first bad-transition-ticket) false) "잘못된 상태전이 실패")
+  (assert (regex_match (str (second bad-transition-ticket)) "Invalid service ticket status transition") "잘못된 전이 메시지")
+  (assert (not (= DB (str REPO-ROOT "/db/contracts.sqlite")))))
+)
+
+(let [fixture (make-customer-site)
+      customer-id (get fixture 0)
+      site-id (get fixture 1)
+      status-list [TICKET-RECEIVED TICKET-SCHEDULED TICKET-IN-PROGRESS TICKET-COMPLETED TICKET-CANCELLED]
+      dt-valid "2024-02-29T09:30:00Z"
+      dt-valid-offset "2024-02-29T09:30:00+09:00"
+      dt-empty nil
+      dt-leap "2023-02-29T09:30:00Z"
+      dt-hour "2026-07-01T24:00:00Z"
+      dt-format "2026-07-01 09:30:00"
+      dt-garbage "오늘만든문자열"]
+
+  (run-transition-matrix site-id status-list)
+  (run-date-validations site-id dt-valid dt-valid-offset dt-empty dt-leap dt-hour dt-format dt-garbage)
+  (run-visit-gate site-id status-list)
+  (run-ownership-check customer-id)
+  (run-error-harden site-id dt-valid)
+
+  (assert (not (= DB (str REPO-ROOT "/db/contracts.sqlite"))) "운영 DB 직접 사용 금지") )
+
+(println "✓ Field service QA hardening tests passed")

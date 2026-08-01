@@ -1,0 +1,120 @@
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+(load (str REPO-ROOT "/src/washcare.fl"))
+
+;; 계약 테스트는 다수 테이블을 쓰고 상태를 바꾸므로 운영 DB에서 절대 실행하지 않는다.
+(if (= DB (str REPO-ROOT "/db/contracts.sqlite"))
+  (error "test_contract_management.fl refuses to use production db/contracts.sqlite"))
+
+;; ---- 0. 마이그레이션 멱등 ----
+(init-phase1-db)
+(init-phase1-db)
+
+(let [customer-a (create-customer "계약관리 테스트 고객A" "010-7000-0001" "" "" nil nil)
+      customer-b (create-customer "계약관리 테스트 고객B" "010-7000-0002" "" "" nil nil)
+      customer-a-id (get customer-a :id)
+      customer-b-id (get customer-b :id)
+      site-a (create-site customer-a-id "계약관리 현장A" "서울" "02-7000-0001")
+      site-b (create-site customer-b-id "계약관리 현장B" "부산" "051-7000-0002")
+      site-a-id (get site-a :id)
+      site-b-id (get site-b :id)
+      items [{:description "장비 설치" :quantity 2 :unit_price 100000}
+             {:description "시운전" :quantity 1 :unit_price 50000}]
+      today (careplan-today)
+      created (create-contract customer-a-id site-a-id "세차장 장비 설치"
+                "2026-07-22" "2026-08-01" "2026-08-03" "2027-08-03"
+                "장비 설치와 시운전" "계약 메모" items)
+      contract (get created :contract)
+      contract-id (get contract :id)]
+
+  ;; ---- 1. 생성·서버 계산 합계·상세 ----
+  (assert (= (get contract :status) "DRAFT") "신규 계약은 DRAFT여야 한다")
+  (assert (= (get contract :amount) 250000) "금액은 항목 합계로 서버 계산해야 한다")
+  (assert (= (length (get created :items)) 2) "계약 항목 2개가 저장돼야 한다")
+  (assert (= (get contract :customer_name) "계약관리 테스트 고객A") "상세에 고객명이 join돼야 한다")
+  (assert (= (get contract :site_name) "계약관리 현장A") "상세에 현장명이 join돼야 한다")
+
+  ;; ---- 1-1. 계약일 기본값 ----
+  (let [auto (get (create-contract customer-a-id site-a-id "계약일 생략" nil "2026-08-01" "2026-08-03" nil nil nil items) :contract)
+        auto-blank (get (create-contract customer-a-id site-a-id "계약일 공백" "" "2026-08-01" "2026-08-03" nil nil nil items) :contract)]
+    (assert (= (get auto :contract_date) today) "contract_date 생략 시 서울 오늘 날짜가 기본값이야 함")
+    (assert (= (get auto-blank :contract_date) today) "contract_date 빈 문자열도 서울 오늘 날짜가 기본값이야 함"))
+
+  ;; ---- 2. 목록 필터·검색·고객 격리·SQL 유사 입력 ----
+  (assert (> (length (list-contracts "DRAFT" nil nil nil)) 0) "DRAFT 필터가 동작해야 한다")
+  (assert (= (length (list-contracts nil customer-a-id nil nil)) 3) "고객 A 계약만 조회돼야 한다")
+  (assert (= (length (list-contracts nil customer-b-id nil nil)) 0) "고객 B에 A 계약이 섞이면 안 된다")
+  (assert (= (length (list-contracts nil nil site-a-id "세차장 장비")) 1) "현장+검색 필터가 동작해야 한다")
+  (assert (= (length (list-contracts nil nil nil "%' OR 1=1 --")) 0) "SQL 유사 검색어로 목록이 노출되면 안 된다")
+
+  ;; ---- 3. 소유권·날짜·항목 검증과 사전검증 롤백 ----
+  (let [count-before (get (first (db_query DB "SELECT COUNT(*) AS count FROM contracts" [])) :count)]
+    (let [rejected (try (do (create-contract customer-a-id site-b-id "잘못된 현장" "2026-07-22" nil nil nil nil nil items) false) (catch [e] true))]
+      (assert (= rejected true) "다른 고객 현장으로 계약을 만들 수 없어야 한다"))
+    (let [rejected (try (do (create-contract customer-a-id site-a-id "잘못된 날짜" "2026-02-29" nil nil nil nil nil items) false) (catch [e] true))]
+      (assert (= rejected true) "실재하지 않는 계약일을 거부해야 한다"))
+    (let [rejected (try (do (create-contract customer-a-id site-a-id "역전 일정" "2026-07-22" "2026-08-04" "2026-08-03" nil nil nil items) false) (catch [e] true))]
+      (assert (= rejected true) "작업 종료가 시작보다 빠르면 거부해야 한다"))
+    (let [rejected (try (do (create-contract customer-a-id site-a-id "빈 항목" "2026-07-22" nil nil nil nil nil []) false) (catch [e] true))]
+      (assert (= rejected true) "빈 항목을 거부해야 한다"))
+    (let [rejected (try
+                     (do
+                       (create-contract customer-a-id site-a-id "소수 단가" "2026-07-22" nil nil nil nil nil
+                         [{:description "소수" :quantity 1 :unit_price 1.5}])
+                       false)
+                     (catch [e] true))]
+      (assert (= rejected true) "원화 단가는 정수만 허용해야 한다"))
+    (let [count-after (get (first (db_query DB "SELECT COUNT(*) AS count FROM contracts" [])) :count)]
+      (assert (= count-before count-after) "실패한 생성은 계약 행을 남기면 안 된다")))
+
+  ;; ---- 4. DRAFT 전체교체 수정 ----
+  (let [updated (update-contract contract-id site-a-id "수정된 설치 계약"
+                  "2026-07-23" "2026-08-02" "2026-08-04" "2027-08-04"
+                  "수정 범위" "수정 메모"
+                  [{:description "통합 설치" :quantity 1 :unit_price 300000}])]
+    (assert (= (get (get updated :contract) :amount) 300000) "수정 후 합계를 다시 계산해야 한다")
+    (assert (= (length (get updated :items)) 1) "항목 전체교체가 원자적으로 반영돼야 한다"))
+
+  ;; ---- 5. 상태전이·서명·이력·terminal ----
+  (let [pending (update-contract-status contract-id "PENDING" nil)
+        pending-db-row (first (db_query DB "SELECT status FROM contracts WHERE id = ?" [contract-id]))]
+    (assert (= (get pending-db-row :status) "PENDING") "DRAFT→PENDING 전이가 DB에 반영돼야 한다")
+    (assert (= (get (get pending :contract) :status) "PENDING") "DRAFT→PENDING 전이가 저장돼야 한다"))
+  (let [rejected (try (do (update-contract contract-id site-a-id "승인대기 수정" "2026-07-23" nil nil nil nil nil items) false) (catch [e] true))]
+    (assert (= rejected true) "DRAFT가 아니면 내용을 수정할 수 없어야 한다"))
+  (let [rejected (try (do (update-contract-status contract-id "COMPLETED" nil) false) (catch [e] true))]
+    (assert (= rejected true) "PENDING에서 COMPLETED로 건너뛰면 안 된다"))
+  (let [approved (update-contract-status contract-id "APPROVED" nil)]
+    (assert (not (nil? (get (get approved :contract) :signed_at))) "APPROVED 시 signed_at이 자동 기록돼야 한다"))
+  (let [completed (update-contract-status contract-id "COMPLETED" nil)]
+    (assert (= (length (get completed :history)) 3) "정상 상태전이 3건이 history에 남아야 한다"))
+  (let [rejected (try (do (update-contract-status contract-id "CANCELLED" nil) false) (catch [e] true))]
+    (assert (= rejected true) "COMPLETED는 terminal이어야 한다"))
+
+  ;; ---- 6. 취소 terminal ----
+  (let [cancel-target (create-contract customer-a-id site-a-id "취소 계약" "2026-07-22" nil nil nil nil nil
+                        [{:description "취소 대상" :quantity 1 :unit_price 1}])
+        cancel-id (get (get cancel-target :contract) :id)]
+    (update-contract-status cancel-id "CANCELLED" nil)
+    (let [rejected (try (do (update-contract-status cancel-id "PENDING" nil) false) (catch [e] true))]
+      (assert (= rejected true) "CANCELLED는 terminal이어야 한다")))
+
+  ;; ---- 7. 승인 견적 전환: 원자적 contract+item+quote 연결 ----
+  (let [quote (create-quote customer-a-id "견적 전환 계약" 99000 "2026-12-31" "견적 메모")
+        quote-id (get quote :id)]
+    (db_exec DB "UPDATE quotes SET status = 'APPROVED' WHERE id = ?" [quote-id])
+    (let [converted (convert-quote-to-contract quote-id)
+          converted-id (get converted :contract_id)
+          converted-detail (get-contract-detail converted-id)]
+      (assert (= (get converted :status) "CONVERTED") "승인 견적은 CONVERTED가 돼야 한다")
+      (assert (= (get (get converted-detail :contract) :quote_id) quote-id) "계약에 quote_id가 연결돼야 한다")
+      (assert (= (length (get converted-detail :items)) 1) "견적 전환도 최소 1개 항목을 만들어야 한다")
+      (assert (= (get (get converted-detail :contract) :amount) 99000) "견적 금액과 계약 항목 합계가 같아야 한다"))
+    (let [rejected (try (do (convert-quote-to-contract quote-id) false) (catch [e] true))]
+      (assert (= rejected true) "동일 견적을 두 번 전환할 수 없어야 한다")))
+
+  ;; ---- 8. not found ----
+  (assert (nil? (get-contract-detail 99999999)) "존재하지 않는 계약 상세은 nil이어야 한다"))
+
+(println "✓ Contract management tests passed")

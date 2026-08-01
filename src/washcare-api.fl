@@ -5,45 +5,139 @@
   (let [override (env-get "BIGWASH_REPO_ROOT")]
     (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
 
-(load (str REPO-ROOT "/src/washcare.fl"))
+(load (str REPO-ROOT "/src/operations.fl"))
 
 (define CARE-PORT
   (let [override (env-get "BIGWASH_CARE_PORT")]
     (if (or (nil? override) (str-blank? override)) 40101 (int override))))
 
 (define ADMIN-HTML (file_read (str REPO-ROOT "/src/washcare-admin.html")))
+(define OPERATIONS-HTML (file_read (str REPO-ROOT "/src/operations-admin.html")))
 
-;; BIGWASH_INTERNAL_API_KEY 미설정 시 내부 엔드포인트가 전부 무인증으로 열린다
-;; (docs/04-washcare-api.md — 로그인 시스템 전 임시 운영 모드, 2026-07-19 명시적 결정).
-;; 그 결정 자체는 바꾸지 않되, 운영자가 인지하지 못한 채 넘어가는 사고를 막기 위해
-;; 기동 시점에 눈에 띄는 경고를 남긴다.
-(if (or (nil? (env-get "BIGWASH_INTERNAL_API_KEY")) (str-blank? (env-get "BIGWASH_INTERNAL_API_KEY")))
-  (println "⚠️  BIGWASH_INTERNAL_API_KEY 미설정 — 모든 /care 관리자 API가 무인증으로 열립니다 (임시 운영 모드)"))
+;; ---- 운영 보안 게이트(P0/P1, 2026-07-22) ----
+;;
+;; 과거(2026-07-19) 결정은 "BIGWASH_INTERNAL_API_KEY 미설정 시 전체 무인증
+;; 허용"(fail-open)이었다. 이 결정은 여기서 뒤집는다 — 이제 기본값은
+;; **fail-closed**다. BIGWASH_INTERNAL_API_KEY가 비어 있으면 내부 API는
+;; 무조건 거부되고, 오직 BIGWASH_ALLOW_INSECURE_DEV=1을 명시적으로 설정한
+;; 로컬 개발 모드에서만 과거의 공개 동작(키 없이도 통과)을 허용한다. 공개
+;; 조회 엔드포인트(/care/status/:token, /care/site-status/:token)는 원래부터
+;; 별도 보안 모델(토큰 해시, rate limit, no-store)로 동작하고 이 게이트와
+;; 무관하다 — 이번 변경으로 손대지 않는다.
+(defn insecure-dev-mode? []
+  (= "1" (str (env-get "BIGWASH_ALLOW_INSECURE_DEV"))))
+
+(if (insecure-dev-mode?)
+  (println "⚠️  BIGWASH_ALLOW_INSECURE_DEV=1 — 로컬 개발 전용 무인증 모드입니다. 운영 배포에 이 값을 설정하지 마세요.")
+  (if (or (nil? (env-get "BIGWASH_INTERNAL_API_KEY")) (str-blank? (env-get "BIGWASH_INTERNAL_API_KEY")))
+    (println "🔒 BIGWASH_INTERNAL_API_KEY 미설정 — 내부 /care API는 기본 정책(fail-closed)에 따라 전부 401을 반환합니다. 로컬 개발 중이라면 BIGWASH_ALLOW_INSECURE_DEV=1을 명시하세요.")))
+
+;; 순수 정책 함수 — env/req I/O 없이 세 값(설정된 키, 요청이 보낸 값, 로컬
+;; 개발 모드 여부)만으로 허용 여부를 결정한다. tests/test_security_gate.fl이
+;; 서버를 띄우거나 진짜 요청 객체를 만들지 않고도 이 정책을 직접 단정할 수
+;; 있도록 internal-authorized?/call-webhook-authorized?에서 분리했다.
+(defn auth-policy [expected supplied insecure-dev]
+  (if (or (nil? expected) (str-blank? expected))
+    ;; 키 미설정: 기본은 거부(fail-closed). 명시적 로컬 개발 모드일 때만 통과.
+    insecure-dev
+    ;; 단순 문자열 비교 대신 해시 비교 — 원문 길이·바이트 단위 조기 불일치로
+    ;; 새는 타이밍 정보를 줄인다.
+    (= (sha256 expected) (sha256 (if (nil? supplied) "" supplied)))))
 
 (defn internal-authorized? [req]
-  (let [expected (env-get "BIGWASH_INTERNAL_API_KEY")
-        supplied (server_req_header req "x-api-key")]
-    (if (or (nil? expected) (str-blank? expected))
-      true
-      ;; 단순 문자열 비교 대신 해시 비교 — 원문 길이·바이트 단위 조기 불일치로
-      ;; 새는 타이밍 정보를 줄인다.
-      (= (sha256 expected) (sha256 (if (nil? supplied) "" supplied))))))
+  (auth-policy (env-get "BIGWASH_INTERNAL_API_KEY") (server_req_header req "x-api-key") (insecure-dev-mode?)))
 
 (defn unauthorized []
-  (server_status 401 {:ok false :error "Unauthorized"}))
+  (server_header
+    (server_status 401 {:ok false :error "Unauthorized"})
+    "Cache-Control" "no-store"))
 
 ;; mobserve 같은 자동화 앱은 커스텀 헤더를 못 보낸다(소스 확인함 —
 ;; OkHttp로 header 없이 순수 JSON POST만 함) — 그래서 이 엔드포인트만
-;; 쿼리파라미터(?key=)로 같은 BIGWASH_INTERNAL_API_KEY를 받는다.
+;; 쿼리파라미터(?key=)로 같은 BIGWASH_INTERNAL_API_KEY를 받는다. 인증 정책은
+;; internal-authorized?와 동일하게 fail-closed로 맞춘다.
 (defn call-webhook-authorized? [req]
-  (let [expected (env-get "BIGWASH_INTERNAL_API_KEY")
-        supplied (server_req_query req "key")]
-    (if (or (nil? expected) (str-blank? expected))
-      true
-      (= (sha256 expected) (sha256 (if (nil? supplied) "" supplied))))))
+  (auth-policy (env-get "BIGWASH_INTERNAL_API_KEY") (server_req_query req "key") (insecure-dev-mode?)))
+
+;; GET /care/admin 접근 경계 — Admin UI는 그 자체로 고객 이름·연락처·계약
+;; 정보를 렌더링하는 HTML이라 데이터 API 키와는 별도로 HTTP Basic 경계를
+;; 요구한다. BIGWASH_ADMIN_BASIC_AUTH에는 완전한 Authorization 헤더 값
+;; ("Basic base64(user:pass)")을 그대로 넣는다 — 아이디/비밀번호를 서버가
+;; 분해·재조합하지 않고 헤더 문자열 단위로 해시 비교만 한다. 미설정 시
+;; 무조건 거부(fail-closed)한다. BIGWASH_ALLOW_INSECURE_DEV=1은 데이터 API
+;; 개발 편의만 풀며 Admin HTML 경계는 풀지 않는다. admin-auth-policy의 세 번째
+;; 인자는 auth-policy와 동일한 테스트 인터페이스를 유지하기 위해 받지만 보안
+;; 결정에는 사용하지 않는다.
+(defn admin-auth-policy [expected supplied insecure-dev]
+  (if (or (nil? expected) (str-blank? expected))
+    false
+    (= (sha256 expected) (sha256 (if (nil? supplied) "" supplied)))))
+
+(defn admin-authorized? [req]
+  (admin-auth-policy (env-get "BIGWASH_ADMIN_BASIC_AUTH") (server_req_header req "Authorization") (insecure-dev-mode?)))
+
+;; 운영 기록실은 Admin Basic을 통과한 브라우저가 같은 출처의 JSON API를
+;; 바로 사용할 수 있어야 한다. 자동화·내부 연동의 x-api-key도 계속 허용한다.
+(defn wash-ops-authorized? [req]
+  (or (internal-authorized? req) (admin-authorized? req)))
+
+(defn admin-unauthorized []
+  (server_header
+    (server_header
+      (server_status 401 {:ok false :error "Unauthorized"})
+      "WWW-Authenticate" "Basic realm=\"BigWash Admin\"")
+    "Cache-Control" "no-store"))
 
 (defn no-store [response]
   (server_header response "Cache-Control" "no-store"))
+
+;; ---- 캐치된 예외를 안전하게 클라이언트에 노출하는 공통 헬퍼 ----
+;;
+;; FreeLang의 (str e)는 message·stack("... at line N, col M")·전체 호출스택
+;; (__flCallStack, 파일 절대경로 포함)까지 JSON으로 직렬화한다 — 그대로
+;; 클라이언트에 내려보내면 내부 구현이 노출된다(과거 docs/04-washcare-api.md
+;; "알려진 개선 후보"에 기록된 문제). 전체 예외는 여기서 서버 로그(stdout,
+;; pm2 logs로 수집)에만 남기고, 클라이언트에는 e의 :message 필드(실측 결과
+;; 도메인 검증 오류·SQLite 제약 위반·타입 오류 전부 경로/줄번호/스택을
+;; 포함하지 않음)를 방어적으로 한 번 더 새니타이즈해 돌려준다. 기존
+;; "Site not found" 류의 명시적 400/404 도메인 계약 문구는 이 경로로 그대로
+;; 보존된다.
+(defn log-caught-exception [context e]
+  (println (str "[safe-error] " context ": " (str e))))
+
+(defn sanitize-error-text [raw-text]
+  (let [as-str (str raw-text)
+        no-paths (regex_replace as-str "(/[A-Za-z0-9_.\\-]+){2,}" "[REDACTED]")
+        no-loc (regex_replace no-paths "\\(at line [0-9]+, col [0-9]+\\)" "")
+        no-brackets (regex_replace no-loc "\\[[a-z][a-z0-9_\\-]*\\]\\s*" "")
+        trimmed (str_trim no-brackets)
+        capped (if (> (length trimmed) 300) (str (substring trimmed 0 300) "...") trimmed)]
+    (if (or (str-blank? capped)
+            (= capped "null")
+            (= capped "nil")
+            (regex_match capped "db_exec")
+            (regex_match capped "SQLITE")
+            (regex_match capped "constraint failed")
+            (regex_match capped "__flCallStack")
+            (regex_match capped "SELECT ")
+            (regex_match capped "INSERT ")
+            (regex_match capped "UPDATE ")
+            (regex_match capped "DELETE "))
+      "Request failed"
+      capped)))
+
+(defn safe-error-response [context e]
+  (do
+    (log-caught-exception context e)
+    (server_status 400 {:ok false :error (sanitize-error-text (get e :message))})))
+
+;; 위와 동일하게 서버 로그는 남기되, 클라이언트에는 항상 고정된 문구만
+;; 돌려준다(다단계 오케스트레이션이라 원문 메시지가 불안정하거나, days/
+;; warranty_days/as_of처럼 파라미터 파싱 실패가 뻔한 경우 — 기존 계약 그대로).
+(defn safe-error-response-fixed [context e fixed-message]
+  (do
+    (log-caught-exception context e)
+    (server_status 400 {:ok false :error fixed-message})))
 
 (defn request-ip [req]
   (let [real-ip (server_req_header req "x-real-ip")]
@@ -74,7 +168,7 @@
                               (get body :customer_type)
                               (get body :address))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-customer" e)))
     (unauthorized)))
 
 (defn handle-create-site [req]
@@ -82,19 +176,45 @@
     (try
       (let [body (server_req_json req)]
         (server_json {:ok true
-                      :data (create-site
+                      :data (create-site-with-stage
                               (get body :customer_id)
                               (get body :name)
                               (get body :address)
-                              (get body :contact_phone))}))
+                              (get body :contact_phone)
+                              (get body :site_stage))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-site" e)))
     (unauthorized)))
 
 (defn handle-list-customer-sites [req]
   (if (internal-authorized? req)
     (server_json {:ok true
                   :data (list-customer-sites (server_req_query req "customer_id"))})
+    (unauthorized)))
+
+(defn handle-create-site-checklist [req]
+  (if (internal-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-site-checklist
+                              (parse-int-param (get body :site_id) "site_id")
+                              (get body :inspected_on)
+                              (get body :inspector)
+                              (get body :notes)
+                              (get body :items))}))
+      (catch [e]
+        (safe-error-response "handle-create-site-checklist" e)))
+    (unauthorized)))
+
+(defn handle-list-site-checklists [req]
+  (if (internal-authorized? req)
+    (try
+      (server_json {:ok true
+                    :data (list-site-checklists
+                            (parse-int-param (server_req_query req "site_id") "site_id"))})
+      (catch [e]
+        (safe-error-response "handle-list-site-checklists" e)))
     (unauthorized)))
 
 (defn handle-create-equipment [req]
@@ -111,7 +231,7 @@
                               (get body :installed_at)
                               (get body :warranty_ends_at))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-equipment" e)))
     (unauthorized)))
 
 (defn handle-list-customer-equipment [req]
@@ -133,24 +253,26 @@
                               (get body :source)
                               (get body :scheduled_at))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-ticket" e)))
     (unauthorized)))
 
 (defn handle-update-ticket-status [req]
   (if (internal-authorized? req)
     (try
-      (let [ticket-id (server_req_param req "id")
+      (let [ticket-id (parse-int-param (server_req_param req "id") "id")
             body (server_req_json req)]
         (server_json {:ok true
                       :data (update-ticket-status ticket-id (get body :status))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (if (= (str (get e :message)) "Service ticket not found")
+          (server_status 404 {:ok false :error "Not found"})
+          (safe-error-response "handle-update-ticket-status" e))))
     (unauthorized)))
 
 (defn handle-add-visit [req]
   (if (internal-authorized? req)
     (try
-      (let [ticket-id (server_req_param req "id")
+      (let [ticket-id (parse-int-param (server_req_param req "id") "id")
             body (server_req_json req)]
         (server_json {:ok true
                       :data (add-service-visit
@@ -164,7 +286,9 @@
                               (get body :parts_cost)
                               (get body :next_inspection_at))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (if (= (str (get e :message)) "Service ticket not found")
+          (server_status 404 {:ok false :error "Not found"})
+          (safe-error-response "handle-add-visit" e))))
     (unauthorized)))
 
 (defn handle-revoke-link [req]
@@ -172,7 +296,7 @@
     (try
       (server_json {:ok (revoke-public-link (server_req_param req "id"))})
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-revoke-link" e)))
     (unauthorized)))
 
 (defn handle-reissue-link [req]
@@ -181,7 +305,7 @@
       (server_json {:ok true
                     :data (reissue-public-link (server_req_param req "id"))})
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-reissue-link" e)))
     (unauthorized)))
 
 (defn handle-public-ticket [req]
@@ -237,7 +361,7 @@
           (let [customer (lookup-customer-by-phone phone)]
             (server_json {:ok true :found (not (nil? customer)) :data customer}))))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-incoming-call" e)))
     (unauthorized)))
 
 ;; 자동 통화·문자 로거(안드로이드 mobserve 등) webhook 수신.
@@ -262,7 +386,7 @@
           (let [result (record-call-event participant event-type direction content duration occurred-at-ms)]
             (server_json {:ok true :data result}))))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-call-event-webhook" e)))
     (unauthorized)))
 
 ;; ---- 고객 상세·상담 관리 ----
@@ -287,7 +411,7 @@
                               (get body :next_action)
                               (get body :next_contact_at))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-consultation" e)))
     (unauthorized)))
 
 (defn handle-list-consultations [req]
@@ -334,7 +458,7 @@
                               (get body :status)
                               (get body :memo))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-contact" e)))
     (unauthorized)))
 
 (defn handle-list-contacts [req]
@@ -355,7 +479,7 @@
                               (get body :priority)
                               (get body :memo))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-task" e)))
     (unauthorized)))
 
 (defn handle-list-tasks [req]
@@ -383,7 +507,7 @@
                               (get body :customer_reaction)
                               (get body :next_followup_at))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-followup" e)))
     (unauthorized)))
 
 (defn handle-list-followups [req]
@@ -398,10 +522,137 @@
     (unauthorized)))
 
 (defn handle-admin-page [req]
-  (server_html ADMIN-HTML))
+  (if (admin-authorized? req)
+    (server_html ADMIN-HTML)
+    (admin-unauthorized)))
 
 (defn handle-root [req]
-  (server_redirect "/care/admin"))
+  (if (admin-authorized? req)
+    (server_redirect "/care/admin")
+    (admin-unauthorized)))
+
+;; ---- 세차장 점주용 운영 기록실 ----
+(defn handle-operations-page [req]
+  (if (admin-authorized? req)
+    (server_html OPERATIONS-HTML)
+    (admin-unauthorized)))
+
+(defn handle-wash-ops-sites [req]
+  (if (wash-ops-authorized? req)
+    (server_json {:ok true :data (list-wash-ops-sites)})
+    (unauthorized)))
+
+(defn handle-create-wash-ops-site [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true :data (create-wash-ops-site
+          (get body :name) (get body :address) (get body :owner_name) (get body :phone))}))
+      (catch [e] (safe-error-response "handle-create-wash-ops-site" e)))
+    (unauthorized)))
+
+(defn handle-activate-wash-ops-site [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (server_json {:ok true :data (activate-wash-ops-site
+        (parse-int-param (server_req_param req "id") "id"))})
+      (catch [e] (safe-error-response "handle-activate-wash-ops-site" e)))
+    (unauthorized)))
+
+(defn handle-wash-ops-equipment [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (server_json {:ok true :data (list-wash-ops-equipment
+        (parse-int-param (server_req_query req "site_id") "site_id"))})
+      (catch [e] (safe-error-response "handle-wash-ops-equipment" e)))
+    (unauthorized)))
+
+(defn handle-save-wash-ops-day [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true :data (save-wash-ops-day
+          (parse-int-param (get body :site_id) "site_id") (get body :operation_date)
+          (get body :opened_at) (get body :closed_at) (get body :reserved_count)
+          (get body :staff_count) (get body :weather) (get body :busiest_period)
+          (get body :status) (get body :owner_work_minutes) (get body :owner_memo))}))
+      (catch [e] (safe-error-response "handle-save-wash-ops-day" e)))
+    (unauthorized)))
+
+(defn handle-create-wash-ops-vehicle [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (let [body (server_req_json req)
+            payload (assoc body :site_id (parse-int-param (get body :site_id) "site_id"))]
+        (server_json {:ok true :data (create-wash-ops-vehicle-bundle payload)}))
+      (catch [e] (safe-error-response "handle-create-wash-ops-vehicle" e)))
+    (unauthorized)))
+
+(defn handle-create-wash-ops-rework [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (let [body (server_req_json req)
+            vehicle-id (get body :vehicle_job_id)
+            resolved-vehicle-id (if (nil? vehicle-id) nil vehicle-id)]
+        (server_json {:ok true :data (create-wash-ops-rework
+          (parse-int-param (get body :site_id) "site_id")
+          resolved-vehicle-id
+          (get body :occurred_date) (get body :plate_number) (get body :complaint_area)
+          (get body :customer_request) (get body :initial_worker) (get body :inspector)
+          (get body :free_minutes) (get body :cause) (get body :result)
+          (get body :prevention_action))}))
+      (catch [e] (safe-error-response "handle-create-wash-ops-rework" e)))
+    (unauthorized)))
+
+(defn handle-create-wash-ops-issue [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (let [body (server_req_json req)
+            equipment-id (get body :equipment_id)
+            resolved-equipment-id (if (nil? equipment-id) nil equipment-id)]
+        (server_json {:ok true :data (create-wash-ops-equipment-issue
+          (parse-int-param (get body :site_id) "site_id")
+          resolved-equipment-id
+          (get body :occurred_date) (get body :issue_title) (get body :state)
+          (get body :downtime_minutes) (get body :action_taken) (get body :note))}))
+      (catch [e] (safe-error-response "handle-create-wash-ops-issue" e)))
+    (unauthorized)))
+
+(defn handle-resolve-wash-ops-issue [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (server_json {:ok true :data (resolve-wash-ops-equipment-issue
+        (parse-int-param (server_req_param req "id") "id"))})
+      (catch [e] (safe-error-response "handle-resolve-wash-ops-issue" e)))
+    (unauthorized)))
+
+(defn handle-create-wash-ops-note [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true :data (create-wash-ops-note
+          (parse-int-param (get body :site_id) "site_id") (get body :note_date)
+          (get body :content) (get body :category))}))
+      (catch [e] (safe-error-response "handle-create-wash-ops-note" e)))
+    (unauthorized)))
+
+(defn handle-wash-ops-dashboard [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (server_json {:ok true :data (get-wash-ops-dashboard
+        (parse-int-param (server_req_query req "site_id") "site_id")
+        (server_req_query req "date"))})
+      (catch [e] (safe-error-response "handle-wash-ops-dashboard" e)))
+    (unauthorized)))
+
+(defn handle-wash-ops-weekly [req]
+  (if (wash-ops-authorized? req)
+    (try
+      (server_json {:ok true :data (get-wash-ops-weekly
+        (parse-int-param (server_req_query req "site_id") "site_id")
+        (server_req_query req "end_date"))})
+      (catch [e] (safe-error-response "handle-wash-ops-weekly" e)))
+    (unauthorized)))
 
 ;; ---- 부품판매 ----
 (defn handle-create-part-sale [req]
@@ -418,7 +669,7 @@
                               (get body :unit_price)
                               (or (get body :channel) "STORE"))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-part-sale" e)))
     (unauthorized)))
 
 (defn handle-list-part-sales [req]
@@ -432,10 +683,87 @@
                       :data (list-customer-part-sales customer-id)})))
     (unauthorized)))
 
-(defn handle-list-customer-contracts [req]
+(defn handle-list-contracts [req]
   (if (internal-authorized? req)
-    (server_json {:ok true
-                  :data (list-customer-contracts (server_req_query req "customer_id"))})
+    (try
+      (server_json {:ok true
+                    :data (list-contracts
+                            (server_req_query req "status")
+                            (parse-int-param (server_req_query req "customer_id") "customer_id")
+                            (parse-int-param (server_req_query req "site_id") "site_id")
+                            (server_req_query req "q"))})
+      (catch [e]
+        (safe-error-response "handle-list-contracts" e)))
+    (unauthorized)))
+
+(defn handle-contract-detail [req]
+  (if (internal-authorized? req)
+    (try
+      (let [id (parse-int-param (server_req_param req "id") "id")
+            detail (get-contract-detail id)]
+        (if (nil? detail)
+          (server_status 404 {:ok false :error "Contract not found"})
+          (server_json {:ok true :data detail})))
+      (catch [e]
+        (safe-error-response "handle-contract-detail" e)))
+    (unauthorized)))
+
+(defn handle-create-contract [req]
+  (if (internal-authorized? req)
+    (try
+      (let [body (server_req_json req)]
+        (server_json {:ok true
+                      :data (create-contract
+                              (parse-int-param (get body :customer_id) "customer_id")
+                              (parse-int-param (get body :site_id) "site_id")
+                              (get body :title)
+                              (get body :contract_date)
+                              (get body :work_starts_at)
+                              (get body :work_ends_at)
+                              (get body :warranty_ends_at)
+                              (get body :work_scope)
+                              (get body :memo)
+                              (get body :items))}))
+      (catch [e]
+        (safe-error-response "handle-create-contract" e)))
+    (unauthorized)))
+
+(defn handle-update-contract [req]
+  (if (internal-authorized? req)
+    (try
+      (let [id (parse-int-param (server_req_param req "id") "id")
+            detail (get-contract-detail id)]
+        (if (nil? detail)
+          (server_status 404 {:ok false :error "Contract not found"})
+          (let [body (server_req_json req)]
+            (server_json {:ok true
+                          :data (update-contract
+                                  id
+                                  (parse-int-param (get body :site_id) "site_id")
+                                  (get body :title)
+                                  (get body :contract_date)
+                                  (get body :work_starts_at)
+                                  (get body :work_ends_at)
+                                  (get body :warranty_ends_at)
+                                  (get body :work_scope)
+                                  (get body :memo)
+                                  (get body :items))}))))
+      (catch [e]
+        (safe-error-response "handle-update-contract" e)))
+    (unauthorized)))
+
+(defn handle-update-contract-status [req]
+  (if (internal-authorized? req)
+    (try
+      (let [id (parse-int-param (server_req_param req "id") "id")
+            detail (get-contract-detail id)]
+        (if (nil? detail)
+          (server_status 404 {:ok false :error "Contract not found"})
+          (let [body (server_req_json req)]
+            (server_json {:ok true
+                          :data (update-contract-status id (get body :status) (get body :signed_at))}))))
+      (catch [e]
+        (safe-error-response "handle-update-contract-status" e)))
     (unauthorized)))
 
 (defn handle-list-customer-timeline [req]
@@ -446,7 +774,7 @@
                             (server_req_query req "customer_id")
                             (server_req_query req "type"))})
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-list-customer-timeline" e)))
     (unauthorized)))
 
 (defn handle-create-quote [req]
@@ -461,7 +789,7 @@
                               (get body :valid_until)
                               (get body :memo))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-quote" e)))
     (unauthorized)))
 
 (defn handle-list-customer-quotes [req]
@@ -479,7 +807,7 @@
                               (server_req_param req "id")
                               (get body :status))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-update-quote-status" e)))
     (unauthorized)))
 
 (defn handle-convert-quote [req]
@@ -488,7 +816,7 @@
       (server_json {:ok true
                     :data (convert-quote-to-contract (server_req_param req "id"))})
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-convert-quote" e)))
     (unauthorized)))
 
 ;; ---- 휴면기 관리·홍보 ----
@@ -504,7 +832,7 @@
                               (or (get body :channel) "PHONE")
                               (get body :next_touch_at))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-outreach" e)))
     (unauthorized)))
 
 (defn handle-outreach-response [req]
@@ -520,7 +848,7 @@
                               (get body :converted_ref_id)
                               (get body :next_touch_at))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-outreach-response" e)))
     (unauthorized)))
 
 (defn handle-outreach-due [req]
@@ -546,7 +874,7 @@
                               (or (get body :equipment) [])
                               (or (get body :first_outreach_days) 90))}))
       (catch [e]
-        (server_status 400 {:ok false :error "Invalid sale request"})))
+        (safe-error-response-fixed "handle-register-sale" e "Invalid sale request")))
     (unauthorized)))
 
 (defn handle-site-public-status [req]
@@ -581,7 +909,7 @@
       (server_json {:ok true
                     :data (list-warranty-expiring (or (server_req_query req "days") "30"))})
       (catch [e]
-        (server_status 400 {:ok false :error "days must be an integer between 0 and 3650"})))
+        (safe-error-response-fixed "handle-warranty-expiring" e "days must be an integer between 0 and 3650")))
     (unauthorized)))
 
 ;; 2026-07-21 추가: 운영 대시보드 집계(2주차, docs/09 §3) — 지연·일정미정·오늘방문·
@@ -592,7 +920,7 @@
       (server_json {:ok true
                     :data (get-ops-summary (server_req_query req "warranty_days"))})
       (catch [e]
-        (server_status 400 {:ok false :error "warranty_days must be an integer between 0 and 3650"})))
+        (safe-error-response-fixed "handle-ops-summary" e "warranty_days must be an integer between 0 and 3650")))
     (unauthorized)))
 
 ;; 2026-07-21 추가: 주간 운영보고(3주차, docs/09 §4) — 미처리 A/S·다음 주 방문·
@@ -603,7 +931,7 @@
       (server_json {:ok true
                     :data (get-ops-weekly (server_req_query req "as_of"))})
       (catch [e]
-        (server_status 400 {:ok false :error "as_of must be a valid YYYY-MM-DD date"})))
+        (safe-error-response-fixed "handle-ops-weekly" e "as_of must be a valid YYYY-MM-DD date")))
     (unauthorized)))
 
 ;; 2026-07-21 추가 (4주차): 연간관리 CarePlan CRUD + 취소/갱신.
@@ -621,7 +949,7 @@
                               (get body :next_inspection_at)
                               (get body :memo))}))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-create-careplan" e)))
     (unauthorized)))
 
 ;; 5주차 선행: site_id/customer_id 둘 다 없으면 더 이상 400이 아니라 전체
@@ -636,7 +964,7 @@
           [(not (nil? customer-id)) (server_json {:ok true :data (list-customer-careplans customer-id)})]
           [true (server_json {:ok true :data (list-all-careplans)})]))
       (catch [e]
-        (server_status 400 {:ok false :error (str e)})))
+        (safe-error-response "handle-list-careplans" e)))
     (unauthorized)))
 
 (defn handle-careplan-detail [req]
@@ -661,7 +989,7 @@
                                   (get body :next_inspection_at)
                                   (get body :memo))}))
           (catch [e]
-            (server_status 400 {:ok false :error (str e)})))))
+            (safe-error-response "handle-update-careplan" e)))))
     (unauthorized)))
 
 (defn handle-cancel-careplan [req]
@@ -673,7 +1001,7 @@
           (let [body (server_req_json req)]
             (server_json {:ok true :data (cancel-care-plan id (get body :memo))}))
           (catch [e]
-            (server_status 400 {:ok false :error (str e)})))))
+            (safe-error-response "handle-cancel-careplan" e)))))
     (unauthorized)))
 
 (defn handle-renew-careplan [req]
@@ -691,7 +1019,7 @@
                                   (get body :price_snapshot)
                                   (get body :included_visits))}))
           (catch [e]
-            (server_status 400 {:ok false :error (str e)})))))
+            (safe-error-response "handle-renew-careplan" e)))))
     (unauthorized)))
 
 (server_post "/care/customers" "handle-create-customer")
@@ -707,6 +1035,8 @@
 (server_get  "/care/consultations/pending" "handle-pending-actions")
 (server_post "/care/sites" "handle-create-site")
 (server_get  "/care/sites" "handle-list-customer-sites")
+(server_post "/care/site-checklists" "handle-create-site-checklist")
+(server_get  "/care/site-checklists" "handle-list-site-checklists")
 (server_post "/care/equipment" "handle-create-equipment")
 (server_get  "/care/equipment" "handle-list-customer-equipment")
 (server_post "/care/customer-contacts" "handle-create-contact")
@@ -722,7 +1052,11 @@
 (server_put  "/care/quotes/:id/status" "handle-update-quote-status")
 (server_post "/care/quotes/:id/convert" "handle-convert-quote")
 (server_get  "/care/timeline" "handle-list-customer-timeline")
-(server_get  "/care/contracts" "handle-list-customer-contracts")
+(server_get  "/care/contracts" "handle-list-contracts")
+(server_post "/care/contracts" "handle-create-contract")
+(server_get  "/care/contracts/:id" "handle-contract-detail")
+(server_put  "/care/contracts/:id" "handle-update-contract")
+(server_put  "/care/contracts/:id/status" "handle-update-contract-status")
 (server_post "/care/tickets" "handle-create-ticket")
 (server_get  "/care/tickets" "handle-list-tickets")
 (server_get  "/care/tickets/:id" "handle-ticket-detail")
@@ -749,8 +1083,29 @@
 (server_put  "/care/care-plans/:id" "handle-update-careplan")
 (server_put  "/care/care-plans/:id/cancel" "handle-cancel-careplan")
 (server_post "/care/care-plans/:id/renew" "handle-renew-careplan")
+(server_get  "/care/operations" "handle-operations-page")
+(server_get  "/care/operations/sites" "handle-wash-ops-sites")
+(server_post "/care/operations/sites" "handle-create-wash-ops-site")
+(server_post "/care/operations/sites/:id/activate" "handle-activate-wash-ops-site")
+(server_get  "/care/operations/equipment" "handle-wash-ops-equipment")
+(server_post "/care/operations/day" "handle-save-wash-ops-day")
+(server_post "/care/operations/vehicles" "handle-create-wash-ops-vehicle")
+(server_post "/care/operations/reworks" "handle-create-wash-ops-rework")
+(server_post "/care/operations/equipment-issues" "handle-create-wash-ops-issue")
+(server_put  "/care/operations/equipment-issues/:id/resolve" "handle-resolve-wash-ops-issue")
+(server_post "/care/operations/notes" "handle-create-wash-ops-note")
+(server_get  "/care/operations/dashboard" "handle-wash-ops-dashboard")
+(server_get  "/care/operations/weekly" "handle-wash-ops-weekly")
 (server_get  "/care/admin" "handle-admin-page")
 (server_get  "/" "handle-root")
 
-(println (str "BigWash Care Phase 1 API starting on port " CARE-PORT))
-(server_start CARE-PORT)
+;; BIGWASH_SKIP_SERVER_START=1이면 라우트 등록까지만 하고 실제로 포트를
+;; 열지 않는다 — tests/test_security_gate.fl이 이 파일을 load해서 순수
+;; 정책 함수(auth-policy/admin-auth-policy/sanitize-error-text 등)를 직접
+;; 호출하기 위한 용도만이다. 운영/로컬 정상 기동 시에는 이 값을 설정하지
+;; 않으므로 기존 동작(server_start 호출)이 그대로 유지된다.
+(if (= "1" (str (env-get "BIGWASH_SKIP_SERVER_START")))
+  (println "(BIGWASH_SKIP_SERVER_START=1 — 라우트만 등록하고 server_start는 건너뜀, 테스트 전용)")
+  (do
+    (println (str "BigWash Care Phase 1 API starting on port " CARE-PORT))
+    (server_start CARE-PORT)))

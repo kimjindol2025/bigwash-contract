@@ -1,0 +1,118 @@
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+
+;; washcare-api.fl은 로드 끝에 server_start를 호출해 실제로 포트를 연다 —
+;; 이 테스트는 순수 정책 함수만 검증하므로 BIGWASH_SKIP_SERVER_START=1로
+;; 라우트 등록까지만 하고 서버는 띄우지 않는다.
+(load (str REPO-ROOT "/src/washcare-api.fl"))
+
+;; washcare-api.fl이 washcare.fl -> phase1-db.fl을 load하며 DB(테이블 생성
+;; 등)에 접근한다 — 운영 DB(db/contracts.sqlite)에서는 절대 실행하지 않는다.
+(if (= DB (str REPO-ROOT "/db/contracts.sqlite"))
+  (error "test_security_gate.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
+(if (not (= "1" (str (env-get "BIGWASH_SKIP_SERVER_START"))))
+  (error "test_security_gate.fl requires BIGWASH_SKIP_SERVER_START=1 (server_start를 건너뛰기 위함)"))
+
+;; ---- 1. auth-policy (내부 API — 데이터 엔드포인트, /care/call-events 포함) ----
+;; 계약: 키 미설정 시 기본은 거부(fail-closed), insecure-dev=true일 때만 통과.
+;; 키가 설정돼 있으면 항상 정확히 일치할 때만 통과.
+(assert (= (auth-policy nil nil false) false)
+  "키 미설정 + 비개발모드: 거부(fail-closed)여야 한다")
+(assert (= (auth-policy "" nil false) false)
+  "키가 빈 문자열이어도 비개발모드면 거부해야 한다")
+(assert (= (auth-policy nil nil true) true)
+  "키 미설정 + BIGWASH_ALLOW_INSECURE_DEV=1: 허용(개발 편의)이어야 한다")
+(assert (= (auth-policy nil "anything" true) true)
+  "개발모드에서는 supplied 값과 무관하게 허용돼야 한다")
+(assert (= (auth-policy "secret-key" "secret-key" false) true)
+  "키가 정확히 일치하면 비개발모드에서도 허용해야 한다")
+(assert (= (auth-policy "secret-key" "wrong-key" false) false)
+  "키가 불일치하면 거부해야 한다")
+(assert (= (auth-policy "secret-key" nil false) false)
+  "키는 설정됐는데 요청에 값이 없으면 거부해야 한다")
+(assert (= (auth-policy "secret-key" "secret-key" true) true)
+  "키가 설정된 상태에서 개발모드+정확한 값이면 당연히 허용해야 한다(회귀 방지)")
+
+;; ---- 2. admin-auth-policy (GET /care/admin — HTTP Basic 경계) ----
+;; 계약: 미설정 시 기본은 거부(fail-closed). insecure-dev=true여도 Admin은
+;; 별도 Basic 경계를 유지한다.
+(assert (= (admin-auth-policy nil nil false) false)
+  "관리자 Basic Auth 미설정 + 비개발모드: 거부(fail-closed)여야 한다")
+(assert (= (admin-auth-policy "" nil false) false)
+  "관리자 Basic Auth가 빈 문자열이어도 비개발모드면 거부해야 한다")
+(assert (= (admin-auth-policy nil nil true) false)
+  "개발모드여도 관리자 Basic Auth 미설정이면 거부해야 한다")
+(assert (= (admin-auth-policy "Basic dXNlcjpwYXNz" "Basic dXNlcjpwYXNz" true) true)
+  "개발모드에서도 정확한 관리자 Basic Auth는 허용해야 한다")
+(assert (= (admin-auth-policy "Basic dXNlcjpwYXNz" "Basic dXNlcjpwYXNz" false) true)
+  "Authorization 헤더가 BIGWASH_ADMIN_BASIC_AUTH와 정확히 일치하면 허용해야 한다")
+(assert (= (admin-auth-policy "Basic dXNlcjpwYXNz" "Basic d3Jvbmc6d3Jvbmc=" false) false)
+  "Authorization 헤더가 불일치하면 거부해야 한다")
+(assert (= (admin-auth-policy "Basic dXNlcjpwYXNz" nil false) false)
+  "Authorization 헤더 자체가 없으면 거부해야 한다")
+(assert (= (admin-auth-policy "Basic dXNlcjpwYXNz" "basic dxnlcjpwyxnz" false) false)
+  "대소문자만 다른 값은 다른 값으로 취급해 거부해야 한다(해시 비교는 원문 그대로 비교)")
+
+;; ---- 3. sanitize-error-text (catch 응답 새니타이즈) ----
+;; 계약: 파일경로·"at line N, col M" 패턴 제거, 과도하게 긴 메시지는 300자로
+;; 캡, 빈/의미없는 값은 고정 문구로 대체. 기존 도메인 400 메시지는 보존.
+
+;; 3-1. 기존 도메인 검증 메시지는 그대로 보존돼야 한다 — "가능한 한 보존" 계약.
+(assert (= (sanitize-error-text "Site not found") "Site not found")
+  "평범한 도메인 오류 메시지는 그대로 보존돼야 한다")
+(assert (= (sanitize-error-text "Care plan not found") "Care plan not found")
+  "다른 도메인 오류 메시지도 변형 없이 보존돼야 한다")
+(assert (= (sanitize-error-text "used_visits must be between 0 and 4")
+           "used_visits must be between 0 and 4")
+  "동적으로 조립된(그러나 안전한) 도메인 메시지도 보존돼야 한다")
+
+;; 3-2. "(at line N, col M)" 패턴은 제거돼야 한다.
+(let [cleaned (sanitize-error-text "[create-customer] boom (at line 66, col 0)")]
+  (assert (not (regex_match cleaned "at line"))
+    "새니타이즈된 메시지에 'at line'이 남아있으면 안 된다")
+  (assert (not (regex_match cleaned "col [0-9]"))
+    "새니타이즈된 메시지에 'col N'이 남아있으면 안 된다"))
+
+;; 3-3. 파일 절대경로 패턴은 [REDACTED]로 치환돼야 한다.
+(let [cleaned (sanitize-error-text
+                "boom at /home/kim/kim/bigwash-contract/src/washcare-api.fl")]
+  (assert (not (regex_match cleaned "/home/kim"))
+    "새니타이즈된 메시지에 내부 절대경로가 남아있으면 안 된다")
+  (assert (regex_match cleaned "REDACTED")
+    "경로가 있던 자리는 [REDACTED]로 치환돼야 한다"))
+
+;; 3-4. 300자 초과 메시지는 잘리고 말줄임표가 붙어야 한다.
+(let [long-msg (str_repeat "x" 400)
+      cleaned (sanitize-error-text long-msg)]
+  (assert (<= (length cleaned) 304)
+    "300자를 넘는 메시지는 300자 + '...'로 캡돼야 한다")
+  (assert (regex_match cleaned "\\.\\.\\.$")
+    "캡된 메시지는 말줄임표로 끝나야 한다"))
+
+;; 3-5. 비어있거나 무의미한 입력은 고정 문구로 대체돼야 한다.
+(assert (= (sanitize-error-text "") "Request failed")
+  "빈 문자열은 고정 문구로 대체돼야 한다")
+(assert (= (sanitize-error-text "   ") "Request failed")
+  "공백만 있는 문자열도 고정 문구로 대체돼야 한다")
+(assert (= (sanitize-error-text nil) "Request failed")
+  "nil 메시지도 고정 문구로 대체돼야 한다(str nil이 스택 없이 안전한 값으로)")
+
+;; 3-6. DB/SQL 엔진 내부 문구는 도메인 오류로 노출하지 않는다.
+(assert (= (sanitize-error-text "[db_exec] NOT NULL constraint failed: customers.name")
+           "Request failed")
+  "DB 제약·테이블·컬럼 정보는 고정 문구로 대체돼야 한다")
+(assert (= (sanitize-error-text "SQLITE_CONSTRAINT_UNIQUE") "Request failed")
+  "SQLite 엔진 오류 코드는 외부에 노출하면 안 된다")
+
+;; ---- 4. 함수 존재/배선 스모크(정책 함수가 실제 인증 함수 안에서 쓰이는지) ----
+;; internal-authorized?/admin-authorized?는 req 객체가 필요해 이 테스트에서
+;; 직접 호출하지 않지만(순수 함수 auth-policy/admin-auth-policy로 이미 정책
+;; 자체는 전수 검증됨), 최소한 정의가 로드됐는지는 확인한다.
+(assert (fn? internal-authorized?) "internal-authorized?가 정의돼 있어야 한다")
+(assert (fn? admin-authorized?) "admin-authorized?가 정의돼 있어야 한다")
+(assert (fn? call-webhook-authorized?) "call-webhook-authorized?가 정의돼 있어야 한다")
+(assert (fn? safe-error-response) "safe-error-response가 정의돼 있어야 한다")
+(assert (fn? safe-error-response-fixed) "safe-error-response-fixed가 정의돼 있어야 한다")
+
+(println "✓ Security gate tests passed")

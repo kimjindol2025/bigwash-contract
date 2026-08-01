@@ -9,10 +9,12 @@ set -euo pipefail
 #   작업은 docs/10-week6-readiness.md의 "승인 필요 명령" 절에서 사람이 직접
 #   실행한다.
 #
-# 검증 순서: (1) tests/test_*.fl 12종 직렬 실행(mktemp 격리 DB)
-#            (2) Admin UI 인라인 <script> 구문 검사(new Function)
-#            (3) OpenAPI YAML parse + 코드↔spec API 라우트 55개 완전일치
+# 검증 순서: (1) tests/test_*.fl 17종 직렬 실행(mktemp 격리 DB)
+#            (2) Admin/운영 기록실 UI 인라인 <script> 구문 검사(new Function)
+#            (3) OpenAPI YAML parse + 코드↔spec API 라우트 73개 완전일치
 #            (4) git diff --check (공백 오류)
+#            (5) 격리 HTTP 인증·오류 노출 공격 검증
+#            (6) 격리 DB 백업·변경·복원 리허설
 #
 # 사용법: scripts/verify-week6.sh
 # 환경변수: BIGWASH_REPO_ROOT(선택, 저장소 루트 강제 지정)
@@ -70,9 +72,11 @@ section() {
 }
 
 # ============================================================
-# 1. tests/test_*.fl 정확히 12종, 직렬 실행, mktemp 격리 DB
+# 1. tests/test_*.fl 정확히 17종, 직렬 실행, mktemp 격리 DB
 # ============================================================
-EXPECTED_TEST_COUNT=12
+# `test_contract.fl`은 기존 Contract 도메인 스모크, `test_contract_management.fl`은
+# Care 계약 관리 회귀(실제 운영 경로) 확장을 보완한다.
+EXPECTED_TEST_COUNT=17
 section "1. 회귀 테스트 ${EXPECTED_TEST_COUNT}종 (직렬 실행, mktemp 격리 DB)"
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bigwash-week6-verify.XXXXXX")"
@@ -96,11 +100,16 @@ TEST_FILES=(
   test_call_events.fl
   test_part_sales_outreach.fl
   test_customer_2nd_phase.fl
+  test_site_checklist.fl
   test_customer_consultation.fl
   test_sales_flow.fl
+  test_contract_management.fl
   test_ops_summary.fl
   test_ops_weekly.fl
   test_careplan.fl
+  test_field_service_qa.fl
+  test_security_gate.fl
+  test_wash_operations.fl
 )
 
 if [[ ${#TEST_FILES[@]} -ne ${EXPECTED_TEST_COUNT} ]]; then
@@ -146,7 +155,15 @@ for t in "${TEST_FILES[@]}"; do
   # 직렬 실행: 다음 테스트로 넘어가기 전에 반드시 이 테스트가 끝난다(백그라운드
   # 실행·& 없음, FreeLang v11 실행기는 병렬 프로세스 간 공유 상태가 충돌할 수
   # 있으므로 — docs/RUN_GUIDE.md "테스트" 절과 동일 원칙).
-  if BIGWASH_DB_PATH="${DB_PATH}" node "${FREELANG_BOOTSTRAP}" run "${ROOT_DIR}/tests/${t}" >"${LOG_FILE}" 2>&1; then
+  if [[ "${t}" == "test_security_gate.fl" ]]; then
+    TEST_COMMAND_OK=0
+    BIGWASH_SKIP_SERVER_START=1 BIGWASH_DB_PATH="${DB_PATH}" node "${FREELANG_BOOTSTRAP}" run "${ROOT_DIR}/tests/${t}" >"${LOG_FILE}" 2>&1 || TEST_COMMAND_OK=$?
+  else
+    TEST_COMMAND_OK=0
+    BIGWASH_DB_PATH="${DB_PATH}" node "${FREELANG_BOOTSTRAP}" run "${ROOT_DIR}/tests/${t}" >"${LOG_FILE}" 2>&1 || TEST_COMMAND_OK=$?
+  fi
+
+  if [[ ${TEST_COMMAND_OK} -eq 0 ]]; then
     echo "PASS"
     TEST_PASS=$((TEST_PASS + 1))
   else
@@ -166,19 +183,22 @@ else
 fi
 
 # ============================================================
-# 2. Admin UI 인라인 <script> 구문 검사 (new Function)
+# 2. Admin/운영 기록실 UI 인라인 <script> 구문 검사 (new Function)
 # ============================================================
-section "2. Admin UI 인라인 스크립트 구문 검사 (new Function)"
+section "2. Admin/운영 기록실 UI 인라인 스크립트 구문 검사 (new Function)"
 
 ADMIN_HTML="${ROOT_DIR}/src/washcare-admin.html"
+OPERATIONS_HTML="${ROOT_DIR}/src/operations-admin.html"
 if ADMIN_CHECK_OUT="$(node -e '
 const fs = require("fs");
-const html = fs.readFileSync(process.argv[1], "utf8");
-const m = html.match(/<script>([\s\S]*?)<\/script>/i);
-if (!m) { console.error("script block not found"); process.exit(1); }
-new Function(m[1]);
-console.log("admin inline script syntax ok");
-' "${ADMIN_HTML}")"; then
+for (const path of process.argv.slice(1)) {
+  const html = fs.readFileSync(path, "utf8");
+  const m = html.match(/<script>([\s\S]*?)<\/script>/i);
+  if (!m) { console.error(`script block not found: ${path}`); process.exit(1); }
+  new Function(m[1]);
+}
+console.log("admin and operations inline script syntax ok");
+' "${ADMIN_HTML}" "${OPERATIONS_HTML}")"; then
   echo "  ${ADMIN_CHECK_OUT}"
   SUMMARY+=("Admin inline script 구문: OK")
 else
@@ -188,9 +208,9 @@ else
 fi
 
 # ============================================================
-# 3. OpenAPI YAML parse + 코드↔spec API 라우트 55개 완전일치
+# 3. OpenAPI YAML parse + 코드↔spec API 라우트 73개 완전일치
 # ============================================================
-section "3. OpenAPI YAML parse + 코드↔spec API 라우트 55개 완전일치"
+section "3. OpenAPI YAML parse + 코드↔spec API 라우트 73개 완전일치"
 
 if ROUTE_CHECK_OUT="$(python3 - "${ROOT_DIR}" <<'PY'
 import sys, re, json
@@ -217,7 +237,7 @@ for m in re.finditer(r'\(server_(get|post|put|delete|patch)\s+"([^"]+)"', code):
     method, path = m.group(1), m.group(2)
     # 정적 루트(/)와 정적 Admin UI(/care/admin)는 JSON API 스펙 대상이 아니다
     # (docs/04-washcare-api.md, docs/openapi-washcare.yaml과 동일 원칙).
-    if path in ("/", "/care/admin"):
+    if path in ("/", "/care/admin", "/care/operations"):
         continue
     # FreeLang 라우트는 :id 스타일, OpenAPI는 {id} 스타일이라 변환해서 비교한다.
     openapi_path = re.sub(r":([a-zA-Z_]+)", r"{\1}", path)
@@ -226,14 +246,14 @@ for m in re.finditer(r'\(server_(get|post|put|delete|patch)\s+"([^"]+)"', code):
 only_in_code = sorted(code_ops - spec_ops)
 only_in_spec = sorted(spec_ops - code_ops)
 
-print(f"  spec operation count: {len(spec_ops)} (기대 55)")
-print(f"  code operation count: {len(code_ops)} (기대 55)")
+print(f"  spec operation count: {len(spec_ops)} (기대 73)")
+print(f"  code operation count: {len(code_ops)} (기대 73)")
 print(f"  code에만 있음: {only_in_code}")
 print(f"  spec에만 있음: {only_in_spec}")
 
 ok = (
-    len(spec_ops) == 55
-    and len(code_ops) == 55
+    len(spec_ops) == 73
+    and len(code_ops) == 73
     and not only_in_code
     and not only_in_spec
 )
@@ -241,11 +261,11 @@ sys.exit(0 if ok else 1)
 PY
 )"; then
   echo "${ROUTE_CHECK_OUT}"
-  SUMMARY+=("OpenAPI YAML parse + 라우트 55개 대조: OK (완전일치)")
+  SUMMARY+=("OpenAPI YAML parse + 라우트 73개 대조: OK (완전일치)")
 else
   echo "${ROUTE_CHECK_OUT}"
   FAILED=1
-  SUMMARY+=("OpenAPI YAML parse + 라우트 55개 대조: FAIL")
+  SUMMARY+=("OpenAPI YAML parse + 라우트 73개 대조: FAIL")
 fi
 
 # ============================================================
@@ -264,6 +284,34 @@ else
   echo "${GIT_DIFF_OUT}"
   FAILED=1
   SUMMARY+=("git diff --check: FAIL (공백 오류 발견 — 위 출력 참조)")
+fi
+
+# ============================================================
+# 5. 격리 HTTP 보안 검증
+# ============================================================
+section "5. 격리 HTTP 인증·오류 노출 검증"
+
+if "${ROOT_DIR}/scripts/verify-security-http.sh" >/dev/null 2>&1; then
+  echo "  fail-closed/API key/Admin Basic/public token/error sanitize: PASS"
+  SUMMARY+=("격리 HTTP 보안 검증: OK")
+else
+  echo "  격리 HTTP 보안 검증: FAIL"
+  FAILED=1
+  SUMMARY+=("격리 HTTP 보안 검증: FAIL")
+fi
+
+# ============================================================
+# 6. 격리 DB 백업·변경·복원 리허설
+# ============================================================
+section "6. 격리 DB 백업·복원 리허설"
+
+if "${ROOT_DIR}/scripts/rehearse-db-rollback.sh" >/dev/null 2>&1; then
+  echo "  backup → mutation → restore → integrity/FK/hash: PASS"
+  SUMMARY+=("격리 DB 백업·복원 리허설: OK")
+else
+  echo "  격리 DB 백업·복원 리허설: FAIL"
+  FAILED=1
+  SUMMARY+=("격리 DB 백업·복원 리허설: FAIL")
 fi
 
 # ============================================================

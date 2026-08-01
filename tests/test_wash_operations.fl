@@ -1,0 +1,91 @@
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+
+(load (str REPO-ROOT "/src/operations.fl"))
+
+(if (= DB (str REPO-ROOT "/db/contracts.sqlite"))
+  (error "test_wash_operations.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
+
+(let [customer (create-customer "후보 점주" "010-1111-1111" nil nil "LEAD" "경기도 양주시")
+      candidate (create-site-with-stage (get customer :id) "양주 후보지" "경기도 양주시" "010-1111-1111" "CANDIDATE")]
+  (assert (= (length (list-wash-ops-sites)) 0) "후보지는 운영 기록실 목록에 바로 나타나면 안 된다")
+  (let [activated (activate-wash-ops-site (get candidate :id))]
+    (assert (= (get activated :site_stage) "OPERATING") "후보지의 동일 site_id를 운영 사업장으로 전환해야 한다")
+    (assert (= (get activated :id) (get candidate :id)) "전환 전후 site_id가 유지돼야 한다")))
+
+(let [site (create-wash-ops-site "양주 운영테스트점" "경기도 양주시" "김대표" "010-0000-0000")
+      site-id (get site :id)
+      equipment (create-equipment site-id nil "고압세척기" "HP-100" "WASH-OPS-TEST-001" "2026-08-01" "2027-08-01")]
+  (save-wash-ops-day site-id "2026-08-01" "08:00" "19:00" 10 2 "맑음" "14:00~16:00" "CAUTION" 260 "오후 출차 검수 겹침")
+  (let [vehicle (create-wash-ops-vehicle-bundle
+                  {:site_id site-id :job_date "2026-08-01" :plate_number "12가3456"
+                   :vehicle_model "그랜저" :vehicle_size "중형"
+                   :arrived_at "2026-08-01T10:20:00" :started_at "2026-08-01T10:30:00"
+                   :finished_at "2026-08-01T11:18:00" :departed_at "2026-08-01T11:18:00"
+                   :work_minutes 48 :wait_minutes 10 :base_work "기본 세차" :extra_work "벌레 제거"
+                   :assigned_staff "김 직원" :customer_request "문틈 확인"
+                   :return_note "문틈 물기 재확인" :payment_amount 45000 :owner_involved true
+                   :conditions [
+                     {:inspection_stage "ARRIVAL" :area_group "EXTERIOR"
+                      :checkpoint_code "EXT_FRONT_BUMPER" :checkpoint_label "앞 범퍼"
+                      :condition_status "CONTAMINATED"}
+                     {:inspection_stage "ARRIVAL" :area_group "EXTERIOR"
+                      :checkpoint_code "EXT_PAINT_DAMAGE" :checkpoint_label "도장 손상"
+                      :condition_status "NORMAL"}
+                     {:inspection_stage "ARRIVAL" :area_group "INTERIOR"
+                      :checkpoint_code "INT_FLOOR_MATS" :checkpoint_label "바닥·매트"
+                      :condition_status "RECHECK"}]})]
+    (assert (= (length (get vehicle :conditions)) 3) "차량 저장과 외부·내부 상태 체크를 함께 저장해야 한다"))
+  (create-wash-ops-vehicle site-id "2026-08-01" "34나5678" "쏘렌토" "SUV"
+    "2026-08-01T13:30:00" "2026-08-01T13:30:00" "2026-08-01T14:30:00" "2026-08-01T14:35:00"
+    60 0 "기본 세차" nil "박 직원" nil nil nil 55000 false)
+  (let [vehicle-id (get (first (db_query DB
+                          "SELECT id FROM wash_ops_vehicle_jobs WHERE site_id = ? AND plate_number = ?"
+                          [site-id "12가3456"])) :id)]
+    (create-wash-ops-rework site-id vehicle-id "2026-08-01" "12가3456" "운전석 문틈" "물기 제거"
+      "김 직원" "사업주" 12 "INSPECTION_MISSED" "재작업 후 출차" "오후 검수 담당자 지정"))
+  (let [issue (create-wash-ops-equipment-issue site-id (get equipment :id) "2026-08-01"
+                "고압호스 연결부 누수" "STOPPED" 25 "예비 호스로 교체" "마모 확인")]
+    (create-wash-ops-note site-id "2026-08-01" "오후 예약 간격이 짧음" "BOOKING")
+    (let [dashboard (get-wash-ops-dashboard site-id "2026-08-01")
+          metrics (get dashboard :metrics)]
+      (assert (= (get metrics :vehicle_count) 2) "오늘 작업 차량 수를 집계해야 한다")
+      (assert (= (get metrics :avg_work_minutes) 54.0) "평균 작업시간을 집계해야 한다")
+      (assert (= (get metrics :delay_count) 1) "대기 지연을 집계해야 한다")
+      (assert (= (get metrics :rework_count) 1) "재작업을 집계해야 한다")
+      (assert (= (get metrics :issue_count) 1) "장비 이상을 집계해야 한다")
+      (assert (= (get metrics :owner_work_minutes) 260) "사업주 직접 작업시간을 보여줘야 한다")
+      (assert (= (length (get dashboard :notes)) 1) "원본 운영 메모를 보존해야 한다")
+      (assert (= (length (get dashboard :conditions)) 3) "차량별 외부·내부 상태 체크포인트를 조회해야 한다"))
+    (resolve-wash-ops-equipment-issue (get issue :id))
+    (let [dashboard (get-wash-ops-dashboard site-id "2026-08-01")]
+      (assert (= (get (get dashboard :metrics) :open_issue_count) 0) "해결한 장비 이상은 미해결 집계에서 빠져야 한다")))
+  (let [weekly (get-wash-ops-weekly site-id "2026-08-01")]
+    (assert (= (get (get weekly :metrics) :vehicle_count) 2) "주간 차량 수를 집계해야 한다")
+    (assert (= (get (get weekly :metrics) :rework_count) 1) "주간 재작업을 집계해야 한다")
+    (assert (= (get (first (get weekly :causes)) :cause) "INSPECTION_MISSED") "반복 원인을 빈도순으로 보여줘야 한다"))
+  (let [before (get (first (db_query DB "SELECT COUNT(*) AS count FROM wash_ops_vehicle_jobs WHERE site_id=?" [site-id])) :count)
+        rejected (try
+                   (do
+                     (create-wash-ops-vehicle-bundle
+                       {:site_id site-id :job_date "2026-08-01" :plate_number "99오류9999"
+                        :work_minutes 0 :wait_minutes 0 :payment_amount 0 :owner_involved false
+                        :conditions [{:inspection_stage "ARRIVAL" :area_group "EXTERIOR"
+                                      :checkpoint_code "EXT_UNKNOWN" :checkpoint_label "알 수 없음"
+                                      :condition_status "NORMAL"}]})
+                     false)
+                   (catch [e] true))
+        after (get (first (db_query DB "SELECT COUNT(*) AS count FROM wash_ops_vehicle_jobs WHERE site_id=?" [site-id])) :count)]
+    (assert rejected "정본에 없는 차량 상태 체크포인트는 거부해야 한다")
+    (assert (= before after) "상태 체크 검증 실패 시 차량 행도 함께 롤백해야 한다"))
+  (let [other-site (create-wash-ops-site "의정부 운영테스트점" "경기도 의정부시" "박대표" nil)
+        rejected (try
+                   (do
+                     (create-wash-ops-equipment-issue (get other-site :id) (get equipment :id) "2026-08-01"
+                       "다른 사업장 장비" "OBSERVE" 0 nil nil)
+                     false)
+                   (catch [e] true))]
+    (assert rejected "다른 사업장의 장비를 운영 이상 기록에 연결하면 안 된다")))
+
+(println "✓ Wash operations MVP domain tests passed")

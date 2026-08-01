@@ -1,0 +1,48 @@
+{
+  "executed_at": "2026-08-01T15:00:30+09:00",
+  "task": "wash-operations-mvp",
+  "completion": "implemented_and_locally_verified",
+  "entry_url": "/care/operations",
+  "implementation_language": {
+    "domain_api_database": "FreeLang/AFJ",
+    "browser_adapter": "HTML/CSS/minimal JavaScript",
+    "bridge_reason": "The browser interaction layer uses the browser's native JavaScript runtime; business rules, site conversion, aggregation, and persistence remain in AFJ."
+  },
+  "new_files": [
+    "src/operations.fl",
+    "src/operations-admin.html",
+    "tests/test_wash_operations.fl",
+    "docs/14-wash-operations-mvp.md"
+  ],
+  "integrated_files": [
+    "src/phase1-db.fl",
+    "src/washcare-api.fl",
+    "src/washcare-admin.html",
+    "docs/openapi-washcare.yaml",
+    "docs/04-washcare-api.md",
+    "docs/RUN_GUIDE.md",
+    "scripts/verify-week6.sh",
+    "design.md",
+    "README.md"
+  ],
+  "verification": [
+    "Candidate site retained the same site_id when converted to OPERATING.",
+    "Protected HTTP page and API returned 401 without credentials and 200 with the correct Basic/API key.",
+    "Operations create, dashboard, and weekly flows returned expected JSON on an isolated database.",
+    "A live isolated preview exposed an AFJ HTTP-boundary bug when vehicle_job_id was nested through parse-int-param; optional relation IDs now pass to domain ownership validation directly, and the linked rework path is covered by the domain test.",
+    "Browser feedback exposed a double-auth 401 and CSP-blocked inline handlers; operations APIs now accept either the same Admin Basic credential or x-api-key, all inline event attributes were replaced with delegated listeners, and a data favicon removes the incidental 404.",
+    "The keyboard-heavy quick-action modals were replaced with touch-first chips, now-time buttons, steppers, multi-select work chips, and conditional detail panels; a real 390px Chrome run verified 24 vehicle touch controls, zero selects, exact AFJ payload serialization, no overflow, and no runtime errors.",
+    "Vehicle condition state is normalized as arrival/final × exterior/interior × canonical checkpoint rows. AFJ validates 10 exterior and 10 interior codes, stores vehicle and conditions transactionally, rolls both back on invalid codes, and returns condition rows in the dashboard.",
+    "A 390px Chrome run selected all 10 exterior checkpoints as normal and one interior floor checkpoint as contaminated; exactly 11 of 20 checked rows were serialized, with no overflow or runtime errors.",
+    "Full verification passed: 17/17 FreeLang tests, both UI scripts, 73/73 OpenAPI routes, diff check, HTTP security, and DB backup/restore rehearsal.",
+    "Desktop 1440x1100 and mobile 390x844 layouts were rendered from the same operations UI and visually inspected before integration."
+  ],
+  "service_state": "isolated_test_server_running_on_127.0.0.1:41122_without_pm2_or_production_db",
+  "commit": null,
+  "push": false,
+  "remaining": [
+    "Connect a rework entry to a selected vehicle job in the UI.",
+    "Implement phase-2 staff roles, owner report, consumables, and improvement tasks.",
+    "Add an optional LLM summary adapter with evidence IDs and user approval state."
+  ]
+}

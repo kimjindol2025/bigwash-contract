@@ -1,61 +1,50 @@
 # WashCare Phase 1 API 문서
 
 작성일: 2026-07-16
-갱신: 2026-07-21 — 인증(개발 공개 정책 명문화) + 에러 응답 계약 절 추가
-(`docs/09-implementation-schedule.md` 1주차)
+갱신: 2026-08-01 — 세차장 점주용 운영 기록실 추가
 기준 파일: `src/washcare-api.fl`
 OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 
 ## 인증
 
-### 현재 상태 — 개발 단계 전체 공개 정책 (의도된 결정)
+### 현재 상태 — 기본 fail-closed
 
-- **내부 엔드포인트** 전체(`/care/customers`, `/care/sites`, `/care/equipment`,
-  `/care/tickets/*`, `/care/consultations/*`, `/care/quotes/*`,
-  `/care/customer-contacts`, `/care/customer-tasks/*`, `/care/customer-followups/*`,
-  `/care/timeline`, `/care/contracts`, `/care/part-sales`, `/care/outreach/*`,
-  `/care/sales`, `/care/sites/:id/link/*`, `/care/warranty-expiring` 등 — 전체
-  라우트는 `openapi-washcare.yaml` 참조): 헤더 `x-api-key: <BIGWASH_INTERNAL_API_KEY>`를
-  검사하지만, 환경변수 `BIGWASH_INTERNAL_API_KEY`가 비어있거나 미설정이면
-  `internal-authorized?`(`src/washcare-api.fl`)가 **모든 요청을 무조건 통과시킨다**
-  (fail-open).
-- **이것은 버그가 아니라 2026-07-19에 내려진 명시적 개발 단계 결정이다** —
-  로그인 시스템이 없는 현재 단계에서 매 요청마다 키를 요구하면 개발 속도가
-  떨어진다는 판단. 인증 코드 자체는 이번 1주차에서 바꾸지 않는다
-  (`docs/09-implementation-schedule.md` 1주차 범위 참조).
-- **실데이터 금지·외부 노출 금지**: 이 공개 모드로 서버를 실행하는 동안은
-  실제 고객 정보·연락처·계약금액 등 운영 데이터를 입력하지 않는다. 서버는
-  `localhost` 또는 접근이 통제된 개발망(사내 VPN 등)에서만 실행하고,
-  공인 IP·리버스 프록시를 통해 외부 인터넷에 노출하지 않는다. 개발 중
-  실측·데모가 필요하면 가짜 고객명·가짜 연락처만 사용한다.
-- **운영 배포 전 인증 필수 게이트**: 아래 조건을 모두 만족하기 전에는 이
-  서버를 실제 고객 데이터와 함께 외부에 노출된 환경(예: `care.dclub.kr`
-  운영 배포, README.md "배포" 절)에 올리지 않는다.
-  1. `BIGWASH_INTERNAL_API_KEY`가 배포 환경에 실제로 설정되어 있음을 배포
-     담당자가 확인
-  2. 키 미설정 시 서버가 무인증으로 열리는 대신 **기동을 거부하거나 전체
-     401을 반환**하도록 `internal-authorized?`/기동 스크립트를 fail-closed로
-     전환(별도 스프린트 — 이번 1주차 범위 아님)
-  3. 위 전환 후 "키 없이 기동 → 차단됨", "키 있을 때 기동 → 정상 200/401" 두
-     경우를 실측 확인
-  - 이 세 조건이 충족되기 전까지는 개발 공개 모드를 운영 배포에 그대로
-    가져가지 않는다 — 즉 fail-open 상태로 실고객 데이터를 다루는 배포는
-    금지한다.
-  - **알려진 예외 (2026-07-20~, kim 확인)**: 위 게이트 완성 전에
-    `care.dclub.kr`가 이미 공개 배포됐다(node25 pm2, `README.md` "배포" 절).
-    `BIGWASH_INTERNAL_API_KEY`는 실제로 설정되어 있어 완전한 fail-open은
-    아니고, 현재 올라간 데이터도 전부 테스트/마이그레이션 더미(실고객
-    정보 없음, 2026-07-21 재확인)다. 코드 자체의 fail-closed 전환(조건 2)은
-    아직 안 됐으므로 정책 문서 기준으로는 여전히 갭이지만, kim이 이 상태
-    유지를 선택했다 — 실고객 데이터를 넣기 전에는 반드시 조건 2·3을
-    마저 채울 것.
-- **공개 엔드포인트** (`/care/status/:token`, `/care/site-status/:token`): 원래부터
-  인증 없음. 토큰 자체가 접근 권한이며, 위 개발 공개 정책과 무관하게 항상
-  같은 보안 모델(해시 저장, rate limit, `Cache-Control: no-store`)로 동작한다.
+- **내부 JSON API**는 `BIGWASH_INTERNAL_API_KEY`와 요청의 `x-api-key`가
+  일치할 때만 허용한다. 서버 키가 미설정·빈 문자열이어도 기본 401이며,
+  401 응답에는 `Cache-Control: no-store`가 붙는다.
+- **통화 webhook** `/care/call-events`는 자동화 앱 제약 때문에 같은 키를
+  `?key=`로 받는다. 키가 없거나 틀리면 마찬가지로 401이다. 쿼리 키는 프록시
+  로그에 남을 수 있으므로 운영 프록시에서 query logging을 제한한다.
+- **명시적 개발 예외**는 `BIGWASH_ALLOW_INSECURE_DEV=1` 한 값뿐이다.
+  `true`, `yes`, `1 ` 등은 인정하지 않는다. 이 예외는 내부 데이터 API만
+  무키로 열며 Admin HTML 경계는 풀지 않는다. 운영 환경에는 이 변수를
+  설정하지 않는다.
+- **Admin UI** `/care/admin`, 세차장 운영 기록실 `/care/operations`, 루트 `/`는 `BIGWASH_ADMIN_BASIC_AUTH`에 저장한
+  완전한 Authorization 헤더 값(예: `Basic <base64(user:password)>`)과 요청
+  `Authorization`이 일치해야 한다. 미설정·불일치 시 401,
+  `WWW-Authenticate: Basic realm="BigWash Admin"`, `Cache-Control: no-store`를
+  반환한다. 브라우저 Basic 인증을 통과한 뒤에도 데이터 API 호출에는 별도의
+  `x-api-key`가 필요하다.
+- **오류 응답**은 공통 안전 처리기를 거친다. 전체 예외는 서버 로그에만 남고
+  응답에는 도메인 메시지 또는 `Request failed`만 내려간다. 파일 경로,
+  줄번호, 호출 스택, SQLite/SQL 내부 문구는 외부에 노출하지 않는다.
+- **공개 엔드포인트** `/care/status/:token`, `/care/site-status/:token`은 기존
+  토큰 보안 모델을 유지하며 API 키나 Basic을 요구하지 않는다. 해시 저장,
+  rate limit, `Cache-Control: no-store`가 계속 적용된다.
+
+### 운영 배포 전 확인
+
+1. `BIGWASH_INTERNAL_API_KEY`와 `BIGWASH_ADMIN_BASIC_AUTH`가 값 노출 없이
+   배포 환경에 설정됐는지 확인한다.
+2. `BIGWASH_ALLOW_INSECURE_DEV`가 설정되지 않았는지 확인한다.
+3. 격리 환경에서 무키 API 401, 정확 키 200, Admin 무인증 401, 정확 Basic
+   200, 공개 토큰 404/200(401 아님), 오류 내부정보 비노출을 확인한다.
+4. node25 반영은 별도 사용자 승인 후에만 수행한다. 이 코드가 Gogs에 있어도
+   `git pull`·PM2 재시작 전의 실행 중 프로세스에는 적용되지 않는다.
 
 ## 내부 엔드포인트
 
-**이 표는 전체 내부 API 53개(정적 `/care/admin`, 공개 `/care/status/:token`·
+**이 표는 전체 내부 API 71개(정적 `/care/admin`·`/care/operations`, 공개 `/care/status/:token`·
 `/care/site-status/:token` 제외)를 `src/washcare-api.fl`의 `server_get`/
 `server_post`/`server_put` 등록과 1:1 대조해 채운 것이다. 각 요청/응답
 스키마의 기계 판독용 정본은 `docs/openapi-washcare.yaml`이고, 아래 표와
@@ -67,6 +56,8 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | POST | `/care/customers` | 고객 생성 | O |
 | POST | `/care/sites` | 사업장 생성 | O |
 | GET | `/care/sites?customer_id=X` | 고객별 사업장 목록 | O |
+| POST | `/care/site-checklists` | 주소(현장)별 점검 체크리스트 저장 — 정본 8개 항목, 종합 결과 서버 계산 | O |
+| GET | `/care/site-checklists?site_id=X` | 해당 주소의 점검 체크리스트 이력 | O |
 | POST | `/care/equipment` | 장비 등록 | O |
 | GET | `/care/equipment?customer_id=X` | 고객별 장비 목록 (site 조인) | O |
 | POST | `/care/tickets` | A/S 접수 (공개 토큰 발급) | O |
@@ -84,7 +75,11 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | GET | `/care/quotes?customer_id=X` | 고객별 견적 목록 (2026-07-19 추가) | O |
 | PUT | `/care/quotes/:id/status` | 견적 상태 변경 (2026-07-19 추가) | O |
 | POST | `/care/quotes/:id/convert` | 승인 견적을 계약으로 전환 (2026-07-19 추가) | O |
-| GET | `/care/contracts?customer_id=X` | 고객별 계약 목록 (2026-07-20 추가) | O |
+| GET | `/care/contracts?status=&customer_id=&site_id=&q=` | 계약 목록 — 4개 파라미터 전부 선택, 최신 50건 (2026-07-20 추가, 7주차 2026-07-22에 status/site_id/q 필터 확장) | O |
+| POST | `/care/contracts` | 계약 수동 생성 — items 합계로 amount 서버 계산, 항상 DRAFT로 시작 (7주차 2026-07-22 추가) | O |
+| GET | `/care/contracts/:id` | 계약 상세 + items + history (7주차 2026-07-22 추가) | O |
+| PUT | `/care/contracts/:id` | 계약 전체교체 수정 — DRAFT 상태만 허용 (7주차 2026-07-22 추가) | O |
+| PUT | `/care/contracts/:id/status` | 계약 상태 전이(5종, DELETE 없음) (7주차 2026-07-22 추가) | O |
 | GET | `/care/timeline?customer_id=X&type=Y` | 고객 통합 타임라인 — 상담·판매·견적·계약·출장·사후관리 UNION (2026-07-20 추가) | O |
 | POST | `/care/consultations` | 상담 기록 생성 (2026-07-19 추가) | O |
 | GET | `/care/consultations?customer_id=X` | 고객별 상담 기록 목록 (2026-07-19 추가) | O |
@@ -100,7 +95,7 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | POST | `/care/customer-followups` | 사후관리 예정 생성 (2026-07-19 추가) | O |
 | GET | `/care/customer-followups?customer_id=X` | 고객별 사후관리 목록 (2026-07-19 추가) | O |
 | PUT | `/care/customer-followups/:id/complete` | 사후관리 완료 처리 (2026-07-19 추가) | O |
-| GET | `/care/admin` | Admin UI 페이지 (HTML) — **이 경로 자체는 인증 없이 열람 가능**. 데이터 API 호출도 `BIGWASH_INTERNAL_API_KEY`가 서버에 설정된 경우에만 키 입력이 필요하고, 미설정(현재 개발 공개 정책, fail-open)이면 키 없이도 데이터가 그대로 조회됨 | X (셸만) / 데이터는 서버 키 설정 여부에 따름 |
+| GET | `/care/admin` | Admin UI 페이지. `BIGWASH_ADMIN_BASIC_AUTH` HTTP Basic 필수. HTML 인증 후 데이터 호출에는 별도 `x-api-key` 필요 | HTTP Basic |
 | POST | `/care/part-sales` | 부품판매 등록 (2026-07-17 추가) | O |
 | GET | `/care/part-sales?site_id=X` | 사업장별 부품판매 목록 (2026-07-17 추가) | O |
 | POST | `/care/outreach` | 홍보/휴면기 접촉 예정 생성 (2026-07-17 추가) | O |
@@ -118,11 +113,26 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 | PUT | `/care/care-plans/:id` | 사용 방문 수(`used_visits`)·`next_inspection_at`·메모 수정 (2026-07-21 4주차 추가) | O |
 | PUT | `/care/care-plans/:id/cancel` | CarePlan 취소 (2026-07-21 4주차 추가) | O |
 | POST | `/care/care-plans/:id/renew` | CarePlan 갱신 — 기존 ACTIVE를 RENEWED로 전환 후 신규 행 생성 (2026-07-21 4주차 추가) | O |
+| GET | `/care/operations` | 세차장 운영 기록실 HTML. Admin과 같은 HTTP Basic 필수, 같은 출처의 운영 API도 이 Basic 인증을 재사용 | HTTP Basic |
+| GET/POST | `/care/operations/sites` | 운영 사업장 목록 / 운영 사업장+고객 등록 | O |
+| POST | `/care/operations/sites/:id/activate` | 후보지의 동일 `site_id`를 운영 사업장으로 전환 | O |
+| GET | `/care/operations/equipment?site_id=X` | 운영 사업장의 장비 목록 | O |
+| POST | `/care/operations/day` | 일일 운영 상태 upsert | O |
+| POST | `/care/operations/vehicles` | 차량 작업과 선택된 입고/출차·외부/내부 상태 체크포인트를 한 트랜잭션으로 기록 | O |
+| POST | `/care/operations/reworks` | 고객 불만·무료 재작업 기록 | O |
+| POST | `/care/operations/equipment-issues` | 장비 이상·중단시간 기록 | O |
+| PUT | `/care/operations/equipment-issues/:id/resolve` | 장비 이상 해결 처리 | O |
+| POST | `/care/operations/notes` | 운영 메모 원문 기록 | O |
+| GET | `/care/operations/dashboard?site_id=X&date=YYYY-MM-DD` | 일일 지표·원본 목록·기록 기반 브리핑 | O |
+| GET | `/care/operations/weekly?site_id=X&end_date=YYYY-MM-DD` | 최근 7일 지표·재작업 원인·일별 흐름 | O |
 
-위 53개(내부 API, `/care/admin` 제외) + 아래 "공개 엔드포인트" 절의
+운영 API는 브라우저의 Admin Basic 또는 자동화용 `x-api-key` 중 하나를
+허용한다. 그 밖의 내부 API는 기존처럼 `x-api-key`만 허용한다.
+
+위 71개(내부 API, 정적 페이지 제외) + 아래 "공개 엔드포인트" 절의
 `/care/status/:token`, `/care/site-status/:token` 2개를 더하면
-`openapi-washcare.yaml`의 전체 operation 55개와 정확히 일치한다
-(`/care/admin`, 루트 `/`는 정적 페이지라 양쪽 문서 모두 API 스펙에서 제외).
+`openapi-washcare.yaml`의 전체 operation 73개와 정확히 일치한다
+(`/care/admin`, `/care/operations`, 루트 `/`는 정적 페이지라 OpenAPI에서 제외).
 
 ### POST /care/customers
 
@@ -139,18 +149,39 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 
 ### POST /care/sites
 
-요청: `{customer_id, name, address, contact_phone}`
+요청: `{customer_id, name, address, contact_phone, site_stage}`
 
-응답 200: `{ok: true, data: {id, customer_id, name, address, contact_phone, status, created_at, updated_at}}`
+- `site_stage`: `CANDIDATE`(후보지) | `OPERATING`(운영 현장) |
+  `REJECTED`(검토 제외), 생략 시 `OPERATING`
+- Admin UI의 `+ 후보지 추가` 버튼은 `CANDIDATE`로 저장한다. 후보지도 즉시
+  `site_id`를 받아 주소별 체크리스트를 작성할 수 있다.
+
+응답 200: `{ok: true, data: {id, customer_id, name, address, contact_phone, status, site_stage, created_at, updated_at}}`
+
+### POST/GET /care/site-checklists
+
+체크리스트는 고객 ID가 아니라 주소별 현장 `site_id`에 직접 연결한다. 같은
+고객이 주소를 여러 곳 보유해도 각 주소의 이력은 서로 섞이지 않는다.
+
+POST 요청: `{site_id, inspected_on, inspector, notes, items}`
+
+- `inspected_on`: 실재하는 `YYYY-MM-DD`
+- `items`: `WATER_SUPPLY`, `POWER_WIRING`, `PUMP_PRESSURE`, `LEAK`,
+  `FILTER`, `CHEMICAL`, `SAFETY`, `CLEANLINESS` 8개를 정확히 한 번씩 전달
+- 항목 결과: `OK` | `ATTENTION` | `FAIL` | `NOT_APPLICABLE`
+- 종합 결과는 서버가 `FAIL` 우선, 다음 `ATTENTION`, 나머지 `PASS`로 계산
+- 저장된 항목명은 스냅샷이라 이후 기본 문구가 바뀌어도 과거 이력은 보존
+
+GET `/care/site-checklists?site_id=X`는 해당 주소의 기록만 점검일 최신순으로
+반환하며 각 기록에 8개 `items`를 포함한다. Admin UI에서는 고객 상세 → 현장
+탭의 각 주소별 `작성·이력` 버튼으로 모바일 작성과 과거 이력 조회를 제공한다.
 
 ### POST /care/equipment
 
 요청: `{site_id, contract_id, category, model, serial_number, installed_at, warranty_ends_at}`
 
-`serial_number`는 UNIQUE — 중복 시 400 에러(실측 확인, 2026-07-21). 다만
-`error` 필드가 사람이 읽는 메시지가 아니라 내부 파일경로·줄번호·콜스택이
-포함된 예외 객체 직렬화값이다 — 별도 에러 코드로 구분되지 않는 것과 메시지
-새니타이즈 모두 개선 후보(아래 "알려진 개선 후보" 참조).
+`serial_number`는 UNIQUE — 중복 시 400 에러다. 오류 응답은 공통 안전
+처리기를 거쳐 내부 파일경로·줄번호·콜스택·DB 제약 문구를 노출하지 않는다.
 
 응답 200: `{ok: true, data: {...equipment row}}`
 
@@ -182,15 +213,9 @@ OpenAPI 스펙: [`openapi-washcare.yaml`](openapi-washcare.yaml) (같은 폴더)
 
 응답 200: `{ok: true, data: {success: true, old_status, new_status}}`
 
-**실측 확인(2026-07-21, 격리 테스트 DB에 서버 기동 후 curl로 재검증): 잘못된
-전이·존재하지 않는 티켓 모두 이제 500이 아니라 400으로 응답한다.** 다만
-`error` 필드는 사람이 읽는 메시지가 아니라 **캐치한 예외 객체 전체를 JSON
-문자열로 직렬화한 값**이라, 내부 절대경로·줄번호·호출 스택이 여전히 그대로
-노출된다(예: `error` 값 안에 `"stack":"Error: [update-ticket-status] [error]
-Service ticket not found (at line 108, col 0)"`와
-`"file":"/.../src/washcare-api.fl"`가 포함됨). Admin UI에서 이 에러를 그대로
-사용자에게 보여주면 안 되고, 별도로 파싱해서 표시해야 한다. 메시지
-새니타이즈는 개선 후보로 남겨둔다(아래 "알려진 개선 후보" 참조).
+**실측 확인(2026-07-22, 격리 테스트 DB): 잘못된 전이·존재하지 않는 티켓은
+400으로 응답하며 `error`에는 내부 절대경로·줄번호·호출 스택·DB 엔진 문구가
+포함되지 않는다.**
 
 ### POST /care/tickets/:id/visits
 
@@ -268,6 +293,106 @@ WashCare 쪽에서 `contracts`에 최소 INSERT를 수행한다.
 응답 200: `{ok: true, data: {...CONVERTED 상태의 quotes row}}`
 
 응답 400: `{ok: false, error: "Only APPROVED quotes can be converted to a contract" | ...}`
+
+### 계약관리 (`/care/contracts*`, 7주차 2026-07-22 추가)
+
+`DESIGN.md`의 계약 5상태(`DRAFT`/`PENDING`/`APPROVED`/`COMPLETED`/`CANCELLED`)와
+전이(`DRAFT→PENDING|CANCELLED`, `PENDING→APPROVED|CANCELLED`,
+`APPROVED→COMPLETED|CANCELLED`, `COMPLETED`/`CANCELLED`는 terminal)를 Care API로
+노출한다. 이 전이 함수(`valid-contract-transition?`, `src/phase1-db.fl`)는
+레거시 `contract.fl`의 `valid-transition?`이 위임 호출하는 단일 정본이라 두
+스택이 갈라지지 않는다(2026-07-19 기존 결정과 동일 원칙 유지). **DELETE
+엔드포인트는 없다** — 취소는 `PUT .../status`로 `CANCELLED` 전이만 쓴다.
+결제/미수금/분납/PG 필드·API는 어디에도 없다(`docs/09` 0장 원칙,
+`docs/07` §6 가드 — 05§17의 "계약금/중도금/잔금/작업 진행" 같은 세분화
+표시는 이 API가 저장하는 `status` enum에 들어가지 않는다).
+
+### GET /care/contracts
+
+쿼리: `status`(선택, DRAFT/PENDING/APPROVED/COMPLETED/CANCELLED), `customer_id`(선택),
+`site_id`(선택), `q`(선택, 계약번호/제목/고객명/현장명 LIKE 부분일치). 네
+파라미터 모두 생략하면 무필터 최신 50건. `created_at DESC, id DESC` 정렬,
+최대 50건.
+
+응답 200: `{ok: true, data: [ContractSummary, ...]}` — 각 원소에 `customer_name`/
+`site_name`(고객·현장 join)이 포함된다.
+
+응답 400: `{ok: false, error: "status must be one of DRAFT, PENDING, APPROVED, COMPLETED, CANCELLED" | "customer_id must be an integer" | ...}`
+
+**실측(2026-07-22, 격리 DB): SQL 유사 검색어(`%' OR 1=1 --`)를 `q`로 보내도
+파라미터 바인딩으로 안전 처리되어 0건이 반환되고 목록이 노출되지 않는다.
+다른 고객 소유 계약은 `customer_id` 필터에 섞이지 않는다.**
+
+### POST /care/contracts
+
+요청: `{customer_id, site_id?, title?, contract_date?, work_starts_at?, work_ends_at?, warranty_ends_at?, work_scope?, memo?, items}`
+
+- `items`는 최소 1개 필수: `{description, quantity, unit_price}` (`description`
+  nonblank, `quantity` 양의 정수, `unit_price` 0 이상 정수 — 소수 단가는 400)
+- `amount`는 요청으로 받지 않는다 — 서버가 `Σ(quantity*unit_price)`로 계산해
+  저장한다.
+- `contract_date`를 생략하거나 빈 문자열로 보내면 **Asia/Seoul 기준 오늘
+  날짜**가 기본값이다(SQLite `date('now', '+9 hours')`).
+- `site_id`를 주면 반드시 같은 `customer_id` 소속이어야 한다 — 다른 고객의
+  현장이면 400(`site_id must belong to the given customer_id`).
+- `work_starts_at`/`work_ends_at`/`warranty_ends_at`은 실재하는 달력일이어야
+  하고(윤년 포함 실측 검증), `work_starts_at`은 `work_ends_at`보다 늦을 수
+  없으며, `warranty_ends_at`은 `contract_date`보다 빠를 수 없다.
+- 신규 계약은 항상 `status="DRAFT"`로 시작하고, 생성 자체는 `contract_history`에
+  기록을 남기지 않는다(이후 상태전이부터 기록 시작).
+- 검증 실패 시 트랜잭션 전체가 롤백된다 — 실패한 생성은 `contracts` 행을
+  남기지 않는다(실측: 생성 전후 `COUNT(*)` 불변 확인).
+
+응답 200: `{ok: true, data: {contract: ContractSummary, items: [...], history: []}}`
+
+응답 400: `{ok: false, error: "customer_id is required" | "Customer not found" | "Site not found" | "site_id must belong to the given customer_id" | "at least one contract item is required" | "item description must not be blank" | "item quantity must be a positive integer" | "item unit_price must be a non-negative integer" | "contract_date must be a valid YYYY-MM-DD date" | "work_starts_at must not be after work_ends_at" | "warranty_ends_at must not be before contract_date" | ...}`
+
+### GET /care/contracts/:id
+
+응답 200: `{ok: true, data: {contract: ContractSummary, items: [{id, contract_id, description, quantity, unit_price, subtotal}, ...], history: [{id, contract_id, old_status, new_status, changed_at}, ...]}}`
+(`items`는 `id ASC`, `history`는 `changed_at ASC, id ASC` 순)
+
+응답 404: `{ok: false, error: "Contract not found"}` (실측 확인 — 존재하지 않는 id는 nil→404 매핑)
+
+응답 400: `{ok: false, error: "id must be an integer"}`
+
+### PUT /care/contracts/:id
+
+**DRAFT 상태의 계약만 수정 가능** — DRAFT가 아니면 400
+(`Only DRAFT contracts can be updated`). 요청 필드는 POST와 동일하되
+`customer_id`는 받지 않는다(불변, 기존 계약의 소유 고객을 그대로 씀).
+`items`는 기존 행을 전부 삭제하고 요청 items로 다시 삽입하는
+**전체교체**이며, `amount`는 새 items 합계로 다시 계산해 덮어쓴다. 나머지
+날짜·site_id 소속 검증은 POST /care/contracts와 동일하다.
+
+응답 200: `{ok: true, data: {contract: ContractSummary, items: [...], history: [...]}}`
+
+응답 404: `{ok: false, error: "Contract not found"}`
+
+응답 400: `{ok: false, error: "Only DRAFT contracts can be updated" | (POST와 동일한 날짜/items 검증 오류)}`
+
+### PUT /care/contracts/:id/status
+
+요청: `{status, signed_at?}` — `status`는 `DRAFT`|`PENDING`|`APPROVED`|`COMPLETED`|`CANCELLED`.
+
+허용 전이만 통과한다: `DRAFT→PENDING|CANCELLED`, `PENDING→APPROVED|CANCELLED`,
+`APPROVED→COMPLETED|CANCELLED`. `COMPLETED`/`CANCELLED`는 terminal(그 이후
+어떤 전이도 400). `APPROVED`로 전이할 때 `signed_at`을 Asia/Seoul
+현재시각으로 자동 채우되, 요청에 `signed_at`이 있으면(공백이 아니면) 그
+값을 그대로 보존한다(재입력·백데이트 허용, 공백 문자열은 400). 모든 성공
+전이는 `contract_history`에 `old_status`/`new_status` 1건을 추가한다.
+
+응답 200: `{ok: true, data: {contract: ContractSummary, items: [...], history: [...]}}`
+(`history`는 누적 — 예: DRAFT→PENDING→APPROVED→COMPLETED 순서로 3번 전이하면 3건)
+
+응답 404: `{ok: false, error: "Contract not found"}`
+
+응답 400: `{ok: false, error: "Invalid status transition from X to Y" | "signed_at must not be blank if provided"}`
+
+**실측(2026-07-22, `tests/test_contract_management.fl`): PENDING→COMPLETED
+직행은 400으로 거부되고, COMPLETED/CANCELLED 도달 후 어떤 전이도 다시
+400으로 거부된다(terminal 확인). DELETE 메서드는 이 리소스에 등록돼 있지
+않다 — 존재하지 않는 라우트라 404.**
 
 ### POST /care/consultations
 
@@ -432,8 +557,7 @@ UTC이므로 자정 근처 오차를 막기 위한 보정).
 3주차 주간 운영 보고(`docs/09-implementation-schedule.md` 3주차, `docs/01` §6
 항목 8 / P0-2). 카카오·메일 발송은 범위 밖 — JSON·Admin 화면만. **미수금
 키·섹션·추정값은 응답에 넣지 않는다**(PaymentOrder/입금원장 도입 후 버전된
-API 변경으로 추가). 개발 단계 인증은 기존과 동일하게 fail-open
-(`ApiKeyAuth | {}`).
+API 변경으로 추가). 내부 API는 기본 fail-closed이며 `ApiKeyAuth`가 필수다.
 
 `as_of` (선택): Asia/Seoul 달력 기준일, `YYYY-MM-DD`. 생략 시 서버 Seoul
 "오늘". 잘못된 형식이면 400.
@@ -658,15 +782,10 @@ docs/02 Phase2 원칙 — Admin UI도 이 원칙을 그대로 따라 화면에 �
   리스트 조회, 고객 부분검색(이름/전화/주소/메모), 신규 고객 10초 등록, 고객 상세 내
   상담 기록 등록/완료 처리, 고객 상세 조회 시 요청 토큰 기반 identity guard로
   느린 응답이 다른 고객 화면을 덮어쓰지 않게 방지(`viewCustomer`)
-- API 키는 페이지 상단 입력창에 입력 → `localStorage`에 저장 → 모든 호출에
-  `x-api-key` 헤더로 사용. 페이지 자체(HTML/JS)는 인증 없이 열람 가능하다.
-  데이터 호출은 `internal-authorized?`(`src/washcare-api.fl`)를 거치는데, 이
-  함수는 **서버에 `BIGWASH_INTERNAL_API_KEY`가 설정된 경우에만** 키를 실제로
-  검사한다 — 설정돼 있으면 올바른 키 없이는 데이터를 못 본다. 하지만 **현재
-  개발 공개 정책대로 서버에 키를 아예 설정하지 않은 상태(fail-open)에서는
-  브라우저에 키를 입력하지 않아도 데이터 API가 그대로 200을 반환한다**(위
-  "인증" 절 참조) — "키를 모르면 아무 데이터도 못 본다"는 키가 설정된
-  배포에만 해당하는 설명이다.
+- 페이지 자체는 HTTP Basic(`BIGWASH_ADMIN_BASIC_AUTH`)을 통과해야 한다.
+  이후 API 키는 페이지 상단 입력창에 입력 → `localStorage`에 저장 → 모든
+  데이터 호출에 `x-api-key` 헤더로 사용한다. 두 인증은 서로 대체할 수 없다.
+  개발 예외 `BIGWASH_ALLOW_INSECURE_DEV=1`도 Admin Basic 경계는 풀지 않는다.
 - 디자인은 최소한(design.md 팔레트 재사용)만 적용, 사용성 우선.
 
 ## 공개 엔드포인트
@@ -715,42 +834,19 @@ installed_at, warranty_ends_at, status}, ...]}}`
 3. **에러 응답 바디에 내부 파일 경로·줄번호·콜스택을 노출하지 않는다.**
    `catch`로 잡은 예외를 그대로 `(str e)`로 직렬화해 내려보내면 안 된다 —
    사람이 읽을 수 있는 메시지만 추출해서 내려야 한다.
-4. **적용 범위(이번 1주차)**: 신규 엔드포인트에는 이 기준을 적용하고,
-   기존 엔드포인트의 전수 리팩터는 범위 밖으로 남긴다(아래 "알려진 개선
-   후보" 참조, 별도 스프린트).
+4. **적용 범위(2026-07-22 보안 게이트)**: `washcare-api.fl`의 모든 catch
+   응답에 공통 안전 처리기를 적용했다. 전체 예외는 서버 로그에만 남긴다.
 
-## 알려진 개선 후보 (2026-07-21 실측 재검증 — 이전 버전 대비 상태 변경됨)
+## 남은 개선 후보 (2026-07-22)
 
-`docs/08-code-review-2026-07-19.md`가 다수 핸들러에 `try/catch`를 추가한
-뒤(2026-07-19), 이 절의 기존 내용("도메인 에러가 전부 500으로 내려온다")은
-**더 이상 정확하지 않다** — 아래는 격리 테스트 DB에 대해 실제로 서버를
-띄우고 `curl`로 재확인한 결과다(`docs/09-implementation-schedule.md` 1주차).
-
-- **상태 코드 자체는 대부분 이미 4xx로 고쳐졌다.** `POST /care/equipment`
-  serial_number 중복, `PUT /care/tickets/:id/status` 잘못된 전이·존재하지
-  않는 티켓 — 세 경우 모두 실측 결과 지금은 **500이 아니라 400**을
-  반환한다(이전 버전 문서가 "500 실측"이라 적었던 것은 이제 stale).
-- **다만 그 400 응답의 `error` 필드가 여전히 위 계약 3번을 위반한다.**
-  `try/catch`가 캐치한 예외를 정리하지 않고 `(str e)`로 그대로 직렬화해
-  내려보내기 때문에, `error` 값 자체가 `{"message":...,"stack":"Error: ...
-  (at line 66, col 0)","raw":{"__flCallStack":[{"file":"/home/kim/kim/
-  bigwash-contract/src/washcare-api.fl", ...}]}}` 형태의 **JSON으로 직렬화된
-  전체 예외 객체**다 — 내부 절대경로·줄번호·호출 스택이 클라이언트에
-  그대로 노출된다. 이 패턴(`(catch [e] (server_status 400 {:ok false
-  :error (str e)}))`)은 `handle-create-customer`, `handle-create-site`,
-  `handle-create-equipment`, `handle-create-ticket`,
-  `handle-update-ticket-status`, `handle-add-visit`,
-  `handle-create-consultation`, `handle-create-contact`,
-  `handle-create-task`, `handle-create-followup`, `handle-create-part-sale`,
-  `handle-list-customer-timeline`, `handle-create-quote`,
-  `handle-update-quote-status`, `handle-convert-quote`,
-  `handle-create-outreach`, `handle-outreach-response`,
-  `handle-register-sale`, `handle-warranty-expiring`,
-  `handle-revoke-link`, `handle-reissue-link`(`src/washcare-api.fl`)까지
-  20개 이상 핸들러에 공통으로 쓰여서, **상태 코드는 400으로 고쳐졌지만
-  내부 정보 노출 문제는 이전보다 오히려 더 넓게 퍼져 있다**(이전에는 일부
-  500 응답에서만 발생했던 것이 지금은 이 패턴을 쓰는 모든 400 응답에서
-  발생). 다음 정리 대상은 "상태 코드 재분류"가 아니라 "메시지 새니타이즈"다.
+- `(str e)` 직접 응답은 제거됐다. `safe-error-response`가 도메인 메시지를
+  제한적으로 보존하고 경로·스택·SQL/SQLite 내부 문구는 `Request failed`로
+  대체한다. `tests/test_security_gate.fl`과 격리 HTTP 검증으로 확인했다.
+- 런타임 FreeLang 서버가 `Access-Control-Allow-Origin: *`를 주입한다.
+  현재 `Access-Control-Allow-Credentials`는 없지만 운영 리버스 프록시에서
+  same-origin 허용 범위와 CSP/X-Frame-Options를 다시 실측해야 한다.
+- `/care/call-events?key=`의 query key는 자동화 앱 호환을 위한 예외다.
+  프록시 접근 로그에서 query string을 마스킹하는 운영 설정이 필요하다.
 - **일부 핸들러는 여전히 `try` 없이 도메인 함수를 직접 호출한다** — 예:
   `handle-complete-consultation`, `handle-complete-task`,
   `handle-complete-followup`. 다만 실측 결과 이 셋은 대상 id가 없어도
@@ -761,12 +857,6 @@ installed_at, warranty_ends_at, status}, ...]}}`
   순수 조회(`GET`) 핸들러 다수도 `try` 없이 쓰이지만 도메인 함수가 조회만
   하므로 같은 이유로 예외를 던지지 않는다 — 이 그룹은 실질적인 500 위험이
   낮다.
-- `GET /care/tickets/:id`, `GET /care/customers/:id`처럼 **명시적으로
-  `nil?` 체크 후 `server_status 404`를 내리는 핸들러는 이미 계약을
-  만족한다** — 깨끗한 `{"ok":false,"error":"Not found"}`만 내려가고 내부
-  정보 노출이 없다(실측 확인).
-- 이번 1주차 결론: **"4xx vs 5xx 판정" 문제는 대부분 해소됐고, 남은
-  핵심 갭은 "4xx 에러 메시지의 내부 정보 노출"과 "일부 완료 처리
-  핸들러가 존재하지 않는 id에도 200을 반환하는 것" 두 가지다.** 두 갭의
-  전수 수정은 이번 주차 범위 밖이며, 별도 스프린트에서 `(str e)` 직렬화를
-  사람이 읽는 메시지 추출로 교체하는 작업으로 처리한다.
+- 남은 응답 계약 갭은 일부 완료 처리 핸들러가 존재하지 않는 id에도
+  `200 {"ok":true,"data":null}`을 반환하는 점이다. 내부 정보 노출 문제와는
+  별개이며 후속 도메인 상태코드 정리 대상으로 유지한다.

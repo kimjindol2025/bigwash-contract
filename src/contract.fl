@@ -16,14 +16,7 @@
 
 ;;; Validate status transition
 (defn valid-transition? [from to]
-  (cond
-    [(= from STATUS-DRAFT)
-     (or (= to STATUS-PENDING) (= to STATUS-CANCELLED))]
-    [(= from STATUS-PENDING)
-     (or (= to STATUS-APPROVED) (= to STATUS-CANCELLED))]
-    [(= from STATUS-APPROVED)
-     (or (= to STATUS-COMPLETED) (= to STATUS-CANCELLED))]
-    [true false]))
+  (valid-contract-transition? from to))
 
 ;;; Helper: Insert contract items recursively
 (defn insert-items-rec [db-conn contract-id items idx]

@@ -2,14 +2,12 @@
   (let [override (env-get "BIGWASH_REPO_ROOT")]
     (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
 (load (str REPO-ROOT "/src/washcare.fl"))
-
 ;; 주간 운영보고(ops-weekly)는 site_id/customer_id로 스코프되지 않고
 ;; service_tickets/equipment 테이블 전체를 집계하므로, 공유 db/contracts.sqlite에
 ;; 대해 실행하면 다른 실데이터가 섞여 카운트 단정이 무의미해진다 — 반드시 격리
 ;; DB에서 돌린다 (test_ops_summary.fl과 동일 원칙).
 (if (= DB (str REPO-ROOT "/db/contracts.sqlite"))
   (error "test_ops_weekly.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
-
 ;; 재실행 가능하도록 이 테스트 픽스처만 먼저 지운다 (FK 순서: 자식 → 부모).
 (db_exec DB
   "DELETE FROM service_visits WHERE ticket_id IN
@@ -29,17 +27,14 @@
 (db_exec DB "DELETE FROM equipment WHERE serial_number LIKE 'WEEKLY-WTY-%'" [])
 (db_exec DB "DELETE FROM sites WHERE name = '주간보고 테스트 세차장'" [])
 (db_exec DB "DELETE FROM customers WHERE name = '주간보고 테스트 점주'" [])
-
 (defn has-id? [items target-id]
   (> (length (filter (fn [row] (= (get row :id) target-id)) items)) 0))
-
 (defn create-n-open-tickets [site-id n]
   (if (<= n 0)
     true
     (do
       (create-service-ticket site-id nil (str "캡경계-" n) "NORMAL" "PHONE" nil)
       (create-n-open-tickets site-id (- n 1)))))
-
 ;; ---- 1. ISO 연말연초 경계 — 고정 as_of로 결정적 검증 (wall-clock 무관) ----
 (let [w1 (get (get-ops-weekly "2025-12-28") :week)
       w2 (get (get-ops-weekly "2026-01-01") :week)
@@ -49,19 +44,16 @@
   (assert (= (get w1 :label) "2026-W01") "라벨이 2026-W01이어야 한다")
   (assert (= (get w1 :start_date) "2025-12-29") "주 시작일은 2025-12-29(월)이어야 한다")
   (assert (= (get w1 :end_date) "2026-01-04") "주 종료일은 2026-01-04(일)이어야 한다")
-
   (assert (= (get w2 :iso_year) 2026) "2026-01-01의 다음 ISO 주는 2026년이어야 한다")
   (assert (= (get w2 :iso_week) 2) "2026-01-01의 다음 ISO 주는 W02여야 한다")
   (assert (= (get w2 :label) "2026-W02") "라벨이 2026-W02여야 한다")
   (assert (= (get w2 :start_date) "2026-01-05") "주 시작일은 2026-01-05(월)이어야 한다")
   (assert (= (get w2 :end_date) "2026-01-11") "주 종료일은 2026-01-11(일)이어야 한다")
-
   (assert (= (get w3 :iso_year) 2027) "2026-12-31의 다음 ISO 주는 2027년이어야 한다(2026년은 53주짜리 해)")
   (assert (= (get w3 :iso_week) 1) "2026-12-31의 다음 ISO 주는 W01이어야 한다")
   (assert (= (get w3 :label) "2027-W01") "라벨이 2027-W01이어야 한다")
   (assert (= (get w3 :start_date) "2027-01-04") "주 시작일은 2027-01-04(월)이어야 한다")
   (assert (= (get w3 :end_date) "2027-01-10") "주 종료일은 2027-01-10(일)이어야 한다"))
-
 ;; ---- 2. invalid as_of → 에러(핸들러에서 400으로 매핑됨) ----
 (let [rejected-cases ["2026-02-30" "2026-13-01" "not-a-date" "2026-1-1"]
       all-rejected
@@ -78,17 +70,15 @@
   (assert blank-ok "빈 문자열 as_of는 생략과 동일하게 오늘 날짜로 처리돼야 한다(에러 아님)"))
 (let [nil-ok (try (do (get-ops-weekly nil) true) (catch [e] false))]
   (assert nil-ok "as_of 생략(nil)은 에러가 아니어야 한다"))
-
 ;; ---- 고정 as_of 기준 픽스처 (as_of="2026-01-01" → 다음 주 2026-01-05~01-11,
 ;;      배타적 상한 2026-01-12) ----
 (let [customer (create-customer "주간보고 테스트 점주" "010-9100-0001" "" "" nil nil)
       customer-id (get customer :id)
       site (create-site customer-id "주간보고 테스트 세차장" "서울시 주간보고구" "02-9100-0001")
       site-id (get site :id)]
-
   ;; ---- 3. 미처리 A/S: status만으로 판정, IN_PROGRESS 포함, 완료/취소 제외 ----
   (let [t-received (create-service-ticket site-id nil "미처리-RECEIVED" "NORMAL" "PHONE" nil)
-        t-scheduled (create-service-ticket site-id nil "미처리-SCHEDULED" "NORMAL" "PHONE" "2099-01-01 00:00:00")
+        t-scheduled (create-service-ticket site-id nil "미처리-SCHEDULED" "NORMAL" "PHONE" "2099-01-01T00:00:00")
         t-inprogress (create-service-ticket site-id nil "미처리-IN_PROGRESS" "NORMAL" "PHONE" nil)
         t-completed (create-service-ticket site-id nil "미처리아님-COMPLETED" "NORMAL" "PHONE" nil)
         t-cancelled (create-service-ticket site-id nil "미처리아님-CANCELLED" "NORMAL" "PHONE" nil)]
@@ -97,22 +87,20 @@
     (update-ticket-status (get t-completed :id) "IN_PROGRESS")
     (update-ticket-status (get t-completed :id) "COMPLETED")
     (update-ticket-status (get t-cancelled :id) "CANCELLED")
-
     (let [items (list-ops-weekly-unprocessed)]
       (assert (has-id? items (get t-received :id)) "RECEIVED는 미처리 A/S에 포함돼야 한다")
       (assert (has-id? items (get t-scheduled :id)) "SCHEDULED는 미처리 A/S에 포함돼야 한다")
       (assert (has-id? items (get t-inprogress :id)) "IN_PROGRESS는 미처리 A/S에 포함돼야 한다(확정 규칙)")
       (assert (not (has-id? items (get t-completed :id))) "COMPLETED는 미처리 A/S에서 제외해야 한다")
       (assert (not (has-id? items (get t-cancelled :id))) "CANCELLED는 미처리 A/S에서 제외해야 한다")))
-
   ;; ---- 4. 다음 주 방문: 월요일 포함 ~ 다음 월요일 미만(배타), 완료/취소 제외, IN_PROGRESS 포함 ----
-  (let [t-monday (create-service-ticket site-id nil "다음주방문-월요일포함" "NORMAL" "PHONE" "2026-01-05 09:00:00")
-        t-sunday (create-service-ticket site-id nil "다음주방문-일요일포함" "NORMAL" "PHONE" "2026-01-11 23:59:00")
-        t-next-monday (create-service-ticket site-id nil "다음주방문아님-그다음월요일" "NORMAL" "PHONE" "2026-01-12 00:00:00")
-        t-prev-sunday (create-service-ticket site-id nil "다음주방문아님-전주일요일" "NORMAL" "PHONE" "2026-01-04 23:59:00")
-        t-inprogress (create-service-ticket site-id nil "다음주방문-진행중포함" "NORMAL" "PHONE" "2026-01-09 09:00:00")
-        t-completed-in-range (create-service-ticket site-id nil "다음주방문아님-완료" "NORMAL" "PHONE" "2026-01-07 09:00:00")
-        t-cancelled-in-range (create-service-ticket site-id nil "다음주방문아님-취소" "NORMAL" "PHONE" "2026-01-07 09:00:00")]
+  (let [t-monday (create-service-ticket site-id nil "다음주방문-월요일포함" "NORMAL" "PHONE" "2026-01-05T09:00:00")
+        t-sunday (create-service-ticket site-id nil "다음주방문-일요일포함" "NORMAL" "PHONE" "2026-01-11T23:59:00")
+        t-next-monday (create-service-ticket site-id nil "다음주방문아님-그다음월요일" "NORMAL" "PHONE" "2026-01-12T00:00:00")
+        t-prev-sunday (create-service-ticket site-id nil "다음주방문아님-전주일요일" "NORMAL" "PHONE" "2026-01-04T23:59:00")
+        t-inprogress (create-service-ticket site-id nil "다음주방문-진행중포함" "NORMAL" "PHONE" "2026-01-09T09:00:00")
+        t-completed-in-range (create-service-ticket site-id nil "다음주방문아님-완료" "NORMAL" "PHONE" "2026-01-07T09:00:00")
+        t-cancelled-in-range (create-service-ticket site-id nil "다음주방문아님-취소" "NORMAL" "PHONE" "2026-01-07T09:00:00")]
     (update-ticket-status (get t-monday :id) "SCHEDULED")
     (update-ticket-status (get t-sunday :id) "SCHEDULED")
     (update-ticket-status (get t-next-monday :id) "SCHEDULED")
@@ -121,7 +109,6 @@
     (update-ticket-status (get t-completed-in-range :id) "IN_PROGRESS")
     (update-ticket-status (get t-completed-in-range :id) "COMPLETED")
     (update-ticket-status (get t-cancelled-in-range :id) "CANCELLED")
-
       (let [items (list-ops-weekly-visits "2026-01-05" "2026-01-12")]
       (assert (has-id? items (get t-monday :id)) "다음 주 월요일(시작 경계, 포함)은 다음 주 방문에 있어야 한다")
       (assert (has-id? items (get t-sunday :id)) "다음 주 일요일(종료 경계, 포함)은 다음 주 방문에 있어야 한다")
@@ -130,7 +117,6 @@
       (assert (not (has-id? items (get t-prev-sunday :id))) "전 주 일요일은 다음 주 방문이 아니어야 한다")
       (assert (not (has-id? items (get t-completed-in-range :id))) "구간 내라도 COMPLETED면 다음 주 방문에서 제외해야 한다")
       (assert (not (has-id? items (get t-cancelled-in-range :id))) "구간 내라도 CANCELLED면 다음 주 방문에서 제외해야 한다")))
-
   ;; ---- 5. 점검 대상: 같은 다음 주 구간 + ACTIVE 장비만 ----
   (let [eq-active-monday (create-equipment site-id nil "세차기" "WEEKLY-ACTIVE-MON" "WEEKLY-WTY-ACTIVE-001" "2023-01-01" "2026-01-05")
         eq-active-sunday (create-equipment site-id nil "세차기" "WEEKLY-ACTIVE-SUN" "WEEKLY-WTY-ACTIVE-002" "2023-01-01" "2026-01-11")
@@ -139,7 +125,6 @@
         eq-repair-in (create-equipment site-id nil "세차기" "WEEKLY-REPAIR-IN" "WEEKLY-WTY-REPAIR-001" "2023-01-01" "2026-01-08")]
     (db_exec DB "UPDATE equipment SET status = 'RETIRED' WHERE id = ?" [(get eq-retired-in :id)])
     (db_exec DB "UPDATE equipment SET status = 'REPAIR' WHERE id = ?" [(get eq-repair-in :id)])
-
     (let [items (list-ops-weekly-inspection-due "2026-01-05" "2026-01-12")]
       (assert (has-id? items (get eq-active-monday :id)) "다음 주 시작 경계 월요일(포함)은 점검 대상에 포함돼야 한다")
       (assert (has-id? items (get eq-active-sunday :id)) "다음 주 종료 경계 일요일(포함)은 점검 대상에 포함돼야 한다")
@@ -147,7 +132,6 @@
       (assert (not (has-id? items (get eq-retired-in :id))) "RETIRED 장비는 점검 대상에서 제외해야 한다")
       (assert (not (has-id? items (get eq-repair-in :id))) "REPAIR 장비는 점검 대상에서 제외해야 한다")
       ))
-
   ;; ---- 6. count는 캡 없이 전체, items는 최대 50 (51건으로 캡 경계 검증) ----
   (let [baseline (count-ops-weekly-unprocessed)]
     (create-n-open-tickets site-id 51)
@@ -155,7 +139,6 @@
             "count는 LIMIT과 무관하게 실제 증가분만큼 정확히 늘어야 한다(51건 추가)")
     (assert (= (length (list-ops-weekly-unprocessed)) 50)
             "items는 전체 대상이 50건을 넘어도 항상 최대 50건이어야 한다"))
-
   ;; ---- 7. get-ops-weekly 조립 결과가 개별 함수 결과와 일치해야 한다(배선 회귀 방지) ----
   (let [weekly (get-ops-weekly "2026-01-01")]
     (assert (= (get weekly :timezone) "Asia/Seoul") "timezone은 Asia/Seoul로 고정돼야 한다")
@@ -170,5 +153,4 @@
             "inspection_due count가 개별 함수와 일치해야 한다")
     (assert (nil? (get weekly :receivables)) "미수금 키(receivables)는 응답에 존재하면 안 된다")
     (assert (nil? (get weekly :unpaid)) "미수금 키(unpaid)도 응답에 존재하면 안 된다")))
-
 (println "✓ Ops weekly report tests passed")

@@ -2,10 +2,12 @@ openapi: 3.0.3
 info:
   title: WashCare Phase 1 API
   description: >
-    대한이엔지 장비 안심관리(WashCare) Phase 1 API. 실측 검증일 2026-07-16,
-    라우트 동기화 2026-07-21(docs/09 1~5주차, src/washcare-api.fl 라우트 전수 대조 —
-    `/care/care-plans*` 포함 시 JSON API 53개, 5주차는 GET /care/care-plans
-    무필터 응답 계약만 갱신되고 라우트 수는 변하지 않음).
+    대한이엔지 장비 안심관리(WashCare) Phase 1 API. 보안 게이트·라우트
+    동기화 2026-07-31(src/washcare-api.fl 전수 대조 — 내부 59개 + 공개 2개,
+    JSON API 총 61개). 7주차(2026-07-22)에 계약관리 API 4개
+    (POST /care/contracts, GET/PUT /care/contracts/{id},
+    PUT /care/contracts/{id}/status)가 기존 GET /care/contracts와 함께
+    추가됐다 — 상세는 docs/13-contract-management-report.md 참조.
     상세 설명은 04-washcare-api.md 참조. 정적 Admin UI(`GET /care/admin`)와
     루트 리다이렉트(`GET /`)는 JSON API가 아니므로 이 스펙에서 명시적으로
     제외한다 — Admin UI 설명은 04-washcare-api.md의 "Admin UI (MVP)" 절 참조.
@@ -15,12 +17,11 @@ servers:
     description: 로컬 개발 (BIGWASH_CARE_PORT로 변경 가능, 기본 40101)
 security:
   - ApiKeyAuth: []
-  - {}
 paths:
   /care/customers:
     post:
       summary: 고객 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -47,7 +48,7 @@ paths:
           $ref: "#/components/responses/Unauthorized"
     get:
       summary: "고객 검색 (name/phone/address/memo LIKE 부분일치, 전화번호 하이픈 무관, 최대 50건)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: q
           in: query
@@ -68,7 +69,7 @@ paths:
         발신번호로 고객을 정확 일치(하이픈 무관) 조회한다. search-customers와
         달리 부분일치가 아니라 정확 일치만 — 착신 팝업에 엉뚱한 고객이 뜨면
         안 되기 때문. 문서: docs/11-mobile-caller-lookup.md
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: phone
           in: query
@@ -90,11 +91,11 @@ paths:
         저장(소급 연결용, 타임라인엔 안 뜸). mobserve는 커스텀 헤더를 못
         보내므로(소스 확인) 이 엔드포인트만 `x-api-key` 헤더 대신 `?key=`
         쿼리파라미터로 인증한다. 문서: docs/11-mobile-caller-lookup.md
-      security: [{ApiKeyQueryAuth: []}, {}]
+      security: [{ApiKeyQueryAuth: []}]
       parameters:
         - name: key
           in: query
-          required: false
+          required: true
           schema: { type: string }
       requestBody:
         required: true
@@ -123,7 +124,7 @@ paths:
   /care/customers/{id}:
     get:
       summary: 고객 상세 조회
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -137,7 +138,7 @@ paths:
   /care/consultations:
     post:
       summary: 상담 기록 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -158,7 +159,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 상담 기록 목록 (consulted_at DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -171,7 +172,7 @@ paths:
   /care/consultations/{id}/complete:
     put:
       summary: "상담 완료 처리 (건별 completed_at 기록, 최신 1건만 남기지 않고 개별 완료)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -184,7 +185,7 @@ paths:
   /care/consultations/due-today:
     get:
       summary: "오늘 다시 연락할 상담 목록 (completed_at IS NULL, date(next_contact_at) <= date('now'))"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       responses:
         "200": { description: 목록 }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -192,7 +193,7 @@ paths:
   /care/consultations/recent:
     get:
       summary: "최근 상담 목록 (limit 기본 15)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: limit
           in: query
@@ -205,7 +206,7 @@ paths:
   /care/consultations/pending:
     get:
       summary: "다음 조치가 남은 상담 목록 (completed_at IS NULL AND next_action <> 'NONE')"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       responses:
         "200": { description: 목록 }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -213,7 +214,7 @@ paths:
   /care/sites:
     post:
       summary: 사업장 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -226,12 +227,17 @@ paths:
                 name: { type: string }
                 address: { type: string }
                 contact_phone: { type: string }
+                site_stage:
+                  type: string
+                  enum: [CANDIDATE, OPERATING, REJECTED]
+                  default: OPERATING
+                  description: "CANDIDATE이면 후보지 추가, 생략하면 기존과 같이 운영 현장"
       responses:
         "200": { description: 생성됨 }
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: 고객별 사업장 목록
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -241,10 +247,71 @@ paths:
         "200": { description: 목록 }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /care/site-checklists:
+    post:
+      summary: "주소(현장)별 점검 체크리스트 저장 — 정본 8개 항목"
+      description: >
+        site_id가 주소별 격리 경계다. 같은 고객에게 현장이 여러 개 있어도
+        체크리스트는 지정한 현장에만 누적된다. items는 서버 정본 코드 8개를
+        정확히 한 번씩 보내야 하며 종합 결과는 FAIL > ATTENTION > PASS
+        우선순위로 서버가 계산한다.
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, inspected_on, inspector, items]
+              properties:
+                site_id: { type: integer, minimum: 1 }
+                inspected_on: { type: string, format: date }
+                inspector: { type: string, minLength: 1 }
+                notes: { type: string, nullable: true }
+                items:
+                  type: array
+                  minItems: 8
+                  maxItems: 8
+                  items: { $ref: "#/components/schemas/SiteChecklistItemInput" }
+      responses:
+        "200":
+          description: 저장된 주소별 체크리스트
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/SiteChecklist" }
+        "400": { description: "잘못된 site_id/날짜/점검자/항목 코드·결과·개수 또는 중복 항목" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    get:
+      summary: "주소(현장)별 점검 체크리스트 이력"
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: site_id
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: "점검일 최신순 목록, 각 기록에 items 포함"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/SiteChecklist" }
+        "400": { description: "site_id 누락·형식 오류·0 이하" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /care/equipment:
     post:
       summary: 장비 등록
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -257,16 +324,16 @@ paths:
                 contract_id: { type: integer, nullable: true }
                 category: { type: string }
                 model: { type: string }
-                serial_number: { type: string, description: "UNIQUE — 중복 시 400(실측 2026-07-21). error 필드에 내부 정보 노출은 개선 후보" }
+                serial_number: { type: string, description: "UNIQUE — 중복 시 400. 외부 error는 새니타이즈됨" }
                 installed_at: { type: string, format: date }
                 warranty_ends_at: { type: string, format: date }
       responses:
         "200": { description: 생성됨 }
-        "400": { description: "실측 확인됨(2026-07-21) — serial_number 중복 등 도메인 에러는 400. 다만 error 필드가 내부 파일경로·줄번호·콜스택을 그대로 노출함(개선 후보, docs/04 에러 계약 절 참조)" }
+        "400": { description: "serial_number 중복 등 도메인 에러. 내부 파일경로·스택·DB 엔진 정보는 노출하지 않음" }
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 장비 목록 (site 조인, installed_at DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -279,7 +346,7 @@ paths:
   /care/customer-contacts:
     post:
       summary: 고객 담당자 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -304,7 +371,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 담당자 목록 (is_primary DESC, 최신순)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -317,7 +384,7 @@ paths:
   /care/customer-tasks:
     post:
       summary: 고객 할 일 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -337,7 +404,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 할 일 목록 (마감일 오름차순, 마감일 없는 건은 뒤로)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -350,7 +417,7 @@ paths:
   /care/customer-tasks/{id}/complete:
     put:
       summary: "할 일 완료 처리 (status=DONE, completed_at 기록)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -363,7 +430,7 @@ paths:
   /care/customer-followups:
     post:
       summary: 사후관리 예정 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -388,7 +455,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 사후관리 목록 (scheduled_at DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -401,7 +468,7 @@ paths:
   /care/customer-followups/{id}/complete:
     put:
       summary: "사후관리 완료 처리 (completed_at 기록)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -414,7 +481,7 @@ paths:
   /care/quotes:
     post:
       summary: 고객 견적 생성
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -434,7 +501,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: "고객별 견적 목록 (created_at DESC, id DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -447,7 +514,7 @@ paths:
   /care/quotes/{id}/status:
     put:
       summary: "견적 상태 변경 (DRAFT→SENT→REVIEWING→REVISION_REQUESTED→SENT 흐름 + ON_HOLD/REJECTED 분기만 허용)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -470,7 +537,7 @@ paths:
   /care/quotes/{id}/convert:
     post:
       summary: "승인 견적을 계약으로 전환 (APPROVED만 가능)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -484,7 +551,7 @@ paths:
   /care/timeline:
     get:
       summary: "고객 통합 타임라인 (상담·판매·견적·계약·출장·사후관리 UNION ALL, event_at DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: customer_id
           in: query
@@ -501,21 +568,224 @@ paths:
 
   /care/contracts:
     get:
-      summary: "고객별 계약 목록 (created_at DESC, id DESC)"
-      security: [{ApiKeyAuth: []}, {}]
+      summary: "계약 목록 — status/customer_id/site_id/q 전부 선택 필터 (created_at DESC, id DESC, 최대 50건, 7주차 2026-07-22 확장)"
+      description: >-
+        네 파라미터 전부 생략 가능(무필터 전체 최신 50건). status는 DESIGN
+        5값(DRAFT/PENDING/APPROVED/COMPLETED/CANCELLED)만 허용, 그 외 값은
+        400. q는 계약번호/제목/고객명/현장명에 대한 LIKE 부분일치이며 SQL
+        메타문자가 섞여도 파라미터 바인딩으로 안전하게 처리되어 결과가 0건일
+        뿐 목록이 노출되지 않는다.
+      security: [{ApiKeyAuth: []}]
       parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [DRAFT, PENDING, APPROVED, COMPLETED, CANCELLED] }
         - name: customer_id
           in: query
+          required: false
+          schema: { type: integer }
+        - name: site_id
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: "목록(ContractSummary[], 고객명/현장명 join 포함)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ContractSummary" }
+        "400": { description: "status must be one of DRAFT, PENDING, APPROVED, COMPLETED, CANCELLED | customer_id/site_id must be an integer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: "계약 수동 생성 — 서버가 items 합계로 amount 계산 (7주차 2026-07-22 추가)"
+      description: >-
+        contract_date 생략/빈 문자열이면 Asia/Seoul 기준 오늘 날짜가 기본값이다.
+        items는 최소 1개 필수(description/quantity 양의 정수/unit_price 0
+        이상 정수), amount는 요청 값과 무관하게 항목 합계(quantity*unit_price
+        총합)로 서버가 재계산한다. site_id를 주면 반드시 같은 customer_id
+        소속이어야 하며(다른 고객 현장이면 400), work_starts_at/work_ends_at/
+        warranty_ends_at은 각각 실재하는 달력일이어야 하고 work_starts_at은
+        work_ends_at보다 늦을 수 없으며 warranty_ends_at은 contract_date보다
+        빠를 수 없다. 신규 계약은 항상 status=DRAFT로 시작하고 생성 시점에는
+        history를 남기지 않는다(이후 상태전이부터 기록).
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer_id, items]
+              properties:
+                customer_id: { type: integer }
+                site_id: { type: integer, nullable: true, description: "지정 시 customer_id 소속 현장이어야 함" }
+                title: { type: string, nullable: true }
+                contract_date: { type: string, format: date, nullable: true, description: "생략/빈 문자열이면 Asia/Seoul 오늘" }
+                work_starts_at: { type: string, format: date, nullable: true }
+                work_ends_at: { type: string, format: date, nullable: true }
+                warranty_ends_at: { type: string, format: date, nullable: true }
+                work_scope: { type: string, nullable: true }
+                memo: { type: string, nullable: true }
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [description, quantity, unit_price]
+                    properties:
+                      description: { type: string }
+                      quantity: { type: integer, minimum: 1 }
+                      unit_price: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: "생성됨 — status=DRAFT, amount는 items 합계"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/ContractDetail" }
+        "400": { description: "customer_id required | Customer not found | Site not found | site_id must belong to the given customer_id | at least one contract item is required | item 검증 실패 | 날짜 검증 실패" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/contracts/{id}:
+    get:
+      summary: "계약 상세 + items + history (7주차 2026-07-22 추가)"
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: id
+          in: path
           required: true
           schema: { type: integer }
       responses:
-        "200": { description: 목록 }
+        "200":
+          description: "{contract, items, history}"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/ContractDetail" }
+        "404": { description: "Contract not found" }
+        "400": { description: "id must be an integer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: "계약 전체교체 수정 — DRAFT 상태만 허용 (7주차 2026-07-22 추가)"
+      description: >-
+        customer_id는 불변(기존 계약의 소유 고객을 그대로 씀 — 요청 본문에
+        받지 않음). items는 기존 행을 전부 삭제하고 요청 items로 다시 삽입하는
+        전체교체이며, amount는 create와 동일하게 새 items 합계로 서버 재계산.
+        DRAFT가 아닌 계약을 수정하려 하면 400. 나머지 검증(날짜/site_id 소속/
+        items 최소 1개)은 POST /care/contracts와 동일.
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                site_id: { type: integer, nullable: true }
+                title: { type: string, nullable: true }
+                contract_date: { type: string, format: date, nullable: true }
+                work_starts_at: { type: string, format: date, nullable: true }
+                work_ends_at: { type: string, format: date, nullable: true }
+                warranty_ends_at: { type: string, format: date, nullable: true }
+                work_scope: { type: string, nullable: true }
+                memo: { type: string, nullable: true }
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [description, quantity, unit_price]
+                    properties:
+                      description: { type: string }
+                      quantity: { type: integer, minimum: 1 }
+                      unit_price: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: "갱신됨 — amount는 새 items 합계로 재계산"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/ContractDetail" }
+        "404": { description: "Contract not found" }
+        "400": { description: "Only DRAFT contracts can be updated | 날짜/items 검증 실패" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/contracts/{id}/status:
+    put:
+      summary: "계약 상태 전이 (5종 상태, DELETE 없음 — 취소는 CANCELLED로만, 7주차 2026-07-22 추가)"
+      description: >-
+        허용 전이만 통과: DRAFT→PENDING|CANCELLED, PENDING→APPROVED|CANCELLED,
+        APPROVED→COMPLETED|CANCELLED. COMPLETED/CANCELLED는 terminal(더 이상
+        전이 불가). 그 외 조합은 400. APPROVED로 전이 시 signed_at을
+        Asia/Seoul 현재시각으로 자동 채우되, 요청에 signed_at이 있으면 그
+        값을 그대로 쓴다(백데이트 허용). 모든 성공 전이는 contract_history에
+        old_status/new_status를 기록한다. 이 API에 DELETE는 존재하지 않으며
+        계약 삭제·결제·PG 연동 필드도 없다.
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [DRAFT, PENDING, APPROVED, COMPLETED, CANCELLED]
+                signed_at:
+                  type: string
+                  nullable: true
+                  description: "APPROVED 전이 시에만 의미 있음. 생략 시 서버가 Asia/Seoul 현재시각으로 채움"
+      responses:
+        "200":
+          description: "전이됨 — history에 old/new status 1건 추가"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data: { $ref: "#/components/schemas/ContractDetail" }
+        "404": { description: "Contract not found" }
+        "400": { description: "Invalid status transition from X to Y | signed_at must not be blank if provided" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/tickets:
     post:
       summary: A/S 접수 (공개 토큰 발급)
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -548,7 +818,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: 상태별 티켓 목록 (Admin UI용)
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: status
           in: query
@@ -566,7 +836,7 @@ paths:
   /care/tickets/{id}/status:
     put:
       summary: 티켓 상태 변경
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       requestBody:
@@ -585,13 +855,13 @@ paths:
           description: >
             상태 변경됨. COMPLETED는 공개 링크를 즉시 폐기하지 않고 7일간 유지(고객이
             완료 상태를 확인할 수 있도록, 2026-07-16 수정). CANCELLED는 즉시 폐기.
-        "400": { description: "실측 확인됨(2026-07-21) — 잘못된 전이/존재하지 않는 티켓 모두 400. 다만 error 필드가 내부 파일경로·줄번호·콜스택을 그대로 노출함(개선 후보, docs/04 에러 계약 절 참조)" }
+        "400": { description: "잘못된 전이/존재하지 않는 티켓. 내부 파일경로·스택·DB 엔진 정보는 노출하지 않음" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/tickets/{id}/visits:
     post:
       summary: 방문·수리 이력 추가
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       requestBody:
@@ -616,7 +886,7 @@ paths:
   /care/tickets/{id}:
     get:
       summary: 티켓 상세 (방문·상태변경 이력 포함)
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       responses:
@@ -627,7 +897,7 @@ paths:
   /care/part-sales:
     post:
       summary: "부품판매 등록 (A/S와 독립적으로도 가능, 매출 30%)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -648,7 +918,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     get:
       summary: 사업장별 부품판매 목록
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: site_id
           in: query
@@ -661,7 +931,7 @@ paths:
   /care/outreach:
     post:
       summary: "홍보/휴면기 접촉 예정 생성 (판매 후 ~3년 휴면기 관리)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -682,7 +952,7 @@ paths:
   /care/outreach/{id}/response:
     post:
       summary: 접촉 응답·전환 결과 기록
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -706,7 +976,7 @@ paths:
   /care/outreach/due:
     get:
       summary: "접촉 예정일이 지난(또는 오늘인) 대상 목록 (사업장·장비별 최신 1건만)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       responses:
         "200": { description: 목록 }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -714,7 +984,7 @@ paths:
   /care/tickets/{id}/link/revoke:
     post:
       summary: 공개 링크 폐기
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       responses:
@@ -724,7 +994,7 @@ paths:
   /care/tickets/{id}/link/reissue:
     post:
       summary: "공개 링크 재발급 (이전 토큰은 즉시 무효화)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - $ref: "#/components/parameters/TicketId"
       responses:
@@ -771,7 +1041,7 @@ paths:
   /care/sales:
     post:
       summary: "판매 등록 (고객/사업장/장비 생성 + 장비관리 링크 발급 + 첫 접촉 예약, orchestrated)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -808,7 +1078,7 @@ paths:
   /care/sites/{id}/link/revoke:
     post:
       summary: 사업장 장비관리 링크 폐기
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -822,7 +1092,7 @@ paths:
   /care/sites/{id}/link/reissue:
     post:
       summary: "사업장 장비관리 링크 재발급 (이전 토큰은 즉시 무효화)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -836,7 +1106,7 @@ paths:
   /care/warranty-expiring:
     get:
       summary: "보증 만료 임박 장비 목록 (재구매·교체판매 제안 대상, ACTIVE 장비만)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: days
           in: query
@@ -859,7 +1129,7 @@ paths:
         service_visits.technician은 방문 완료 후에만 존재하는 사후 이력이라
         배정 여부를 나타낼 수 없다. visits_today는 scheduled_at(예정) 기준이며
         service_visits(완료 이력)를 쓰지 않는다. 상세는 04-washcare-api.md 참조.
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: warranty_days
           in: query
@@ -915,8 +1185,8 @@ paths:
         warranty_ends_at이 다음 ISO 주에 해당하는 보증 만료 기반 점검 대상이다.
         unprocessed는 status NOT IN (COMPLETED,CANCELLED)이며 IN_PROGRESS를
         포함한다(열린 티켓 전체). "담당자 미배정"이 아니다.
-        개발 단계 fail-open: security에 ApiKeyAuth와 빈 {}를 함께 둔다.
-      security: [{ApiKeyAuth: []}, {}]
+        내부 API는 기본 fail-closed이며 ApiKeyAuth가 필수다.
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: as_of
           in: query
@@ -981,7 +1251,7 @@ paths:
         (starts_at + 기간일수 - 1). 같은 site_id에 겹치는 비취소(ACTIVE/
         RENEWED) 기간이 있으면 트랜잭션 내에서 거부. payment_status/PG
         연동 없음(PaymentOrder 도입 전).
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -1020,7 +1290,7 @@ paths:
         모두 sites/customers를 JOIN해 customer_id/customer_name/site_name을
         각 행에 채운다. site_id/customer_id에 정수가 아니거나 0 이하인
         값을 주면 400 — 생략은 오류가 아니라 무필터 전체 목록으로 처리된다.
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: site_id
           in: query
@@ -1048,7 +1318,7 @@ paths:
   /care/care-plans/{id}:
     get:
       summary: "CarePlan 상세 조회 (4주차, 2026-07-21 추가)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -1072,7 +1342,7 @@ paths:
         used_visits는 자동 차감 없이 항상 절대값을 받는다(재시도 멱등,
         증가·감소 모두 허용 — 오입력 정정 목적). 0..included_visits 범위를
         벗어나면 400. 대상 CarePlan이 ACTIVE가 아니면 400.
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -1105,7 +1375,7 @@ paths:
   /care/care-plans/{id}/cancel:
     put:
       summary: "CarePlan 취소 (4주차, 2026-07-21 추가)"
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -1143,7 +1413,7 @@ paths:
         시 원본 코드를 재사용하되 price_snapshot/included_visits는 원본 값이
         아니라 (재사용/변경된) plan_code의 기본값을 새로 적용하며, 새 행의
         used_visits는 0부터 다시 시작한다.
-      security: [{ApiKeyAuth: []}, {}]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: id
           in: path
@@ -1172,6 +1442,220 @@ paths:
                   data: { $ref: "#/components/schemas/CarePlanRow" }
         "404": { description: "Care plan not found" }
         "400": { description: "Only ACTIVE care plans can be renewed | 겹치는 비취소 기간 존재" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/sites:
+    get:
+      summary: 세차장 운영 사업장 목록
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      responses:
+        "200": { description: "OPERATING 사업장 목록" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: 운영 사업장과 고객을 함께 등록
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                address: { type: string, nullable: true }
+                owner_name: { type: string, nullable: true }
+                phone: { type: string, nullable: true }
+      responses:
+        "200": { description: 생성됨 }
+        "400": { description: 잘못된 요청 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/sites/{id}/activate:
+    post:
+      summary: 후보지를 동일 site_id의 운영 사업장으로 전환
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: "site_stage=OPERATING으로 전환됨" }
+        "400": { description: "후보지가 아니거나 존재하지 않음" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/equipment:
+    get:
+      summary: 운영 사업장의 장비 목록
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      parameters:
+        - { name: site_id, in: query, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: 목록 }
+        "400": { description: 잘못된 사업장 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/day:
+    post:
+      summary: 일일 운영 상태 생성 또는 수정
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, operation_date]
+              properties:
+                site_id: { type: integer }
+                operation_date: { type: string, format: date }
+                status: { type: string, enum: [NORMAL, CAUTION, PROBLEM] }
+                reserved_count: { type: integer, minimum: 0 }
+                staff_count: { type: integer, minimum: 0 }
+                owner_work_minutes: { type: integer, minimum: 0 }
+                owner_memo: { type: string, nullable: true }
+      responses:
+        "200": { description: 저장됨 }
+        "400": { description: 잘못된 요청 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/vehicles:
+    post:
+      summary: 차량번호 중심 작업 기록
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, job_date, plate_number]
+              properties:
+                site_id: { type: integer }
+                job_date: { type: string, format: date }
+                plate_number: { type: string }
+                work_minutes: { type: integer, minimum: 0 }
+                wait_minutes: { type: integer, minimum: 0 }
+                payment_amount: { type: number, minimum: 0 }
+                owner_involved: { type: boolean }
+                conditions:
+                  type: array
+                  description: 확인한 차량 상태 항목만 보낸다. 차량 본문과 한 트랜잭션으로 저장된다.
+                  items:
+                    type: object
+                    required: [inspection_stage, area_group, checkpoint_code, checkpoint_label, condition_status]
+                    properties:
+                      inspection_stage: { type: string, enum: [ARRIVAL, FINAL] }
+                      area_group: { type: string, enum: [EXTERIOR, INTERIOR] }
+                      checkpoint_code: { type: string }
+                      checkpoint_label: { type: string }
+                      condition_status: { type: string, enum: [NORMAL, CONTAMINATED, WET_ODOR, DAMAGE, RECHECK, NOT_APPLICABLE] }
+                      note: { type: string, nullable: true }
+      responses:
+        "200": { description: 생성됨 }
+        "400": { description: 잘못된 요청 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/reworks:
+    post:
+      summary: 고객 불만·무료 재작업과 원인 기록
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, occurred_date, plate_number, complaint_area, cause]
+              properties:
+                site_id: { type: integer }
+                vehicle_job_id: { type: integer, nullable: true }
+                occurred_date: { type: string, format: date }
+                plate_number: { type: string }
+                complaint_area: { type: string }
+                cause: { type: string, enum: [REQUEST_MISSED, WORK_STEP_MISSED, INSPECTION_MISSED, TIME_SHORTAGE, EXTRA_CONTAMINATION, EQUIPMENT, EXPLANATION_MISMATCH, OTHER] }
+                free_minutes: { type: integer, minimum: 0 }
+                prevention_action: { type: string, nullable: true }
+      responses:
+        "200": { description: 생성됨 }
+        "400": { description: 잘못된 요청 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/equipment-issues:
+    post:
+      summary: 장비 이상과 영업 중단시간 기록
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, occurred_date, issue_title]
+              properties:
+                site_id: { type: integer }
+                equipment_id: { type: integer, nullable: true }
+                occurred_date: { type: string, format: date }
+                issue_title: { type: string }
+                state: { type: string, enum: [OBSERVE, STOPPED, REPAIR_REQUESTED, RESOLVED] }
+                downtime_minutes: { type: integer, minimum: 0 }
+      responses:
+        "200": { description: 생성됨 }
+        "400": { description: 잘못된 요청 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/equipment-issues/{id}/resolve:
+    put:
+      summary: 장비 이상 해결 처리
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: 해결됨 }
+        "400": { description: 존재하지 않는 기록 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/notes:
+    post:
+      summary: 운영 메모 원문 기록
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, note_date, content]
+              properties:
+                site_id: { type: integer }
+                note_date: { type: string, format: date }
+                content: { type: string }
+                category: { type: string, enum: [UNSORTED, STAFF, EQUIPMENT, FLOW, CUSTOMER, PRICE, BOOKING, REWORK, IDEA] }
+      responses:
+        "200": { description: 생성됨 }
+        "400": { description: 잘못된 요청 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/dashboard:
+    get:
+      summary: 사업장·날짜별 문제 중심 운영 대시보드
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      parameters:
+        - { name: site_id, in: query, required: true, schema: { type: integer } }
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200": { description: "지표, 원본 목록, 기록 기반 브리핑" }
+        "400": { description: 잘못된 사업장 또는 날짜 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /care/operations/weekly:
+    get:
+      summary: 기준일 포함 최근 7일 세차장 운영 리포트
+      security: [{ApiKeyAuth: []}, {AdminBasicAuth: []}]
+      parameters:
+        - { name: site_id, in: query, required: true, schema: { type: integer } }
+        - { name: end_date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200": { description: "주간 지표, 재작업 원인, 일별 작업 흐름" }
+        "400": { description: 잘못된 사업장 또는 날짜 }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /care/site-status/{token}:
@@ -1204,16 +1688,17 @@ components:
       in: header
       name: x-api-key
       description: >
-        BIGWASH_INTERNAL_API_KEY 환경변수 값. 미설정 시 전체 내부 엔드포인트가
-        무인증으로 열림(fail-open) — 2026-07-19부터 개발 단계 임시 운영 모드로
-        의도된 정책이며, 운영 배포 전 인증 필수 게이트로 전환 예정이다. 정책·
-        차단조건 상세는 04-washcare-api.md "인증" 절 참조. 이 스펙의 각
-        operation이 `security: [{ApiKeyAuth: []}, {}]`(전역 보안도 동일)로
-        선언된 것은 이 fail-open 동작을 있는 그대로 반영한 것이다 — 빈 `{}`는
-        OpenAPI 3.0에서 "인증 없이도 호출 가능"을 뜻하는 표준 표기다. 운영
-        배포 전 인증 필수 게이트가 실제로 켜지면(코드 변경 필요, 이번 문서
-        갱신 범위 아님) 그때 각 operation에서 `{}` 대안을 제거해 필수
-        인증으로 바꾼다.
+        BIGWASH_INTERNAL_API_KEY 환경변수 값. 미설정·공백이면 내부 API는
+        기본 401(fail-closed)이다. 오직 로컬 개발자가
+        BIGWASH_ALLOW_INSECURE_DEV=1을 명시한 경우에만 데이터 API의 무키
+        접근을 허용한다. 운영에서는 이 예외 값을 금지한다. 정책 상세는
+        04-washcare-api.md "인증" 절 참조.
+    AdminBasicAuth:
+      type: http
+      scheme: basic
+      description: >
+        /care/operations 화면과 같은 출처의 운영 API에만 허용한다.
+        BIGWASH_ADMIN_BASIC_AUTH가 미설정·공백이면 기본 401이다.
     ApiKeyQueryAuth:
       type: apiKey
       in: query
@@ -1221,7 +1706,8 @@ components:
       description: >
         /care/call-events 전용. 발신 앱(mobserve 등)이 커스텀 헤더를 못 보내는
         경우가 있어 ApiKeyAuth와 같은 BIGWASH_INTERNAL_API_KEY 값을 쿼리
-        파라미터로 대신 받는다 — 인증 정책(fail-open 등)은 ApiKeyAuth와 동일.
+        파라미터로 대신 받는다. 미설정·오키는 기본 401이며 개발 예외 정책은
+        ApiKeyAuth와 동일하다.
   parameters:
     TicketId:
       name: id
@@ -1230,7 +1716,7 @@ components:
       schema: { type: integer }
   responses:
     Unauthorized:
-      description: "API 키 없음/불일치 (키가 설정된 환경에서만 발생 — 미설정 시 전부 통과)"
+      description: "API 키 미설정·누락·불일치(기본 fail-closed). Cache-Control: no-store"
       content:
         application/json:
           schema:
@@ -1239,6 +1725,39 @@ components:
               ok: { type: boolean, example: false }
               error: { type: string, example: Unauthorized }
   schemas:
+    SiteChecklistItemInput:
+      type: object
+      required: [item_code, result]
+      properties:
+        item_code:
+          type: string
+          enum: [WATER_SUPPLY, POWER_WIRING, PUMP_PRESSURE, LEAK, FILTER, CHEMICAL, SAFETY, CLEANLINESS]
+        result: { type: string, enum: [OK, ATTENTION, FAIL, NOT_APPLICABLE] }
+        note: { type: string, nullable: true }
+    SiteChecklistItem:
+      allOf:
+        - $ref: "#/components/schemas/SiteChecklistItemInput"
+        - type: object
+          properties:
+            id: { type: integer }
+            item_label: { type: string, description: "저장 당시 서버 정본 항목명 스냅샷" }
+    SiteChecklist:
+      type: object
+      properties:
+        id: { type: integer }
+        site_id: { type: integer }
+        customer_id: { type: integer }
+        site_name: { type: string }
+        site_address: { type: string, nullable: true }
+        inspected_on: { type: string, format: date }
+        inspector: { type: string }
+        overall_result: { type: string, enum: [PASS, ATTENTION, FAIL], description: "항목 결과에서 서버 계산" }
+        notes: { type: string, nullable: true }
+        completed_at: { type: string }
+        created_at: { type: string }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SiteChecklistItem" }
     OkCustomer:
       type: object
       properties:
@@ -1311,3 +1830,55 @@ components:
         memo: { type: string, nullable: true }
         created_at: { type: string }
         updated_at: { type: string }
+    ContractItem:
+      type: object
+      description: "GET /care/contracts/{id} 상세의 items[] 원소. subtotal = quantity*unit_price(서버 계산)"
+      properties:
+        id: { type: integer }
+        contract_id: { type: integer }
+        description: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        unit_price: { type: integer, minimum: 0 }
+        subtotal: { type: integer, minimum: 0 }
+    ContractSummary:
+      type: object
+      description: "GET /care/contracts 목록 원소 (7주차 2026-07-22). amount는 항목 합계로 서버가 계산·유지한다."
+      properties:
+        id: { type: integer }
+        number: { type: string, example: "CTR-1784652881831-2767" }
+        status: { type: string, enum: [DRAFT, PENDING, APPROVED, COMPLETED, CANCELLED] }
+        customer_id: { type: integer }
+        customer_name: { type: string, description: "customers 조인" }
+        site_id: { type: integer, nullable: true }
+        site_name: { type: string, nullable: true, description: "sites 조인, site_id 없으면 null" }
+        title: { type: string, nullable: true }
+        amount: { type: integer, minimum: 0, description: "items 합계, 서버 계산값(요청 amount는 무시됨)" }
+        quote_id: { type: integer, nullable: true, description: "견적 전환으로 생성된 계약이면 원본 quote id" }
+        contract_date: { type: string, format: date }
+        work_starts_at: { type: string, format: date, nullable: true }
+        work_ends_at: { type: string, format: date, nullable: true }
+        warranty_ends_at: { type: string, format: date, nullable: true }
+        signed_at: { type: string, nullable: true, description: "APPROVED 전이 시 자동/수동 기록, 그 전에는 null" }
+        work_scope: { type: string, nullable: true }
+        memo: { type: string, nullable: true }
+        created_at: { type: string }
+        updated_at: { type: string }
+    ContractDetail:
+      type: object
+      description: "POST/GET/PUT /care/contracts(/{id}, /{id}/status) 공통 응답 shape"
+      properties:
+        contract: { $ref: "#/components/schemas/ContractSummary" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ContractItem" }
+        history:
+          type: array
+          description: "changed_at ASC, id ASC. 생성 시점에는 비어 있고 상태전이마다 1건씩 추가됨"
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              contract_id: { type: integer }
+              old_status: { type: string, enum: [DRAFT, PENDING, APPROVED, COMPLETED, CANCELLED] }
+              new_status: { type: string, enum: [DRAFT, PENDING, APPROVED, COMPLETED, CANCELLED] }
+              changed_at: { type: string }

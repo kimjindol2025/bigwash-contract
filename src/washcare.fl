@@ -27,6 +27,63 @@
   (or (= customer-filter "ALL")
       (valid-customer-type? customer-filter)))
 
+(defn normalize-trimmed-string [value]
+  (if (nil? value)
+    nil
+    (let [trimmed (str-trim (str value))]
+      (if (str-blank? trimmed) nil trimmed))))
+
+;; YYYY-MM-DD 실존성 검증. SQLite date(?) = ? round-trip은 2026-02-30과 같은
+;; 비정상 날짜를 걸러낸다.
+(defn valid-calendar-date? [date-str]
+  (and (regex_match date-str "^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+       (= (get (first (db_query DB "SELECT date(?) = ? AS v" [date-str date-str])) :v) 1)))
+
+;; YYYY-MM-DDTHH:MM:SS[Z|+hh:mm|-hh:mm] 엄격 검증.
+;; - 형식 정합성
+;; - 날짜 부분은 valid-calendar-date? (실존 달력 날짜)로 엄격 검증
+;; - 시간은 시간/분/초 범위 검증(시간 00-23, 분/초 00-59)
+(defn validate-iso8601-datetime! [value field-name]
+  (if (or (nil? value) (str-blank? (str value)))
+    nil
+    (let [normalized (str-trim (str value))]
+      (if (not (regex_match
+                 normalized
+                 "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})?$"))
+        (error (str field-name " must be a valid ISO-8601 datetime (YYYY-MM-DDTHH:MM:SS[Z|+HH:MM|-HH:MM])"))
+        (let [date-part (substring normalized 0 10)
+              hour (int (substring normalized 11 13))
+              minute (int (substring normalized 14 16))
+              second (int (substring normalized 17 19))]
+          (if (not (valid-calendar-date? date-part))
+            (error (str field-name " must use an existing calendar date"))
+            (if (or (< hour 0) (> hour 23) (< minute 0) (> minute 59) (< second 0) (> second 59))
+              (error (str field-name " time must be valid HH:MM:SS"))
+              (if (> (length normalized) 19)
+                (let [tz-sign (substring normalized 19 20)]
+                  (cond
+                    [(= tz-sign "Z") true]
+                    [(not (or (= tz-sign "+") (= tz-sign "-")))
+                     (error (str field-name " timezone must be Z or ±HH:MM"))]
+                    [true
+                     (let [tz-hour (int (substring normalized 20 22))
+                           tz-minute (int (substring normalized 23 25))]
+                       (if (or (< tz-hour 0) (> tz-hour 23) (< tz-minute 0) (> tz-minute 59))
+                         (error (str field-name " timezone must be Z or ±HH:MM"))
+                         true))]))
+                true))))))))
+
+(defn ensure-ticket-owned-equipment [site-id equipment-id]
+  (let [eq-id (normalize-trimmed-string equipment-id)]
+    (if (not (nil? eq-id))
+      (if (= (length (db_query DB "SELECT id FROM equipment WHERE id = ? AND site_id = ?" [eq-id site-id])) 0)
+        (error "equipment_id must belong to site_id")
+        true)
+      true)))
+
+(defn get-ticket-row [ticket-id]
+  (first (db_query DB "SELECT id, status, closed_at FROM service_tickets WHERE id = ?" [ticket-id])))
+
 (defn create-customer [name phone email memo customer-type address]
   (let [resolved-type (if (nil? customer-type) "LEAD" customer-type)]
     (if (not (valid-customer-type? resolved-type))
@@ -53,13 +110,27 @@
         (str (nth parts 0) " " (nth parts 1))
         address))))
 
-(defn create-site [customer-id name address contact-phone]
-  (do
+(defn valid-site-stage? [site-stage]
+  (or (= site-stage "CANDIDATE")
+      (= site-stage "OPERATING")
+      (= site-stage "REJECTED")))
+
+(defn create-site-with-stage [customer-id name address contact-phone site-stage]
+  (let [resolved-stage (if (nil? site-stage) "OPERATING" site-stage)]
+    (if (not (valid-site-stage? resolved-stage))
+      (error "site_stage must be one of CANDIDATE, OPERATING, REJECTED"))
+    (if (or (nil? name) (str-blank? (str name)))
+      (error "site name is required"))
     (db_exec DB
-      "INSERT INTO sites (customer_id, name, address, contact_phone) VALUES (?, ?, ?, ?)"
-      [customer-id name address contact-phone])
+      "INSERT INTO sites (customer_id, name, address, contact_phone, site_stage)
+       VALUES (?, ?, ?, ?, ?)"
+      [customer-id name address contact-phone resolved-stage])
     (let [id (inserted-id "sites")]
       (first (db_query DB "SELECT * FROM sites WHERE id = ?" [id])))))
+
+(defn create-site [customer-id name address contact-phone]
+  (do
+    (create-site-with-stage customer-id name address contact-phone "OPERATING")))
 
 (defn create-equipment [site-id contract-id category model serial-number installed-at warranty-ends-at]
   (do
@@ -78,12 +149,16 @@
      :token_identifier (sha256_short raw-token)}))
 
 (defn create-service-ticket [site-id equipment-id symptom priority source scheduled-at]
-  (let [token (issue-ticket-token)]
+  (let [scheduled-at-value (normalize-trimmed-string scheduled-at)
+        equipment-id-value (normalize-trimmed-string equipment-id)
+        token (issue-ticket-token)]
+    (validate-iso8601-datetime! scheduled-at-value "scheduled_at")
+    (ensure-ticket-owned-equipment site-id equipment-id-value)
     (db_exec DB
-      "INSERT INTO service_tickets
+       "INSERT INTO service_tickets
        (site_id, equipment_id, symptom, priority, source, status, scheduled_at, public_token_hash)
        VALUES (?, ?, ?, ?, ?, 'RECEIVED', ?, ?)"
-      [site-id equipment-id symptom priority source scheduled-at (get token :token_hash)])
+      [site-id equipment-id-value symptom priority source scheduled-at-value (get token :token_hash)])
     (let [id (inserted-id "service_tickets")]
       {:id id
        :status TICKET-RECEIVED
@@ -104,47 +179,58 @@
 (define TICKET-COMPLETED-VISIBILITY-DAYS 7)
 
 (defn update-ticket-status [ticket-id new-status]
-  (let [rows (db_query DB "SELECT status FROM service_tickets WHERE id = ?" [ticket-id])]
-    (if (= (length rows) 0) (error "Service ticket not found"))
-    (let [old-status (get (first rows) :status)]
-      (if (not (valid-ticket-transition? old-status new-status))
-        (error "Invalid service ticket status transition"))
-      (cond
-        [(= new-status TICKET-CANCELLED)
-         ;; 취소는 더 볼 이유가 없으니 즉시 폐기한다.
-         (db_exec DB
-           "UPDATE service_tickets
-            SET status = ?, closed_at = CURRENT_TIMESTAMP,
-                public_token_revoked_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?"
-           [new-status ticket-id])]
-        [(= new-status TICKET-COMPLETED)
-         ;; 완료는 closed_at만 찍고 토큰은 즉시 폐기하지 않는다 — 고객이 완료 상태를
-         ;; 확인할 시간을 준다. TICKET-COMPLETED-VISIBILITY-DAYS 이후엔
-         ;; get-public-ticket이 시간 기준으로 자동 만료 처리한다.
-         (db_exec DB
-           "UPDATE service_tickets
-            SET status = ?, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?"
-           [new-status ticket-id])]
-        [true
-         (db_exec DB
-           "UPDATE service_tickets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-           [new-status ticket-id])])
-      {:success true :old_status old-status :new_status new-status})))
+  (let [ticket (get-ticket-row ticket-id)]
+    (if (nil? ticket) (error "Service ticket not found"))
+    (let [old-status (get ticket :status)]
+      (if (= old-status new-status)
+        {:success true :old_status old-status :new_status new-status :idempotent true}
+        (do
+          (if (not (valid-ticket-transition? old-status new-status))
+            (error "Invalid service ticket status transition"))
+          (cond
+            [(= new-status TICKET-CANCELLED)
+             ;; 취소는 더 볼 이유가 없으니 즉시 폐기한다.
+             (db_exec DB
+               "UPDATE service_tickets
+                SET status = ?, closed_at = CURRENT_TIMESTAMP,
+                    public_token_revoked_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?"
+               [new-status ticket-id])]
+            [(= new-status TICKET-COMPLETED)
+             ;; 완료는 closed_at만 찍고 토큰은 즉시 폐기하지 않는다 — 고객이 완료 상태를
+             ;; 확인할 시간을 준다. TICKET-COMPLETED-VISIBILITY-DAYS 이후엔
+             ;; get-public-ticket이 시간 기준으로 자동 만료 처리한다.
+             (db_exec DB
+               "UPDATE service_tickets
+                SET status = ?, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?"
+               [new-status ticket-id])]
+            [true
+             (db_exec DB
+              "UPDATE service_tickets
+               SET status = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?"
+              [new-status ticket-id])])
+            {:success true :old_status old-status :new_status new-status :idempotent false})))))
 
 (defn add-service-visit [ticket-id technician visited-at diagnosis action-taken parts-used labor-cost parts-cost next-inspection-at]
-  (do
-    (db_exec DB
-      "INSERT INTO service_visits
-       (ticket_id, technician, visited_at, diagnosis, action_taken, parts_used,
-        labor_cost, parts_cost, next_inspection_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      [ticket-id technician visited-at diagnosis action-taken parts-used
-       labor-cost parts-cost next-inspection-at])
-    (let [id (inserted-id "service_visits")]
-      (first (db_query DB "SELECT * FROM service_visits WHERE id = ?" [id])))))
+  (let [ticket (get-ticket-row ticket-id)]
+    (if (nil? ticket) (error "Service ticket not found"))
+    (let [status (get ticket :status)]
+      (if (not (or (= status TICKET-SCHEDULED) (= status TICKET-IN-PROGRESS)))
+        (error "Cannot add visit unless ticket is SCHEDULED or IN_PROGRESS")))
+    (let [visited-at-value (normalize-trimmed-string visited-at)]
+      (validate-iso8601-datetime! visited-at-value "visited_at")
+      (db_exec DB
+        "INSERT INTO service_visits
+         (ticket_id, technician, visited_at, diagnosis, action_taken, parts_used,
+          labor_cost, parts_cost, next_inspection_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        [ticket-id technician (if (nil? visited-at-value) "" visited-at-value) diagnosis action-taken parts-used
+         labor-cost parts-cost next-inspection-at])
+      (let [id (inserted-id "service_visits")]
+        (first (db_query DB "SELECT * FROM service_visits WHERE id = ?" [id]))))))
 
 (defn revoke-public-link [ticket-id]
   (do
@@ -237,9 +323,135 @@
 
 (defn list-customer-sites [customer-id]
   (db_query DB
-    "SELECT id, name, address, contact_phone, status FROM sites
-     WHERE customer_id = ? ORDER BY name"
+    "SELECT id, name, address, contact_phone, status, site_stage FROM sites
+     WHERE customer_id = ?
+     ORDER BY CASE site_stage WHEN 'CANDIDATE' THEN 0 WHEN 'OPERATING' THEN 1 ELSE 2 END, name"
     [customer-id]))
+
+;; ---- 주소(현장)별 점검 체크리스트 ----
+;; 체크 항목 코드는 서버 정본으로 제한하고, item_label은 저장 시점 스냅샷으로
+;; 함께 보존한다. UI 문구가 나중에 바뀌어도 기존 점검 기록은 그대로 읽힌다.
+(define SITE-CHECKLIST-ITEM-COUNT 8)
+
+(defn site-checklist-item-label [item-code]
+  (cond
+    [(= item-code "WATER_SUPPLY") "급수 상태"]
+    [(= item-code "POWER_WIRING") "전원·배선"]
+    [(= item-code "PUMP_PRESSURE") "펌프 압력"]
+    [(= item-code "LEAK") "누수 여부"]
+    [(= item-code "FILTER") "필터 상태"]
+    [(= item-code "CHEMICAL") "세제·약품"]
+    [(= item-code "SAFETY") "안전장치"]
+    [(= item-code "CLEANLINESS") "현장 청결"]
+    [true nil]))
+
+(defn valid-site-checklist-result? [result]
+  (or (= result "OK")
+      (= result "ATTENTION")
+      (= result "FAIL")
+      (= result "NOT_APPLICABLE")))
+
+(defn validate-site-checklist-item [item]
+  (let [item-code (normalize-trimmed-string (get item :item_code))
+        result (normalize-trimmed-string (get item :result))
+        item-label (site-checklist-item-label item-code)]
+    (if (nil? item-label)
+      (error "site checklist item_code is invalid"))
+    (if (not (valid-site-checklist-result? result))
+      (error "site checklist result must be one of OK, ATTENTION, FAIL, NOT_APPLICABLE"))
+    {:item_code item-code
+     :item_label item-label
+     :result result
+     :note (normalize-trimmed-string (get item :note))}))
+
+(defn insert-site-checklist-items-rec [checklist-id items idx]
+  (if (>= idx (length items))
+    true
+    (do
+      (let [item (nth items idx)]
+        (db_exec DB
+          "INSERT INTO site_checklist_items
+           (checklist_id, item_code, item_label, result, note)
+           VALUES (?, ?, ?, ?, ?)"
+          [checklist-id (get item :item_code) (get item :item_label)
+           (get item :result) (get item :note)]))
+      (insert-site-checklist-items-rec checklist-id items (+ idx 1)))))
+
+(defn get-site-checklist [checklist-id]
+  (let [rows (db_query DB
+               "SELECT sc.*, s.customer_id, s.name AS site_name, s.address AS site_address
+                FROM site_checklists sc
+                JOIN sites s ON s.id = sc.site_id
+                WHERE sc.id = ?"
+               [checklist-id])]
+    (if (= (length rows) 0)
+      nil
+      (assoc (first rows) :items
+        (db_query DB
+          "SELECT id, item_code, item_label, result, note
+           FROM site_checklist_items
+           WHERE checklist_id = ? ORDER BY id ASC"
+          [checklist-id])))))
+
+(defn list-site-checklists [site-id]
+  (map
+    (fn [row]
+      (assoc row :items
+        (db_query DB
+          "SELECT id, item_code, item_label, result, note
+           FROM site_checklist_items
+           WHERE checklist_id = ? ORDER BY id ASC"
+          [(get row :id)])))
+    (db_query DB
+      "SELECT sc.*, s.customer_id, s.name AS site_name, s.address AS site_address
+       FROM site_checklists sc
+       JOIN sites s ON s.id = sc.site_id
+       WHERE sc.site_id = ?
+       ORDER BY sc.inspected_on DESC, sc.id DESC"
+      [site-id])))
+
+(defn create-site-checklist [site-id inspected-on inspector notes items]
+  (let [site-row (first (db_query DB "SELECT id FROM sites WHERE id = ?" [site-id]))
+        resolved-date (normalize-trimmed-string inspected-on)
+        resolved-inspector (normalize-trimmed-string inspector)]
+    (if (nil? site-row) (error "Site not found"))
+    (if (or (nil? resolved-date) (not (valid-calendar-date? resolved-date)))
+      (error "inspected_on must be a valid YYYY-MM-DD date"))
+    (if (nil? resolved-inspector) (error "inspector is required"))
+    (if (or (nil? items) (not (= (length items) SITE-CHECKLIST-ITEM-COUNT)))
+      (error "site checklist requires exactly 8 items"))
+    (let [validated-items (map validate-site-checklist-item items)]
+      (db_exec DB "BEGIN TRANSACTION" [])
+      (try
+        (do
+          (db_exec DB
+            "INSERT INTO site_checklists
+             (site_id, inspected_on, inspector, overall_result, notes)
+             VALUES (?, ?, ?, 'PASS', ?)"
+            [site-id resolved-date resolved-inspector (normalize-trimmed-string notes)])
+          (let [checklist-id (inserted-id "site_checklists")]
+            (insert-site-checklist-items-rec checklist-id validated-items 0)
+            (db_exec DB
+              "UPDATE site_checklists
+               SET overall_result = CASE
+                 WHEN EXISTS (
+                   SELECT 1 FROM site_checklist_items
+                   WHERE checklist_id = ? AND result = 'FAIL'
+                 ) THEN 'FAIL'
+                 WHEN EXISTS (
+                   SELECT 1 FROM site_checklist_items
+                   WHERE checklist_id = ? AND result = 'ATTENTION'
+                 ) THEN 'ATTENTION'
+                 ELSE 'PASS'
+               END
+               WHERE id = ?"
+              [checklist-id checklist-id checklist-id])
+            (db_exec DB "COMMIT" [])
+            (get-site-checklist checklist-id)))
+        (catch [e]
+          (do
+            (try (db_exec DB "ROLLBACK" []) (catch [rollback-error] false))
+            (error (str e))))))))
 
 (defn list-customer-equipment [customer-id]
   (db_query DB
@@ -253,11 +465,245 @@
 
 (defn list-customer-contracts [customer-id]
   (db_query DB
-    "SELECT id, number, status, amount, created_at, updated_at
+    "SELECT id, number, title, status, amount, contract_date, site_id, quote_id,
+            work_starts_at, work_ends_at, warranty_ends_at, signed_at,
+            work_scope, memo, created_at, updated_at
      FROM contracts
      WHERE customer_id = ?
      ORDER BY created_at DESC, id DESC"
     [customer-id]))
+
+;; ---- 7주차: 통합 계약관리 ----
+;;
+;; 기존 status 5종(DRAFT/PENDING/APPROVED/COMPLETED/CANCELLED)과 전이
+;; (DRAFT→PENDING→APPROVED→COMPLETED, DRAFT/PENDING/APPROVED→CANCELLED)는
+;; src/contract.fl의 valid-transition?과 동일하게 유지한다(다른 도메인
+;; 파일이라 이름 충돌은 없지만 규칙은 그대로 따름). COMPLETED/CANCELLED는
+;; cond에 매칭되는 분기가 없어 자동으로 terminal(더 이상 전이 불가)이다.
+;; 결제/미수금/PG 상태는 CarePlan/quotes와 동일하게 이번에도 넣지 않는다.
+
+(defn valid-contract-status? [status]
+  (or (= status "DRAFT") (= status "PENDING") (= status "APPROVED")
+      (= status "COMPLETED") (= status "CANCELLED")))
+
+;; SQLite date() round-trip 비교 — FreeLang 레벨 문자열 비교(</>)를 신뢰하는
+;; 대신 이 저장소의 다른 날짜 로직(site-has-overlapping-careplan? 등)과
+;; 동일하게 SQL에서 계산한다.
+(defn date-lte? [a b]
+  (= (get (first (db_query DB "SELECT (date(?) <= date(?)) AS v" [a b])) :v) 1))
+
+(defn list-contracts [status customer-id site-id q]
+  (let [resolved-status (if (or (nil? status) (str-blank? status)) "" status)]
+    (if (and (not (str-blank? resolved-status)) (not (valid-contract-status? resolved-status)))
+      (error "status must be one of DRAFT, PENDING, APPROVED, COMPLETED, CANCELLED"))
+    (let [resolved-customer-id (if (nil? customer-id) 0 customer-id)
+          resolved-site-id (if (nil? site-id) 0 site-id)
+          resolved-q (if (or (nil? q) (str-blank? q)) "" q)
+          like-q (str "%" resolved-q "%")]
+      (db_query DB
+        "SELECT c.*, cu.name AS customer_name, s.name AS site_name
+         FROM contracts c
+         JOIN customers cu ON cu.id = c.customer_id
+         LEFT JOIN sites s ON s.id = c.site_id
+         WHERE (? = '' OR c.status = ?)
+           AND (? = 0 OR c.customer_id = ?)
+           AND (? = 0 OR c.site_id = ?)
+           AND (? = '' OR c.number LIKE ? OR c.title LIKE ? OR cu.name LIKE ? OR s.name LIKE ?)
+         ORDER BY c.created_at DESC, c.id DESC
+         LIMIT 50"
+        [resolved-status resolved-status
+         resolved-customer-id resolved-customer-id
+         resolved-site-id resolved-site-id
+         resolved-q like-q like-q like-q like-q]))))
+
+(defn get-contract-detail [contract-id]
+  (let [rows (db_query DB
+               "SELECT c.*, cu.name AS customer_name, s.name AS site_name
+                FROM contracts c
+                JOIN customers cu ON cu.id = c.customer_id
+                LEFT JOIN sites s ON s.id = c.site_id
+                WHERE c.id = ?"
+               [contract-id])]
+    (if (= (length rows) 0)
+      nil
+      {:contract (first rows)
+       :items (db_query DB "SELECT * FROM contract_items WHERE contract_id = ? ORDER BY id ASC" [contract-id])
+       :history (db_query DB "SELECT * FROM contract_history WHERE contract_id = ? ORDER BY changed_at ASC, id ASC" [contract-id])})))
+
+;; 항목 1건 검증 — description은 nonblank, quantity는 양의 정수, unit_price는
+;; 0 이상 정수. nil은 반드시 (str value) 이전에 걸러야 한다 — (str nil)이
+;; "null" 문자열이 돼 blank 검사를 통과해버리므로(parse-int-param과 동일 원칙).
+(defn validate-contract-item [item]
+  (let [description (get item :description)
+        quantity (get item :quantity)
+        unit-price (get item :unit_price)]
+    (if (or (nil? description) (str-blank? description))
+      (error "item description must not be blank"))
+    (if (nil? quantity) (error "item quantity is required"))
+    (let [quantity-raw (str quantity)]
+      (if (not (regex_match quantity-raw "^[0-9]+$"))
+        (error "item quantity must be a positive integer"))
+      (if (<= (int quantity-raw) 0)
+        (error "item quantity must be a positive integer")))
+    (if (nil? unit-price) (error "item unit_price is required"))
+    (let [price-raw (str unit-price)]
+      (if (not (regex_match price-raw "^[0-9]+$"))
+        (error "item unit_price must be a non-negative integer")))
+    {:description description
+     :quantity (int (str quantity))
+     :unit_price (int (str unit-price))}))
+
+;; create-contract/update-contract가 공유하는 검증·정규화 — "같은 검증" 계약을
+;; 코드 공유로 강제한다. customer-id는 호출부가 결정(생성은 요청값, 수정은
+;; 기존 계약의 소유 고객)해서 넘긴다. 반환값은 INSERT/UPDATE에 바로 쓸 수
+;; 있는 정규화된 필드 맵 + 검증된 items(+계산된 amount) 전부다.
+(defn validate-contract-fields [customer-id site-id title contract-date work-starts-at work-ends-at warranty-ends-at work-scope memo items]
+  (do
+    (if (nil? customer-id) (error "customer_id is required"))
+    (if (nil? (get-customer customer-id)) (error "Customer not found"))
+    (if (not (nil? site-id))
+      (let [site-rows (db_query DB "SELECT id, customer_id FROM sites WHERE id = ?" [site-id])]
+        (if (= (length site-rows) 0) (error "Site not found"))
+        (if (not (= (get (first site-rows) :customer_id) customer-id))
+          (error "site_id must belong to the given customer_id"))))
+    (if (or (nil? items) (= (length items) 0))
+      (error "at least one contract item is required"))
+        (let [validated-items (map validate-contract-item items)
+              normalized-contract-date (str-trim (if (nil? contract-date) "" (str contract-date)))
+              amount (reduce (fn [acc item] (+ acc (* (get item :quantity) (get item :unit_price)))) 0 validated-items)
+              resolved-contract-date (if (or (str-blank? normalized-contract-date)
+                                       (= normalized-contract-date "\"\""))
+                                  (get (first (db_query DB "SELECT date('now', '+9 hours') AS v" [])) :v)
+                                  normalized-contract-date)
+          has-work-starts (and (not (nil? work-starts-at)) (not (str-blank? work-starts-at)))
+          has-work-ends (and (not (nil? work-ends-at)) (not (str-blank? work-ends-at)))
+          has-warranty (and (not (nil? warranty-ends-at)) (not (str-blank? warranty-ends-at)))]
+      (if (not (valid-calendar-date? resolved-contract-date))
+        (error "contract_date must be a valid YYYY-MM-DD date"))
+      (if (and has-work-starts (not (valid-calendar-date? work-starts-at)))
+        (error "work_starts_at must be a valid YYYY-MM-DD date"))
+      (if (and has-work-ends (not (valid-calendar-date? work-ends-at)))
+        (error "work_ends_at must be a valid YYYY-MM-DD date"))
+      (if (and has-warranty (not (valid-calendar-date? warranty-ends-at)))
+        (error "warranty_ends_at must be a valid YYYY-MM-DD date"))
+      (if (and has-work-starts has-work-ends (not (date-lte? work-starts-at work-ends-at)))
+        (error "work_starts_at must not be after work_ends_at"))
+      (if (and has-warranty (not (date-lte? resolved-contract-date warranty-ends-at)))
+        (error "warranty_ends_at must not be before contract_date"))
+      {:site_id site-id
+       :title title
+       :amount amount
+       :contract_date resolved-contract-date
+       :work_starts_at (if has-work-starts work-starts-at nil)
+       :work_ends_at (if has-work-ends work-ends-at nil)
+       :warranty_ends_at (if has-warranty warranty-ends-at nil)
+       :work_scope work-scope
+       :memo memo
+       :items validated-items})))
+
+(defn insert-contract-items-rec [contract-id items idx]
+  (if (>= idx (length items))
+    true
+    (do
+      (let [item (nth items idx)]
+        (db_exec DB
+          "INSERT INTO contract_items (contract_id, description, quantity, unit_price, subtotal)
+           VALUES (?, ?, ?, ?, ?)"
+          [contract-id (get item :description) (get item :quantity) (get item :unit_price)
+           (* (get item :quantity) (get item :unit_price))]))
+      (insert-contract-items-rec contract-id items (+ idx 1)))))
+
+(defn create-contract [customer-id site-id title contract-date work-starts-at work-ends-at warranty-ends-at work-scope memo items]
+  (let [fields (validate-contract-fields customer-id site-id title contract-date work-starts-at
+                 work-ends-at warranty-ends-at work-scope memo items)
+        contract-number (generate-doc-number "CTR")
+        shadow-client-id (resolve-shadow-client-id customer-id)]
+    (db_exec DB "BEGIN TRANSACTION" [])
+    (try
+      (do
+        (db_exec DB
+          "INSERT INTO contracts
+           (number, status, client_id, customer_id, amount, title, site_id, contract_date,
+            work_starts_at, work_ends_at, warranty_ends_at, work_scope, memo)
+           VALUES (?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          [contract-number shadow-client-id customer-id (get fields :amount) (get fields :title)
+           (get fields :site_id) (get fields :contract_date) (get fields :work_starts_at)
+           (get fields :work_ends_at) (get fields :warranty_ends_at) (get fields :work_scope)
+           (get fields :memo)])
+        (let [contract-id (inserted-id "contracts")]
+          (insert-contract-items-rec contract-id (get fields :items) 0)
+          (db_exec DB "COMMIT" [])
+          (get-contract-detail contract-id)))
+      (catch [e]
+        (do
+          (try (db_exec DB "ROLLBACK" []) (catch [re] false))
+          (error (str e)))))))
+
+;; 수정은 DRAFT 상태만 허용하고, create-contract와 동일한
+;; validate-contract-fields로 검증한다(customer_id는 불변 — 기존 계약의
+;; 소유 고객을 그대로 쓴다). items는 전체 삭제 후 재삽입(전체교체)한다.
+(defn update-contract [contract-id site-id title contract-date work-starts-at work-ends-at warranty-ends-at work-scope memo items]
+  (let [rows (db_query DB "SELECT * FROM contracts WHERE id = ?" [contract-id])]
+    (if (= (length rows) 0) (error "Contract not found"))
+    (let [current (first rows)]
+      (if (not (= (get current :status) "DRAFT"))
+        (error "Only DRAFT contracts can be updated"))
+      (let [customer-id (get current :customer_id)
+            fields (validate-contract-fields customer-id site-id title contract-date work-starts-at
+                     work-ends-at warranty-ends-at work-scope memo items)]
+        (db_exec DB "BEGIN TRANSACTION" [])
+        (try
+          (do
+            (db_exec DB
+              "UPDATE contracts
+               SET title = ?, site_id = ?, amount = ?, contract_date = ?, work_starts_at = ?,
+                   work_ends_at = ?, warranty_ends_at = ?, work_scope = ?, memo = ?,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?"
+              [(get fields :title) (get fields :site_id) (get fields :amount) (get fields :contract_date)
+               (get fields :work_starts_at) (get fields :work_ends_at) (get fields :warranty_ends_at)
+               (get fields :work_scope) (get fields :memo) contract-id])
+            (db_exec DB "DELETE FROM contract_items WHERE contract_id = ?" [contract-id])
+            (insert-contract-items-rec contract-id (get fields :items) 0)
+            (db_exec DB "COMMIT" [])
+            (get-contract-detail contract-id))
+          (catch [e]
+            (do
+              (try (db_exec DB "ROLLBACK" []) (catch [re] false))
+              (error (str e)))))))))
+
+;; 상태변경: 명시 전이만 허용 + contract_history 기록. APPROVED 전이 시
+;; signed_at을 자동으로 채우되, 요청에 signed_at이 이미 있으면 그 값을
+;; 그대로 보존한다(재입력·백데이트 허용).
+(defn update-contract-status [contract-id new-status signed-at-override]
+  (let [rows (db_query DB "SELECT * FROM contracts WHERE id = ?" [contract-id])]
+    (if (= (length rows) 0) (error "Contract not found"))
+    (let [current (first rows)
+          current-status (get current :status)
+          resolved-status (str new-status)]
+      (if (not (valid-contract-transition? current-status resolved-status))
+        (error (str "Invalid status transition from " current-status " to " resolved-status)))
+      (if (and (not (nil? signed-at-override)) (str-blank? signed-at-override))
+        (error "signed_at must not be blank if provided"))
+      (if (= resolved-status "APPROVED")
+        (do
+          (let [resolved-signed-at (if (not (nil? signed-at-override))
+                                      signed-at-override
+                                      (get (first (db_query DB "SELECT datetime('now', '+9 hours') AS v" [])) :v))]
+            (db_exec DB
+              "UPDATE contracts SET status = ?, signed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+              [resolved-status resolved-signed-at contract-id])))
+        (do
+          (db_exec DB
+            "UPDATE contracts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            [resolved-status contract-id])))
+      (let [updated-status (get (first (db_query DB "SELECT status FROM contracts WHERE id = ?" [contract-id])) :status)]
+        (if (not (= updated-status resolved-status))
+          (error (str "Contract status transition not applied for contract " contract-id)))
+        (db_exec DB
+          "INSERT INTO contract_history (contract_id, old_status, new_status) VALUES (?, ?, ?)"
+          [contract-id current-status resolved-status])
+        (get-contract-detail contract-id)))))
 
 (defn valid-quote-transition? [from to]
   (cond
@@ -314,12 +760,27 @@
       (db_exec DB "BEGIN TRANSACTION" [])
       (try
         (let [contract-number (generate-doc-number "CTR")
-              shadow-client-id (resolve-shadow-client-id (get quote :customer_id))]
+              customer-id (get quote :customer_id)
+              shadow-client-id (resolve-shadow-client-id customer-id)
+              title (get quote :title)
+              amount (get quote :amount)
+              amount-raw (str amount)]
+          (if (or (nil? amount) (not (regex_match amount-raw "^[0-9]+$")))
+            (error "Approved quote amount must be a non-negative integer"))
           (db_exec DB
-            "INSERT INTO contracts (number, status, client_id, customer_id, amount)
-             VALUES (?, 'DRAFT', ?, ?, ?)"
-            [contract-number shadow-client-id (get quote :customer_id) (get quote :amount)])
+            "INSERT INTO contracts
+             (number, status, client_id, customer_id, amount, title, quote_id, contract_date, memo)
+             VALUES (?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?)"
+            [contract-number shadow-client-id customer-id (int amount-raw) title quote-id
+             (careplan-today) (get quote :memo)])
           (let [contract-id (inserted-id "contracts")]
+            (db_exec DB
+              "INSERT INTO contract_items
+               (contract_id, description, quantity, unit_price, subtotal)
+               VALUES (?, ?, 1, ?, ?)"
+              [contract-id
+               (if (or (nil? title) (str-blank? title)) "견적 전환" title)
+               (int amount-raw) (int amount-raw)])
             (db_exec DB
               "UPDATE quotes
                SET status = 'CONVERTED', contract_id = ?, updated_at = CURRENT_TIMESTAMP

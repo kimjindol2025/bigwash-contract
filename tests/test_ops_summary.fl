@@ -2,13 +2,11 @@
   (let [override (env-get "BIGWASH_REPO_ROOT")]
     (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
 (load (str REPO-ROOT "/src/washcare.fl"))
-
 ;; 운영집계(ops-summary)는 site_id/customer_id로 스코프되지 않고 service_tickets/
 ;; equipment 테이블 전체를 집계하므로, 공유 db/contracts.sqlite에 대해 실행하면
 ;; 다른 실데이터가 섞여 카운트 단정이 무의미해진다 — 반드시 격리 DB에서 돌린다.
 (if (= DB (str REPO-ROOT "/db/contracts.sqlite"))
   (error "test_ops_summary.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
-
 ;; 재실행 가능하도록 이 테스트 픽스처만 먼저 지운다 (FK 순서: 자식 → 부모).
 (db_exec DB
   "DELETE FROM service_visits WHERE ticket_id IN
@@ -28,66 +26,57 @@
 (db_exec DB "DELETE FROM equipment WHERE serial_number LIKE 'OPS-WTY-%'" [])
 (db_exec DB "DELETE FROM sites WHERE name = '운영집계 테스트 세차장'" [])
 (db_exec DB "DELETE FROM customers WHERE name = '운영집계 테스트 점주'" [])
-
 (defn has-id? [items target-id]
   (> (length (filter (fn [row] (= (get row :id) target-id)) items)) 0))
-
 (let [customer (create-customer "운영집계 테스트 점주" "010-9000-0001" "" "" nil nil)
       customer-id (get customer :id)
       site (create-site customer-id "운영집계 테스트 세차장" "서울시 운영집계구" "02-9000-0001")
       site-id (get site :id)]
-
   ;; ---- 1. 지연(overdue): status IN (RECEIVED,SCHEDULED) + scheduled_at 과거 ----
-  (let [t-overdue-received (create-service-ticket site-id nil "지연-RECEIVED" "NORMAL" "PHONE" "2020-01-01 00:00:00")
-        t-overdue-scheduled (create-service-ticket site-id nil "지연-SCHEDULED" "NORMAL" "PHONE" "2020-01-01 00:00:00")
-        t-not-overdue-inprogress (create-service-ticket site-id nil "지연아님-IN_PROGRESS" "NORMAL" "PHONE" "2020-01-01 00:00:00")
-        t-not-overdue-future (create-service-ticket site-id nil "지연아님-미래일정" "NORMAL" "PHONE" "2099-01-01 00:00:00")]
+  (let [t-overdue-received (create-service-ticket site-id nil "지연-RECEIVED" "NORMAL" "PHONE" "2020-01-01T00:00:00")
+        t-overdue-scheduled (create-service-ticket site-id nil "지연-SCHEDULED" "NORMAL" "PHONE" "2020-01-01T00:00:00")
+        t-not-overdue-inprogress (create-service-ticket site-id nil "지연아님-IN_PROGRESS" "NORMAL" "PHONE" "2020-01-01T00:00:00")
+        t-not-overdue-future (create-service-ticket site-id nil "지연아님-미래일정" "NORMAL" "PHONE" "2099-01-01T00:00:00")]
     (update-ticket-status (get t-overdue-scheduled :id) "SCHEDULED")
     (update-ticket-status (get t-not-overdue-inprogress :id) "IN_PROGRESS")
-
     (let [overdue-items (list-ops-overdue)]
       (assert (has-id? overdue-items (get t-overdue-received :id)) "RECEIVED + 과거 scheduled_at은 지연이어야 한다")
       (assert (has-id? overdue-items (get t-overdue-scheduled :id)) "SCHEDULED + 과거 scheduled_at은 지연이어야 한다")
       (assert (not (has-id? overdue-items (get t-not-overdue-inprogress :id))) "IN_PROGRESS는 확정 규칙상 지연 집계에서 제외해야 한다")
       (assert (not (has-id? overdue-items (get t-not-overdue-future :id))) "미래 scheduled_at은 지연이 아니어야 한다")))
-
   ;; ---- 2. 일정 미정(unscheduled): status IN (RECEIVED,SCHEDULED) + scheduled_at 없음 ----
   (let [t-unscheduled-received (create-service-ticket site-id nil "일정미정-RECEIVED" "NORMAL" "PHONE" nil)
         t-unscheduled-scheduled (create-service-ticket site-id nil "일정미정-SCHEDULED" "NORMAL" "PHONE" nil)
         t-not-unscheduled-inprogress (create-service-ticket site-id nil "일정미정아님-IN_PROGRESS" "NORMAL" "PHONE" nil)
-        t-not-unscheduled-hasdate (create-service-ticket site-id nil "일정미정아님-일정있음" "NORMAL" "PHONE" "2099-01-01 00:00:00")]
+        t-not-unscheduled-hasdate (create-service-ticket site-id nil "일정미정아님-일정있음" "NORMAL" "PHONE" "2099-01-01T00:00:00")]
     (update-ticket-status (get t-unscheduled-scheduled :id) "SCHEDULED")
     (update-ticket-status (get t-not-unscheduled-inprogress :id) "IN_PROGRESS")
     (update-ticket-status (get t-not-unscheduled-hasdate :id) "SCHEDULED")
-
     (let [unscheduled-items (list-ops-unscheduled)]
       (assert (has-id? unscheduled-items (get t-unscheduled-received :id)) "RECEIVED + scheduled_at 없음은 일정 미정이어야 한다")
       (assert (has-id? unscheduled-items (get t-unscheduled-scheduled :id)) "SCHEDULED + scheduled_at 없음은 일정 미정이어야 한다")
       (assert (not (has-id? unscheduled-items (get t-not-unscheduled-inprogress :id))) "IN_PROGRESS는 확정 규칙상 일정 미정 집계에서 제외해야 한다")
       (assert (not (has-id? unscheduled-items (get t-not-unscheduled-hasdate :id))) "scheduled_at이 있으면 일정 미정이 아니어야 한다")))
-
   ;; ---- 3. 완료·취소 제외: 지연/일정미정 둘 다에서 COMPLETED·CANCELLED는 빠져야 한다 ----
-  (let [t-cancelled-overdue-like (create-service-ticket site-id nil "완료취소제외-CANCELLED-지연형" "NORMAL" "PHONE" "2020-01-01 00:00:00")
+  (let [t-cancelled-overdue-like (create-service-ticket site-id nil "완료취소제외-CANCELLED-지연형" "NORMAL" "PHONE" "2020-01-01T00:00:00")
         t-cancelled-unscheduled-like (create-service-ticket site-id nil "완료취소제외-CANCELLED-미정형" "NORMAL" "PHONE" nil)
-        t-completed-overdue-like (create-service-ticket site-id nil "완료취소제외-COMPLETED-지연형" "NORMAL" "PHONE" "2020-01-01 00:00:00")]
+        t-completed-overdue-like (create-service-ticket site-id nil "완료취소제외-COMPLETED-지연형" "NORMAL" "PHONE" "2020-01-01T00:00:00")]
     (update-ticket-status (get t-cancelled-overdue-like :id) "CANCELLED")
     (update-ticket-status (get t-cancelled-unscheduled-like :id) "CANCELLED")
     (update-ticket-status (get t-completed-overdue-like :id) "IN_PROGRESS")
     (update-ticket-status (get t-completed-overdue-like :id) "COMPLETED")
-
     (let [overdue-items (list-ops-overdue)
           unscheduled-items (list-ops-unscheduled)]
       (assert (not (has-id? overdue-items (get t-cancelled-overdue-like :id))) "CANCELLED 티켓은 지연 집계에서 제외해야 한다")
       (assert (not (has-id? unscheduled-items (get t-cancelled-unscheduled-like :id))) "CANCELLED 티켓은 일정 미정 집계에서 제외해야 한다")
       (assert (not (has-id? overdue-items (get t-completed-overdue-like :id))) "COMPLETED 티켓은 지연 집계에서 제외해야 한다")))
-
   ;; ---- 4. now 동일 시각은 지연이 아니어야 한다 (strict <) ----
   ;; wall-clock race 회피: 같은 anchor로 datetime(scheduled_at) < datetime(anchor)를
   ;; 직접 검증한다(초 경계에서 list-ops-overdue가 now를 다시 읽으면 flaky해짐).
-  (let [anchor (get (first (db_query DB "SELECT datetime('now', '+9 hours') AS v" [])) :v)
+  (let [anchor (get (first (db_query DB "SELECT strftime('%Y-%m-%dT%H:%M:%S', 'now', '+9 hours') AS v" [])) :v)
         t-exact-now (create-service-ticket site-id nil "경계-현재시각과동일" "NORMAL" "PHONE" anchor)
         t-near-future (create-service-ticket site-id nil "경계-2초후" "NORMAL" "PHONE"
-                        (get (first (db_query DB "SELECT datetime('now', '+9 hours', '+2 seconds') AS v" [])) :v))]
+                        (get (first (db_query DB "SELECT strftime('%Y-%m-%dT%H:%M:%S', 'now', '+9 hours', '+2 seconds') AS v" [])) :v))]
     (update-ticket-status (get t-exact-now :id) "SCHEDULED")
     (update-ticket-status (get t-near-future :id) "SCHEDULED")
     (let [eq-count (get (first (db_query DB
@@ -99,29 +88,26 @@
       (assert (= eq-count 0) "scheduled_at이 비교 기준시각과 정확히 같으면 지연이 아니어야 한다(strict <)"))
     (assert (not (has-id? (list-ops-overdue) (get t-near-future :id)))
             "scheduled_at이 가까운 미래이면 지연이 아니어야 한다"))
-
   ;; ---- 5. 오늘 방문(visits_today): Seoul 날짜 경계 ----
   (let [today-seoul (get (first (db_query DB "SELECT date('now', '+9 hours') AS v" [])) :v)
         tomorrow-seoul (get (first (db_query DB "SELECT date('now', '+9 hours', '+1 day') AS v" [])) :v)
         yesterday-seoul (get (first (db_query DB "SELECT date('now', '+9 hours', '-1 day') AS v" [])) :v)
-        t-today (create-service-ticket site-id nil "오늘방문-정상" "NORMAL" "PHONE" (str today-seoul " 23:59:00"))
-        t-tomorrow (create-service-ticket site-id nil "오늘방문아님-내일자정" "NORMAL" "PHONE" (str tomorrow-seoul " 00:00:00"))
-        t-yesterday (create-service-ticket site-id nil "오늘방문아님-어제" "NORMAL" "PHONE" (str yesterday-seoul " 23:59:00"))
-        t-today-completed (create-service-ticket site-id nil "오늘방문아님-완료" "NORMAL" "PHONE" (str today-seoul " 09:00:00"))
-        t-today-cancelled (create-service-ticket site-id nil "오늘방문아님-취소" "NORMAL" "PHONE" (str today-seoul " 09:00:00"))]
+        t-today (create-service-ticket site-id nil "오늘방문-정상" "NORMAL" "PHONE" (str today-seoul "T23:59:00"))
+        t-tomorrow (create-service-ticket site-id nil "오늘방문아님-내일자정" "NORMAL" "PHONE" (str tomorrow-seoul "T00:00:00"))
+        t-yesterday (create-service-ticket site-id nil "오늘방문아님-어제" "NORMAL" "PHONE" (str yesterday-seoul "T23:59:00"))
+        t-today-completed (create-service-ticket site-id nil "오늘방문아님-완료" "NORMAL" "PHONE" (str today-seoul "T09:00:00"))
+        t-today-cancelled (create-service-ticket site-id nil "오늘방문아님-취소" "NORMAL" "PHONE" (str today-seoul "T09:00:00"))]
     (update-ticket-status (get t-tomorrow :id) "SCHEDULED")
     (update-ticket-status (get t-yesterday :id) "SCHEDULED")
     (update-ticket-status (get t-today-completed :id) "IN_PROGRESS")
     (update-ticket-status (get t-today-completed :id) "COMPLETED")
     (update-ticket-status (get t-today-cancelled :id) "CANCELLED")
-
     (let [visits-items (list-ops-visits-today)]
       (assert (has-id? visits-items (get t-today :id)) "Seoul 오늘 23:59 scheduled_at은 오늘 방문에 포함돼야 한다")
       (assert (not (has-id? visits-items (get t-tomorrow :id))) "Seoul 내일 00:00 scheduled_at은 오늘 방문이 아니어야 한다(날짜 경계)")
       (assert (not (has-id? visits-items (get t-yesterday :id))) "Seoul 어제 scheduled_at은 오늘 방문이 아니어야 한다")
       (assert (not (has-id? visits-items (get t-today-completed :id))) "오늘 날짜라도 COMPLETED면 오늘 방문에서 제외해야 한다")
       (assert (not (has-id? visits-items (get t-today-cancelled :id))) "오늘 날짜라도 CANCELLED면 오늘 방문에서 제외해야 한다")))
-
   ;; ---- 6. 보증 임박: equipment.status = ACTIVE만 포함 ----
   (let [future-date (get (first (db_query DB "SELECT date('now', '+9 hours', '+15 days') AS v" [])) :v)
         eq-active (create-equipment site-id nil "세차기" "OPS-WTY-ACTIVE" "OPS-WTY-ACTIVE-001" "2023-01-01" future-date)
@@ -129,12 +115,10 @@
         eq-repair (create-equipment site-id nil "세차기" "OPS-WTY-REPAIR" "OPS-WTY-REPAIR-001" "2023-01-01" future-date)]
     (db_exec DB "UPDATE equipment SET status = 'RETIRED' WHERE id = ?" [(get eq-retired :id)])
     (db_exec DB "UPDATE equipment SET status = 'REPAIR' WHERE id = ?" [(get eq-repair :id)])
-
     (let [warranty-items (list-warranty-expiring 30)]
       (assert (has-id? warranty-items (get eq-active :id)) "ACTIVE 장비는 보증 임박 목록에 나와야 한다")
       (assert (not (has-id? warranty-items (get eq-retired :id))) "RETIRED 장비는 보증 임박 목록에서 제외해야 한다")
       (assert (not (has-id? warranty-items (get eq-repair :id))) "REPAIR 장비는 보증 임박 목록에서 제외해야 한다")))
-
   ;; ---- 7. get-ops-summary 조립 결과가 개별 함수 결과와 일치해야 한다(배선 회귀 방지) ----
   (let [summary (get-ops-summary "30")]
     (assert (= (get summary :timezone) "Asia/Seoul") "timezone은 Asia/Seoul로 고정돼야 한다")
@@ -144,7 +128,6 @@
     (assert (= (get (get summary :visits_today) :count) (count-ops-visits-today)) "visits_today count가 count-ops-visits-today와 일치해야 한다")
     (assert (= (get (get summary :warranty_expiring) :count) (count-warranty-expiring 30)) "warranty_expiring count가 count-warranty-expiring과 일치해야 한다")
     (assert (= (get (get summary :warranty_expiring) :days) 30) "warranty_expiring days는 요청한 window와 같아야 한다"))
-
   (let [injection-rejected
           (try
             (do
@@ -152,5 +135,4 @@
               false)
             (catch [e] true))]
     (assert injection-rejected "warranty_days SQL 조작 입력을 거부해야 한다")))
-
 (println "✓ Ops summary dashboard tests passed")

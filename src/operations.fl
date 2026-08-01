@@ -1,0 +1,362 @@
+;;; BigWash 세차장 점주용 운영 기록실 MVP
+;;; 회사 내부 A/S 운영 집계와 분리하고, 후보지부터 이어진 sites.id를 기준으로 쌓는다.
+
+(define REPO-ROOT
+  (let [override (env-get "BIGWASH_REPO_ROOT")]
+    (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
+
+(load (str REPO-ROOT "/src/washcare.fl"))
+
+(defn wash-ops-required [value field-name]
+  (let [resolved (normalize-trimmed-string value)]
+    (if (nil? resolved) (error (str field-name " is required")))
+    resolved))
+
+(defn wash-ops-date [value field-name]
+  (let [resolved (normalize-trimmed-string value)]
+    (if (or (nil? resolved) (not (valid-calendar-date? resolved)))
+      (error (str field-name " must be a valid YYYY-MM-DD date")))
+    resolved))
+
+(defn wash-ops-nonnegative [value field-name]
+  (let [resolved (if (nil? value) 0 value)]
+    (if (< resolved 0) (error (str field-name " must be nonnegative")))
+    resolved))
+
+(defn ensure-wash-ops-site [site-id]
+  (let [site (first (db_query DB
+                      "SELECT id, customer_id, name, address, contact_phone, status, site_stage
+                       FROM sites WHERE id = ? AND site_stage = 'OPERATING' AND status <> 'CLOSED'"
+                      [site-id]))]
+    (if (nil? site) (error "Operating site not found"))
+    site))
+
+(defn create-wash-ops-site [name address owner-name phone]
+  (let [resolved-name (wash-ops-required name "name")]
+    (db_exec DB "BEGIN TRANSACTION" [])
+    (try
+      (let [customer (create-customer
+                       (if (nil? (normalize-trimmed-string owner-name)) resolved-name owner-name)
+                       phone nil "운영 기록실에서 등록" "CUSTOMER" address)
+            site (create-site-with-stage (get customer :id) resolved-name address phone "OPERATING")]
+        (db_exec DB "COMMIT" [])
+        site)
+      (catch [e]
+        (do
+          (try (db_exec DB "ROLLBACK" []) (catch [rollback-error] false))
+          (error (str e)))))))
+
+(defn activate-wash-ops-site [site-id]
+  (let [site (first (db_query DB "SELECT id, site_stage FROM sites WHERE id = ?" [site-id]))]
+    (if (nil? site) (error "Site not found"))
+    (if (not (= (get site :site_stage) "CANDIDATE"))
+      (error "Only a candidate site can be converted to an operating site"))
+    (db_exec DB
+      "UPDATE sites SET site_stage = 'OPERATING', status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      [site-id])
+    (ensure-wash-ops-site site-id)))
+
+(defn list-wash-ops-sites []
+  (db_query DB
+    "SELECT s.id, s.customer_id, s.name, s.address, s.contact_phone, s.status, s.site_stage,
+            COUNT(e.id) AS equipment_count
+     FROM sites s
+     LEFT JOIN equipment e ON e.site_id = s.id AND e.status <> 'RETIRED'
+     WHERE s.site_stage = 'OPERATING' AND s.status <> 'CLOSED'
+     GROUP BY s.id ORDER BY s.status = 'ACTIVE' DESC, s.name, s.id"
+    []))
+
+(defn list-wash-ops-equipment [site-id]
+  (do
+    (ensure-wash-ops-site site-id)
+    (db_query DB
+      "SELECT id, category, model, serial_number, status
+       FROM equipment WHERE site_id = ? AND status <> 'RETIRED'
+       ORDER BY category, model, id"
+      [site-id])))
+
+(defn ensure-wash-ops-equipment [equipment-id site-id]
+  (if (nil? equipment-id)
+    true
+    (let [row (first (db_query DB
+                       "SELECT id FROM equipment WHERE id = ? AND site_id = ?"
+                       [equipment-id site-id]))]
+      (if (nil? row) (error "Equipment does not belong to site"))
+      true)))
+
+(defn ensure-wash-ops-vehicle [vehicle-job-id site-id]
+  (if (nil? vehicle-job-id)
+    true
+    (let [row (first (db_query DB
+                       "SELECT id FROM wash_ops_vehicle_jobs WHERE id = ? AND site_id = ?"
+                       [vehicle-job-id site-id]))]
+      (if (nil? row) (error "Vehicle job does not belong to site"))
+      true)))
+
+(defn valid-wash-ops-status? [status]
+  (or (= status "NORMAL") (= status "CAUTION") (= status "PROBLEM")))
+
+(defn save-wash-ops-day [site-id operation-date opened-at closed-at reserved-count staff-count weather busiest-period status owner-work-minutes owner-memo]
+  (let [resolved-date (wash-ops-date operation-date "operation_date")
+        resolved-status (if (nil? status) "NORMAL" status)]
+    (ensure-wash-ops-site site-id)
+    (if (not (valid-wash-ops-status? resolved-status))
+      (error "status must be NORMAL, CAUTION, or PROBLEM"))
+    (db_exec DB
+      "INSERT INTO wash_ops_daily_records
+       (site_id, operation_date, opened_at, closed_at, reserved_count, staff_count,
+        weather, busiest_period, status, owner_work_minutes, owner_memo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(site_id, operation_date) DO UPDATE SET
+         opened_at=excluded.opened_at, closed_at=excluded.closed_at,
+         reserved_count=excluded.reserved_count, staff_count=excluded.staff_count,
+         weather=excluded.weather, busiest_period=excluded.busiest_period,
+         status=excluded.status, owner_work_minutes=excluded.owner_work_minutes,
+         owner_memo=excluded.owner_memo, updated_at=CURRENT_TIMESTAMP"
+      [site-id resolved-date opened-at closed-at
+       (wash-ops-nonnegative reserved-count "reserved_count")
+       (wash-ops-nonnegative staff-count "staff_count") weather busiest-period resolved-status
+       (wash-ops-nonnegative owner-work-minutes "owner_work_minutes") owner-memo])
+    (first (db_query DB
+             "SELECT * FROM wash_ops_daily_records WHERE site_id = ? AND operation_date = ?"
+             [site-id resolved-date]))))
+
+(defn create-wash-ops-vehicle [site-id job-date plate-number vehicle-model vehicle-size arrived-at started-at finished-at departed-at work-minutes wait-minutes base-work extra-work assigned-staff special-contamination customer-request return-note payment-amount owner-involved]
+  (let [resolved-date (wash-ops-date job-date "job_date")
+        resolved-plate (wash-ops-required plate-number "plate_number")]
+    (ensure-wash-ops-site site-id)
+    (db_exec DB
+      "INSERT INTO wash_ops_vehicle_jobs
+       (site_id, job_date, plate_number, vehicle_model, vehicle_size, arrived_at,
+        started_at, finished_at, departed_at, work_minutes, wait_minutes, base_work,
+        extra_work, assigned_staff, special_contamination, customer_request,
+        return_note, payment_amount, owner_involved)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      [site-id resolved-date resolved-plate vehicle-model vehicle-size arrived-at started-at
+       finished-at departed-at (wash-ops-nonnegative work-minutes "work_minutes")
+       (wash-ops-nonnegative wait-minutes "wait_minutes") base-work extra-work assigned-staff
+       special-contamination customer-request return-note
+       (wash-ops-nonnegative payment-amount "payment_amount")
+       (if (= owner-involved true) 1 (if (= owner-involved 1) 1 0))])
+    (let [id (inserted-id "wash_ops_vehicle_jobs")]
+      (first (db_query DB "SELECT * FROM wash_ops_vehicle_jobs WHERE id = ?" [id])))))
+
+(defn valid-wash-ops-condition-stage? [stage]
+  (or (= stage "ARRIVAL") (= stage "FINAL")))
+
+(defn valid-wash-ops-condition-area? [area]
+  (or (= area "EXTERIOR") (= area "INTERIOR")))
+
+(defn valid-wash-ops-condition-status? [status]
+  (or (= status "NORMAL") (= status "CONTAMINATED") (= status "WET_ODOR")
+      (= status "DAMAGE") (= status "RECHECK") (= status "NOT_APPLICABLE")))
+
+(defn valid-wash-ops-exterior-checkpoint? [code]
+  (or (= code "EXT_FRONT_BUMPER") (= code "EXT_HOOD") (= code "EXT_WINDSHIELD")
+      (= code "EXT_ROOF") (= code "EXT_LEFT_SIDE") (= code "EXT_RIGHT_SIDE")
+      (= code "EXT_REAR") (= code "EXT_WHEELS") (= code "EXT_DOOR_GAPS")
+      (= code "EXT_PAINT_DAMAGE")))
+
+(defn valid-wash-ops-interior-checkpoint? [code]
+  (or (= code "INT_DRIVER_SEAT") (= code "INT_PASSENGER_SEAT") (= code "INT_REAR_SEAT")
+      (= code "INT_DASHBOARD_CONSOLE") (= code "INT_FLOOR_MATS") (= code "INT_DOOR_TRIMS")
+      (= code "INT_GLASS_MIRRORS") (= code "INT_TRUNK") (= code "INT_ODOR_MOISTURE")
+      (= code "INT_BELONGINGS_DAMAGE")))
+
+(defn valid-wash-ops-condition-checkpoint? [area code]
+  (if (= area "EXTERIOR")
+    (valid-wash-ops-exterior-checkpoint? code)
+    (if (= area "INTERIOR") (valid-wash-ops-interior-checkpoint? code) false)))
+
+(defn save-wash-ops-vehicle-condition [site-id vehicle-job-id stage area code label status note]
+  (let [resolved-stage (if (nil? stage) "ARRIVAL" stage)
+        resolved-area (wash-ops-required area "area_group")
+        resolved-code (wash-ops-required code "checkpoint_code")
+        resolved-label (wash-ops-required label "checkpoint_label")
+        resolved-status (wash-ops-required status "condition_status")]
+    (ensure-wash-ops-site site-id)
+    (ensure-wash-ops-vehicle vehicle-job-id site-id)
+    (if (not (valid-wash-ops-condition-stage? resolved-stage)) (error "Invalid vehicle condition stage"))
+    (if (not (valid-wash-ops-condition-area? resolved-area)) (error "Invalid vehicle condition area"))
+    (if (not (valid-wash-ops-condition-checkpoint? resolved-area resolved-code)) (error "Invalid vehicle condition checkpoint"))
+    (if (not (valid-wash-ops-condition-status? resolved-status)) (error "Invalid vehicle condition status"))
+    (db_exec DB
+      "INSERT INTO wash_ops_vehicle_condition_checks
+       (site_id,vehicle_job_id,inspection_stage,area_group,checkpoint_code,checkpoint_label,condition_status,note)
+       VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(vehicle_job_id,inspection_stage,checkpoint_code) DO UPDATE SET
+         area_group=excluded.area_group,checkpoint_label=excluded.checkpoint_label,
+         condition_status=excluded.condition_status,note=excluded.note,updated_at=CURRENT_TIMESTAMP"
+      [site-id vehicle-job-id resolved-stage resolved-area resolved-code resolved-label resolved-status note])
+    (first (db_query DB
+      "SELECT * FROM wash_ops_vehicle_condition_checks
+       WHERE vehicle_job_id=? AND inspection_stage=? AND checkpoint_code=?"
+      [vehicle-job-id resolved-stage resolved-code]))))
+
+(defn save-wash-ops-vehicle-conditions [site-id vehicle-job-id conditions]
+  (if (nil? conditions)
+    []
+    (map (fn [item]
+      (save-wash-ops-vehicle-condition site-id vehicle-job-id
+        (get item :inspection_stage) (get item :area_group) (get item :checkpoint_code)
+        (get item :checkpoint_label) (get item :condition_status) (get item :note))) conditions)))
+
+;; 차량 본문과 상태 체크포인트는 한 트랜잭션으로 저장한다. 체크포인트 검증이
+;; 실패하면 차량 행만 남는 반쪽 기록도 함께 롤백한다.
+(defn create-wash-ops-vehicle-bundle [payload]
+  (db_exec DB "BEGIN TRANSACTION" [])
+  (try
+    (let [vehicle (create-wash-ops-vehicle
+                    (get payload :site_id) (get payload :job_date) (get payload :plate_number)
+                    (get payload :vehicle_model) (get payload :vehicle_size)
+                    (get payload :arrived_at) (get payload :started_at) (get payload :finished_at)
+                    (get payload :departed_at) (get payload :work_minutes) (get payload :wait_minutes)
+                    (get payload :base_work) (get payload :extra_work) (get payload :assigned_staff)
+                    (get payload :special_contamination) (get payload :customer_request)
+                    (get payload :return_note) (get payload :payment_amount) (get payload :owner_involved))
+          conditions (save-wash-ops-vehicle-conditions
+                       (get payload :site_id) (get vehicle :id) (get payload :conditions))]
+      (db_exec DB "COMMIT" [])
+      (assoc vehicle :conditions conditions))
+    (catch [e]
+      (do
+        (try (db_exec DB "ROLLBACK" []) (catch [rollback-error] false))
+        (error (str e))))))
+
+(defn valid-wash-ops-rework-cause? [cause]
+  (or (= cause "REQUEST_MISSED") (= cause "WORK_STEP_MISSED")
+      (= cause "INSPECTION_MISSED") (= cause "TIME_SHORTAGE")
+      (= cause "EXTRA_CONTAMINATION") (= cause "EQUIPMENT")
+      (= cause "EXPLANATION_MISMATCH") (= cause "OTHER")))
+
+(defn create-wash-ops-rework [site-id vehicle-job-id occurred-date plate-number complaint-area customer-request initial-worker inspector free-minutes cause result prevention-action]
+  (let [resolved-date (wash-ops-date occurred-date "occurred_date")
+        resolved-plate (wash-ops-required plate-number "plate_number")
+        resolved-area (wash-ops-required complaint-area "complaint_area")]
+    (ensure-wash-ops-site site-id)
+    (ensure-wash-ops-vehicle vehicle-job-id site-id)
+    (if (not (valid-wash-ops-rework-cause? cause)) (error "Invalid rework cause"))
+    (db_exec DB
+      "INSERT INTO wash_ops_reworks
+       (site_id, vehicle_job_id, occurred_date, plate_number, complaint_area,
+        customer_request, initial_worker, inspector, free_minutes, cause, result, prevention_action)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      [site-id vehicle-job-id resolved-date resolved-plate resolved-area customer-request
+       initial-worker inspector (wash-ops-nonnegative free-minutes "free_minutes") cause result prevention-action])
+    (let [id (inserted-id "wash_ops_reworks")]
+      (first (db_query DB "SELECT * FROM wash_ops_reworks WHERE id = ?" [id])))))
+
+(defn valid-wash-ops-issue-state? [state]
+  (or (= state "OBSERVE") (= state "STOPPED") (= state "REPAIR_REQUESTED") (= state "RESOLVED")))
+
+(defn create-wash-ops-equipment-issue [site-id equipment-id occurred-date issue-title state downtime-minutes action-taken note]
+  (let [resolved-date (wash-ops-date occurred-date "occurred_date")
+        resolved-title (wash-ops-required issue-title "issue_title")
+        resolved-state (if (nil? state) "OBSERVE" state)]
+    (ensure-wash-ops-site site-id)
+    (ensure-wash-ops-equipment equipment-id site-id)
+    (if (not (valid-wash-ops-issue-state? resolved-state)) (error "Invalid equipment issue state"))
+    (db_exec DB
+      "INSERT INTO wash_ops_equipment_issues
+       (site_id, equipment_id, occurred_date, issue_title, state, downtime_minutes,
+        action_taken, note, resolved_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'RESOLVED' THEN CURRENT_TIMESTAMP ELSE NULL END)"
+      [site-id equipment-id resolved-date resolved-title resolved-state
+       (wash-ops-nonnegative downtime-minutes "downtime_minutes") action-taken note resolved-state])
+    (let [id (inserted-id "wash_ops_equipment_issues")]
+      (first (db_query DB "SELECT * FROM wash_ops_equipment_issues WHERE id = ?" [id])))))
+
+(defn resolve-wash-ops-equipment-issue [issue-id]
+  (do
+    (if (nil? (first (db_query DB "SELECT id FROM wash_ops_equipment_issues WHERE id = ?" [issue-id])))
+      (error "Equipment issue not found"))
+    (db_exec DB
+      "UPDATE wash_ops_equipment_issues SET state='RESOLVED', resolved_at=CURRENT_TIMESTAMP WHERE id=?"
+      [issue-id])
+    (first (db_query DB "SELECT * FROM wash_ops_equipment_issues WHERE id = ?" [issue-id]))))
+
+(defn valid-wash-ops-note-category? [category]
+  (or (= category "UNSORTED") (= category "STAFF") (= category "EQUIPMENT")
+      (= category "FLOW") (= category "CUSTOMER") (= category "PRICE")
+      (= category "BOOKING") (= category "REWORK") (= category "IDEA")))
+
+(defn create-wash-ops-note [site-id note-date content category]
+  (let [resolved-date (wash-ops-date note-date "note_date")
+        resolved-content (wash-ops-required content "content")
+        resolved-category (if (nil? category) "UNSORTED" category)]
+    (ensure-wash-ops-site site-id)
+    (if (not (valid-wash-ops-note-category? resolved-category)) (error "Invalid note category"))
+    (db_exec DB
+      "INSERT INTO wash_ops_notes (site_id, note_date, content, category) VALUES (?, ?, ?, ?)"
+      [site-id resolved-date resolved-content resolved-category])
+    (let [id (inserted-id "wash_ops_notes")]
+      (first (db_query DB "SELECT * FROM wash_ops_notes WHERE id = ?" [id])))))
+
+(defn wash-ops-daily-summary [metrics reworks issues]
+  (let [base (str "오늘 " (or (get metrics :vehicle_count) 0) "대를 기록했고 평균 작업시간은 "
+                  (or (get metrics :avg_work_minutes) 0) "분입니다. 대기 지연 "
+                  (or (get metrics :delay_count) 0) "건, 무료 재작업 "
+                  (or (get metrics :rework_count) 0) "건, 장비 이상 "
+                  (or (get metrics :issue_count) 0) "건이 기록됐습니다.")]
+    (cond
+      [(> (length issues) 0) (str base " 가장 최근 장비 문제는 ‘" (get (first issues) :issue_title) "’입니다.")]
+      [(> (length reworks) 0) (str base " 가장 최근 재작업 부위는 ‘" (get (first reworks) :complaint_area) "’입니다.")]
+      [(> (or (get metrics :delay_count) 0) 0) (str base " 지연 차량의 시간대와 추가 작업을 확인해 주세요.")]
+      [true (str base " 현재 입력된 문제 기록은 없습니다.")])))
+
+(defn get-wash-ops-dashboard [site-id operation-date]
+  (let [resolved-date (wash-ops-date operation-date "date")
+        site (ensure-wash-ops-site site-id)
+        day (first (db_query DB "SELECT * FROM wash_ops_daily_records WHERE site_id=? AND operation_date=?" [site-id resolved-date]))
+        metrics (first (db_query DB
+          "SELECT
+             (SELECT COUNT(*) FROM wash_ops_vehicle_jobs WHERE site_id=? AND job_date=?) AS vehicle_count,
+             (SELECT COALESCE(ROUND(AVG(work_minutes)),0) FROM wash_ops_vehicle_jobs WHERE site_id=? AND job_date=? AND work_minutes>0) AS avg_work_minutes,
+             (SELECT COUNT(*) FROM wash_ops_vehicle_jobs WHERE site_id=? AND job_date=? AND wait_minutes>0) AS delay_count,
+             (SELECT COUNT(*) FROM wash_ops_reworks WHERE site_id=? AND occurred_date=?) AS rework_count,
+             (SELECT COUNT(*) FROM wash_ops_equipment_issues WHERE site_id=? AND occurred_date=?) AS issue_count,
+             (SELECT COUNT(*) FROM wash_ops_equipment_issues WHERE site_id=? AND state<>'RESOLVED') AS open_issue_count,
+             COALESCE((SELECT owner_work_minutes FROM wash_ops_daily_records WHERE site_id=? AND operation_date=?),0) AS owner_work_minutes,
+             (SELECT COUNT(*) FROM wash_ops_reworks WHERE site_id=? AND occurred_date=? AND (prevention_action IS NULL OR prevention_action=''))
+               + (SELECT COUNT(*) FROM wash_ops_equipment_issues WHERE site_id=? AND state<>'RESOLVED') AS incomplete_count"
+          [site-id resolved-date site-id resolved-date site-id resolved-date site-id resolved-date
+           site-id resolved-date site-id site-id resolved-date site-id resolved-date site-id]))
+        vehicles (db_query DB "SELECT * FROM wash_ops_vehicle_jobs WHERE site_id=? AND job_date=? ORDER BY COALESCE(arrived_at,created_at) DESC,id DESC" [site-id resolved-date])
+        conditions (db_query DB
+          "SELECT c.* FROM wash_ops_vehicle_condition_checks c
+           JOIN wash_ops_vehicle_jobs v ON v.id=c.vehicle_job_id
+           WHERE v.site_id=? AND v.job_date=?
+           ORDER BY c.vehicle_job_id DESC,c.inspection_stage,c.area_group,c.id"
+          [site-id resolved-date])
+        reworks (db_query DB "SELECT * FROM wash_ops_reworks WHERE site_id=? AND occurred_date=? ORDER BY id DESC" [site-id resolved-date])
+        issues (db_query DB
+          "SELECT i.*,e.category AS equipment_category,e.model AS equipment_model
+           FROM wash_ops_equipment_issues i LEFT JOIN equipment e ON e.id=i.equipment_id
+           WHERE i.site_id=? AND i.occurred_date=? ORDER BY i.id DESC" [site-id resolved-date])
+        notes (db_query DB "SELECT * FROM wash_ops_notes WHERE site_id=? AND note_date=? ORDER BY id DESC" [site-id resolved-date])]
+    {:site site :date resolved-date :day day :metrics metrics :vehicles vehicles :conditions conditions :reworks reworks
+     :issues issues :notes notes :summary (wash-ops-daily-summary metrics reworks issues)}))
+
+(defn get-wash-ops-weekly [site-id end-date]
+  (let [resolved-date (wash-ops-date end-date "end_date")
+        site (ensure-wash-ops-site site-id)
+        metrics (first (db_query DB
+          "SELECT
+             (SELECT COUNT(*) FROM wash_ops_vehicle_jobs WHERE site_id=? AND date(job_date) BETWEEN date(?,'-6 days') AND date(?)) AS vehicle_count,
+             (SELECT COALESCE(ROUND(AVG(work_minutes)),0) FROM wash_ops_vehicle_jobs WHERE site_id=? AND date(job_date) BETWEEN date(?,'-6 days') AND date(?) AND work_minutes>0) AS avg_work_minutes,
+             (SELECT COALESCE(ROUND(AVG(wait_minutes)),0) FROM wash_ops_vehicle_jobs WHERE site_id=? AND date(job_date) BETWEEN date(?,'-6 days') AND date(?) AND wait_minutes>0) AS avg_wait_minutes,
+             (SELECT COUNT(*) FROM wash_ops_reworks WHERE site_id=? AND date(occurred_date) BETWEEN date(?,'-6 days') AND date(?)) AS rework_count,
+             (SELECT COALESCE(SUM(downtime_minutes),0) FROM wash_ops_equipment_issues WHERE site_id=? AND date(occurred_date) BETWEEN date(?,'-6 days') AND date(?)) AS downtime_minutes,
+             (SELECT COALESCE(SUM(owner_work_minutes),0) FROM wash_ops_daily_records WHERE site_id=? AND date(operation_date) BETWEEN date(?,'-6 days') AND date(?)) AS owner_work_minutes"
+          [site-id resolved-date resolved-date site-id resolved-date resolved-date site-id resolved-date resolved-date
+           site-id resolved-date resolved-date site-id resolved-date resolved-date site-id resolved-date resolved-date]))
+        causes (db_query DB
+          "SELECT cause,COUNT(*) AS count,SUM(free_minutes) AS free_minutes FROM wash_ops_reworks
+           WHERE site_id=? AND date(occurred_date) BETWEEN date(?,'-6 days') AND date(?)
+           GROUP BY cause ORDER BY count DESC,free_minutes DESC,cause LIMIT 5" [site-id resolved-date resolved-date])
+        daily (db_query DB
+          "SELECT job_date AS date,COUNT(*) AS vehicle_count,COALESCE(ROUND(AVG(work_minutes)),0) AS avg_work_minutes,
+                  SUM(CASE WHEN wait_minutes>0 THEN 1 ELSE 0 END) AS delay_count
+           FROM wash_ops_vehicle_jobs WHERE site_id=? AND date(job_date) BETWEEN date(?,'-6 days') AND date(?)
+           GROUP BY job_date ORDER BY job_date" [site-id resolved-date resolved-date])]
+    {:site site :end_date resolved-date :metrics metrics :causes causes :daily daily}))

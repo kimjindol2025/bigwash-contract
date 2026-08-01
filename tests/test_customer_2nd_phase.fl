@@ -2,10 +2,8 @@
   (let [override (env-get "BIGWASH_REPO_ROOT")]
     (if (or (nil? override) (str-blank? override)) (env-get "PWD") override)))
 (load (str REPO-ROOT "/src/washcare.fl"))
-
 (if (= DB (str REPO-ROOT "/db/contracts.sqlite"))
   (error "test_customer_2nd_phase.fl requires BIGWASH_DB_PATH pointing to an isolated test database"))
-
 (db_exec DB "DELETE FROM customer_followups WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
 (db_exec DB "DELETE FROM customer_tasks WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
 (db_exec DB "DELETE FROM customer_contacts WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
@@ -17,7 +15,6 @@
 (db_exec DB "DELETE FROM sites WHERE name IN ('고객2차테스트 현장', '고객2차테스트 비교현장')" [])
 (db_exec DB "DELETE FROM contracts WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE '고객2차테스트 %')" [])
 (db_exec DB "DELETE FROM customers WHERE name LIKE '고객2차테스트 %'" [])
-
 (let [customer (create-customer "고객2차테스트 기본" "010-8888-9999" "" "2차 테스트" "CUSTOMER" "서울")
       customer-id (get customer :id)
       other-customer (create-customer "고객2차테스트 비교" "010-7777-9999" "" "비교 고객" "CUSTOMER" "부산")
@@ -38,8 +35,8 @@
                            (db_exec DB "INSERT INTO contracts (number, status, client_id, amount, customer_id) VALUES (?, ?, ?, ?, ?)"
                                     ["CUST2-OTHER-001" "DRAFT" 9002 99000 other-customer-id])
                            (first (db_query DB "SELECT * FROM contracts WHERE number = ?" ["CUST2-OTHER-001"])))
-      ticket-main (create-service-ticket site-id (get equipment :id) "메인고객 증상" "NORMAL" "PHONE" "2026-07-20T11:00")
-      ticket-other (create-service-ticket other-site-id nil "비교고객 증상" "LOW" "PHONE" "2026-07-20T12:00")
+      ticket-main (create-service-ticket site-id (get equipment :id) "메인고객 증상" "NORMAL" "PHONE" "2026-07-20T11:00:00")
+      ticket-other (create-service-ticket other-site-id nil "비교고객 증상" "LOW" "PHONE" "2026-07-20T12:00:00")
       sale-main (create-part-sale site-id (get equipment :id) nil "노즐" 2 12000 "STORE")
       sale-other (create-part-sale other-site-id nil nil "필터" 1 5000 "STORE")
       quote (create-quote customer-id "고객2차 견적" 275000 "2026-07-31" "견적 메모")
@@ -50,7 +47,6 @@
             (update-quote-status (get quote :id) "APPROVED")
             false)
           (catch [e] true))]
-
   (let [sites (list-customer-sites customer-id)
         customer-equipment (list-customer-equipment customer-id)
         customer-contracts (list-customer-contracts customer-id)
@@ -82,14 +78,12 @@
     (assert (not (= (get (first customer-tickets) :id) (get ticket-other :id))) "비교 고객 출장은 포함되면 안 된다")
     (assert (not (= (get (first customer-sales) :id) (get sale-other :id))) "비교 고객 판매는 포함되면 안 된다")
     (assert invalid-quote-transition "잘못된 견적 상태 전이는 거부해야 한다"))
-
   ;; 입력 포맷과 생성 순서에 기대지 않고 고정 시각으로 타임라인 정렬을 검증한다.
   (db_exec DB "UPDATE part_sales SET sold_at = '2026-07-20 02:00:00' WHERE id = ?" [(get sale-main :id)])
   (db_exec DB "UPDATE quotes SET created_at = '2026-07-20 03:00:00' WHERE id = ?" [(get quote :id)])
   (db_exec DB "UPDATE contracts SET created_at = '2026-07-20 04:00:00' WHERE id = ?" [(get contract-main-row :id)])
   (db_exec DB "UPDATE service_tickets SET created_at = '2026-07-20 05:00:00' WHERE id = ?" [(get ticket-main :id)])
   (db_exec DB "UPDATE customer_followups SET scheduled_at = '2026-07-20T06:00:00' WHERE id = ?" [(get followup :id)])
-
   (let [timeline (list-customer-timeline customer-id nil)
         quote-timeline (list-customer-timeline customer-id "QUOTE")
         ticket-timeline (list-customer-timeline customer-id "TICKET")
@@ -112,14 +106,12 @@
     (assert (= (get (first ticket-timeline) :source_id) (get ticket-main :id)) "출장 필터는 해당 고객 기록만 반환해야 한다")
     (assert (not (= (get (first ticket-timeline) :source_id) (get ticket-other :id))) "비교 고객 출장은 타임라인에 섞이면 안 된다")
     (assert invalid-timeline-type "지원하지 않는 타임라인 유형은 거부해야 한다"))
-
   (update-quote-status (get quote :id) "SENT")
   (update-quote-status (get quote :id) "REVIEWING")
   (update-quote-status (get quote :id) "APPROVED")
   (let [approved-quote (first (db_query DB "SELECT status, sent_at FROM quotes WHERE id = ?" [(get quote :id)]))]
     (assert (= (get approved-quote :status) "APPROVED") "견적 상태가 APPROVED까지 전이돼야 한다")
     (assert (not (nil? (get approved-quote :sent_at))) "SENT 전이 시 sent_at이 기록돼야 한다"))
-
   (let [converted-quote (convert-quote-to-contract (get quote :id))
         quote-contract-id (get converted-quote :contract_id)
         converted-contract (first (db_query DB "SELECT * FROM contracts WHERE id = ?" [quote-contract-id]))
@@ -131,14 +123,11 @@
     (assert (= (length customer-contracts-after) 2) "견적 전환 후 고객 계약 목록에 새 계약이 추가돼야 한다")
     (assert (> (length (filter (fn [contract-row] (= (get contract-row :id) quote-contract-id)) customer-contracts-after)) 0)
       "전환된 계약이 고객 계약 목록에 보여야 한다"))
-
   (complete-customer-task (get task :id))
   (complete-customer-followup (get followup :id))
-
   (let [completed-task (first (db_query DB "SELECT status, completed_at FROM customer_tasks WHERE id = ?" [(get task :id)]))
         completed-followup (first (db_query DB "SELECT completed_at FROM customer_followups WHERE id = ?" [(get followup :id)]))]
     (assert (= (get completed-task :status) "DONE") "할 일 완료 처리 시 status가 DONE이어야 한다")
     (assert (not (nil? (get completed-task :completed_at))) "할 일 완료 처리 시 completed_at이 기록돼야 한다")
     (assert (not (nil? (get completed-followup :completed_at))) "사후관리 완료 처리 시 completed_at이 기록돼야 한다")))
-
 (println "✓ Customer 2nd phase tests passed")

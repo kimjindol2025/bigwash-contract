@@ -637,7 +637,8 @@ customer_merge_history
 | 담당자(`customer_contacts`) | ✅ 구현됨 | `customer_contacts` 테이블, `POST/GET /care/customer-contacts`, Admin 고객 상세 담당자 탭 |
 | 고객 할 일(`customer_tasks`) | ✅ 구현됨 | `customer_tasks` 테이블, `POST/GET /care/customer-tasks`, `PUT /care/customer-tasks/:id/complete` |
 | 사후관리(`customer_followups`) | ✅ 구현됨 | `customer_followups` 테이블, `POST/GET /care/customer-followups`, `PUT /care/customer-followups/:id/complete` |
-| 계약금 세분화 | ❌ 미구현 | `contracts.status` 단일 필드만, 계약금/중도금/잔금 세분화 없음 |
+| 계약관리(`contracts`/`contract_items`/`contract_history`) | ✅ 구현됨(2026-07-22, 7주차) | `DESIGN.md` 5상태(`DRAFT`/`PENDING`/`APPROVED`/`COMPLETED`/`CANCELLED`)+전이, `GET/POST /care/contracts`, `GET/PUT /care/contracts/:id`, `PUT /care/contracts/:id/status`(DRAFT만 수정, DELETE 없음), Admin 계약관리 모듈. 상세는 `docs/13-contract-management-report.md` |
+| 계약금 세분화 | ❌ 미구현(비범위) | 위 계약관리 API의 `status`는 DESIGN 5값 그대로이며, 17장이 나열한 계약금/중도금/잔금/작업 진행 세분화는 여전히 `contracts.status`에 들어가지 않는다(`docs/07` §6 가드). PaymentOrder 도입 전까지 의도적 비범위 |
 | 연간관리(`care_plans`) | ✅ 구현됨(2026-07-21, 4~5주차) | `care_plans` 테이블, `POST/GET/PUT /care/care-plans`, `PUT .../cancel`, `POST .../renew`(`docs/09-implementation-schedule.md` 4~5주차). Admin UI: 무필터 최신 50건 전체 목록+`effective_status` 필터+가입/사용횟수 정정/취소·갱신(confirm), 고객 상세 "연간관리" 탭+상단 요약, 티켓 폼 CarePlan 안내 배너(표시 전용). **19장이 언급하는 할인율·자동 할인 적용은 구현 범위 밖**(`payment_status`/PG 연동 없음, `docs/02` Phase2 원칙) |
 | 미수금 원장(`payment_orders`) | ❌ 미구현 | 테이블 없음 — `docs/09` 원칙상 PaymentOrder 정의 후 착수 |
 | 문자발송(`notification_deliveries`) | ❌ 미구현 | 테이블·라우트 없음 |

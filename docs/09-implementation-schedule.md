@@ -41,8 +41,9 @@
 | 3주차 | 08-04(화) ~ 08-10(월) | 주간 운영보고와 Admin 연결 — ✅ 완료 | P0-2 |
 | 4~5주차 | 08-11(화) ~ 08-24(월) | CarePlan 데이터/API/UI — 4주차 백엔드 ✅ / 5주차 UI ✅ 완료(2026-07-21) | P1-1 |
 | 6주차 | 08-25(화) ~ 08-31(월) | 회귀·운영 파일럿 및 다음 게이트 | 전체 회귀 + 게이트 결정 |
+| 7주차(추가) | 2026-07-22 | 계약관리(Contracts) API·Admin 완전 통합 — ✅ 완료 | 05§32/07§6 계약관리 갭 해소 |
 
-각 주차 상세는 아래 2~6장. 모든 주차는 공통 항목(목표/범위/산출물/선행조건/완료기준/
+각 주차 상세는 아래 2~6장, 7주차는 8장. 모든 주차는 공통 항목(목표/범위/산출물/선행조건/완료기준/
 테스트/담당 흐름/위험·중단조건)으로 기술한다.
 
 ---
@@ -53,8 +54,9 @@
 
 gap review P1-3(문서 회귀)·P1-4(OpenAPI 불일치)·P1-5(RUN_GUIDE/README 구식)를
 먼저 닫아 이후 주차의 우선순위 판단이 낡은 문서에 왜곡되지 않게 한다. 동시에
-P0-3(API 키 fail-open)은 개발 중 의도된 공개 모드로 문서화하고 운영 배포 전
-보안 게이트로 등록한다. 반복 등장하는 에러 응답 불일치(P1-6)는 "전수 리팩터"가
+당시 P0-3(API 키 fail-open)은 개발 중 의도된 공개 모드로 문서화하고 운영 배포 전
+보안 게이트로 등록했다(6주차에 기본 fail-closed로 해소). 반복 등장하는 에러 응답
+불일치(P1-6)는 "전수 리팩터"가
 아니라 **계약(기준) 확정**으로 좁혀 처리한다.
 
 ### 범위
@@ -279,7 +281,7 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
   포함되지 않는다.
 - [x] Admin `reports`가 더 이상 "준비 중" placeholder를 보여주지 않고 실데이터
   렌더(계약 shape 기준). 점검 대상 제목 = 「보증 만료 기반 점검 대상」
-- [x] `docs/04` / OpenAPI에 route·query·response·400·fail-open 표기, 테스트
+- [x] `docs/04` / OpenAPI에 route·query·response·400·당시 인증 정책 표기, 테스트
   목록 9종 문서화
 
 ### 테스트
@@ -400,7 +402,8 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
   최대 50건 캡(51건 픽스처로 정확히 50건만 반환되는지) 검증을 같은 파일에
   추가했다 — **5주차 완료 시점에는 새 테스트 파일을 만들지 않아
   `tests/test_*.fl` 총 10개**였다. 이후 통화 자동화 기능에서 2개가 추가되어
-  6주차 최종 회귀 기준은 12개다.
+  통화 자동화 기능에서 2개, 보안 게이트에서 1개가 추가되어 6주차 최종
+  회귀 기준은 13개다.
 
 ### 담당 흐름
 
@@ -446,12 +449,14 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
 
 ### 산출물
 
-- `scripts/verify-week6.sh` — 운영 DB 하드 가드가 있는 12종 직렬 회귀,
-  Admin 구문, OpenAPI 55개 라우트, 공백 오류 자동 검증
+- `scripts/verify-week6.sh` — 운영 DB 하드 가드가 있는 13종 직렬 회귀,
+  Admin 구문, OpenAPI 55개 라우트, 격리 HTTP 보안 공격표, DB 백업·복원,
+  공백 오류 자동 검증
 - `docs/10-week6-readiness.md` — 실측 회귀 결과, node25 읽기 전용 체크리스트,
   승인 필요 명령 분리, 롤백, 샌드박스/파일럿 관찰표
-- 다음 게이트 결정: **실고객 파일럿 HOLD / PaymentOrder HOLD / PG 연기 GO**.
-  fail-open 인증, Admin 접근 경계, 예외 응답 새니타이즈를 먼저 닫는다.
+- 보안 게이트 코드: 기본 fail-closed, Admin HTTP Basic, 오류 응답 새니타이즈
+  완료. 운영 환경변수 설정·node25 반영은 별도 승인 대기다.
+- 다음 게이트 결정: **운영 배포 승인 대기 / PaymentOrder HOLD / PG 연기 GO**.
 
 ### 선행조건
 
@@ -459,11 +464,12 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
 
 ### 완료기준 (DoD)
 
-- [x] 전체 테스트 12종 PASS
+- [x] 전체 테스트 13종 PASS
 - [x] 배포 체크리스트와 롤백 절차가 문서화되고, 실제 운영 반영이 필요한 명령은
   승인 대기 상태로 명확히 분리됨
 - [x] 다음 게이트 문서에 PaymentOrder HOLD와 PG 연기 근거가 명시됨
-- [ ] fail-open 인증·Admin 접근 경계·예외 응답 노출 해소 후 실고객 파일럿 승인
+- [x] fail-open 인증·Admin 접근 경계·예외 응답 노출 코드 해소
+- [ ] node25에 두 인증 시크릿 설정·배포 후 운영 스모크 및 실고객 파일럿 승인
 
 ### 테스트
 
@@ -480,8 +486,9 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
 
 - 이번 6주 동안 새로 발견된 P0/P1 미해결 항목이 남아 있으면, 다음 게이트를
   "미수금 원장 착수"로 넘기지 않고 잔여 항목 정리를 우선한다.
-- 2026-07-22 검수에서 위 조건이 실제 발생했다. 따라서 회귀·준비도 문서화는
-  완료했지만 운영 배포와 PaymentOrder는 HOLD이며, 보안 게이트 정리가 다음 작업이다.
+- 2026-07-22 보안 게이트 코드는 해소됐다. 다만 node25 환경 설정·배포·운영
+  스모크는 미실행이므로 운영 파일럿은 사용자 승인 전까지 HOLD다. PaymentOrder도
+  실제 미수금 관찰 근거가 생길 때까지 HOLD다.
 
 ---
 
@@ -520,7 +527,86 @@ A/S·일정 미정·오늘 방문·점검임박" 집계를 구현한다 (P0-1의
 
 ---
 
-## 8. 로드맵 밖(참고, 이번 6주 범위 아님)
+## 8. 7주차 (2026-07-22) — 계약관리(Contracts) API·Admin 완전 통합 — ✅ 완료
+
+### 목표
+
+6주차까지 `GET /care/contracts?customer_id=X`(목록 1개)와 견적→계약 전환만
+있던 계약관리를 `DESIGN.md`의 5상태(`DRAFT`/`PENDING`/`APPROVED`/`COMPLETED`/
+`CANCELLED`)+items+history 전체로 확장해 Care API와 Admin 모듈에 완전히
+연결한다(`docs/05` §32, `docs/07` §6이 표시해 둔 갭 해소). P1-8(07 메뉴
+placeholder)의 계약관리 항목을 이번 주차에 닫는다.
+
+### 범위 — 전부 구현됨
+
+- API 4개 신설: `POST /care/contracts`, `GET /care/contracts/:id`,
+  `PUT /care/contracts/:id`, `PUT /care/contracts/:id/status`. 기존
+  `GET /care/contracts`는 `customer_id` 필수에서 `status`/`customer_id`/
+  `site_id`/`q` 전부 선택으로 확장.
+- `amount`는 항목(`contract_items`) 합계로 서버가 계산·유지(요청 값 무시),
+  `contract_date` 생략/공백은 Asia/Seoul 오늘이 기본값.
+- 상태전이 정본을 `phase1-db.fl`의 `valid-contract-transition?` 하나로
+  단일화하고 레거시 `contract.fl`의 `valid-transition?`이 그 함수를
+  위임 호출하도록 정리(이중 스택 드리프트 방지).
+- Admin UI 계약관리 모듈: placeholder 제거, 목록/필터/검색/상세/항목/이력/
+  허용 전이 버튼/취소 confirm/인쇄, 고객 상세 계약 탭(배지+상세).
+- DELETE 엔드포인트·결제/미수금/PG 필드는 어디에도 추가하지 않음(`docs/09`
+  0장·`docs/07` §6 원칙 그대로 — 취소는 `CANCELLED` 상태전이로만).
+- `docs/openapi-washcare.yaml`에 신규 4개 operation +
+  `ContractSummary`/`ContractItem`/`ContractDetail` 스키마 반영, 전체
+  operation 55→59개.
+- `scripts/verify-week6.sh`의 임시 `TEMP_ALLOWED_EXTRAS` 허용 목록을
+  완전히 제거하고 기대값을 실제 code/spec 59/59 완전일치로 갱신.
+- 신규 테스트 `tests/test_contract_management.fl` 추가로 회귀 13→14종.
+
+### 산출물
+
+- `src/washcare.fl`/`src/washcare-api.fl`/`src/phase1-db.fl`/`src/contract.fl`
+  계약관리 도메인·API·전이 단일화 구현
+- `src/washcare-admin.html` 계약관리 모듈 UI
+- `tests/test_contract_management.fl`
+- `docs/04-washcare-api.md`·`docs/openapi-washcare.yaml`·`README.md`·
+  `docs/RUN_GUIDE.md`·`docs/05` §32·`docs/07` §6·`docs/10` 동기화
+- `docs/13-contract-management-report.md` — 범위·팀 역할·구현/검증 증거·
+  P0/P1 closure 종합 보고
+- `scripts/verify-week6.sh` TEMP_ALLOWED_EXTRAS 제거 + 14종/59개 기대값 갱신
+
+### 완료기준 (DoD)
+
+- [x] `tests/test_contract_management.fl` PASS(격리 DB) — 생성/서버 합계/
+  DRAFT 수정/전이 행렬/history/견적 전환 원자성/고객 격리/SQL 유사 검색/404
+  전부 검증
+- [x] `./scripts/verify-week6.sh` 전체 PASS: 테스트 14/14, OpenAPI↔코드
+  라우트 59/59 완전일치(임시 허용 목록 없이), git diff --check 공백 오류
+  없음, 격리 HTTP 보안 검증·DB 백업/복원 리허설 PASS
+- [x] `docs/openapi-washcare.yaml` `python3 -c "import yaml; yaml.safe_load(...)"`
+  parse 성공 + route set diff 0
+- [x] DELETE `/care/contracts/:id` 라우트 미등록(구현 금지 유지)
+- [x] 운영 DB(`db/contracts.sqlite`)·커밋·푸시·배포 미수행
+
+### 테스트
+
+- 신규 `tests/test_contract_management.fl` 1종 + 기존 13종 = **14종 전체 PASS**
+  (`scripts/verify-week6.sh` 1단계)
+
+### 담당 흐름
+
+- **Claude**: API·도메인 로직·전이 단일화·Admin UI·테스트·문서 구현
+- **Cursor**: 읽기 전용 리뷰 2회(`/tmp/bigwash-week7-contract-review.md` 구현
+  전 갭 분석, `/tmp/bigwash-week7-contract-final-review.md` 구현 후 DoD 대조 —
+  P0 blocking 없음, P1 7건 중 날짜 기본값(P1-1)은 이번 주차에 반영 완료)
+- **Codex**: 팀장 dispatch·최종 문서·검증 정합 지시(본 작업)
+
+### 위험·중단조건
+
+- Cursor 최종 검수(`/tmp/bigwash-week7-contract-final-review.md`)의 P1 중
+  라벨 문구(P1-2)·에러 접두 잔존(P1-3)·서버측 필터 미사용(P1-4)·
+  `MODULE_PLACEHOLDERS.contracts` dead entry(P1-5)는 이번 문서 동기화 범위
+  밖의 후속 정리 항목으로 남는다(코드 변경 없이 문서만 동기화하는 이번
+  작업의 범위 제약 — src/**, tests/** 수정 금지).
+- 운영 배포·운영 DB 반영은 이번 주차에도 하지 않는다 — HOLD 원칙 유지.
+
+## 9. 로드맵 밖(참고, 이번 6주 범위 아님)
 
 2026-07-21 gap review의 나머지 항목은 이번 로드맵 이후 별도로 재계획한다.
 

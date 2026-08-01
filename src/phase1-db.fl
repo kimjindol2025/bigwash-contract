@@ -30,6 +30,14 @@
                [table-name column-name])]
     (> (get (first rows) :count) 0)))
 
+;; 기존 Contract와 WashCare 통합 계약 API가 공유하는 단일 상태전이 정본.
+(defn valid-contract-transition? [from to]
+  (cond
+    [(= from "DRAFT") (or (= to "PENDING") (= to "CANCELLED"))]
+    [(= from "PENDING") (or (= to "APPROVED") (= to "CANCELLED"))]
+    [(= from "APPROVED") (or (= to "COMPLETED") (= to "CANCELLED"))]
+    [true false]))
+
 (defn phase1-create-schema []
   (do
     (db_exec DB "PRAGMA foreign_keys = ON" [])
@@ -94,6 +102,47 @@
         (db_exec DB "ALTER TABLE sites ADD COLUMN public_token_revoked_at TEXT" [])
         true)
       true)
+    ;; 후보지는 운영 현장과 같은 주소 엔터티·체크리스트 이력을 쓰되 단계만
+    ;; 분리한다. 기존 sites 행은 모두 OPERATING으로 안전하게 백필된다.
+    (if (not (phase1-column-exists? "sites" "site_stage"))
+      (do
+        (db_exec DB
+          "ALTER TABLE sites ADD COLUMN site_stage TEXT NOT NULL DEFAULT 'OPERATING'
+           CHECK (site_stage IN ('CANDIDATE', 'OPERATING', 'REJECTED'))"
+          [])
+        true)
+      true)
+
+    ;; 2026-07-31 추가: 고객의 주소별 현장을 부모로 갖는 점검 체크리스트.
+    ;; 한 현장에 여러 점검 이력을 누적하며, 항목명은 저장 당시 스냅샷으로 남겨
+    ;; 이후 기본 체크 항목이 바뀌어도 과거 기록의 의미가 변하지 않게 한다.
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS site_checklists (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        inspected_on TEXT NOT NULL,
+        inspector TEXT NOT NULL,
+        overall_result TEXT NOT NULL DEFAULT 'PASS'
+          CHECK (overall_result IN ('PASS', 'ATTENTION', 'FAIL')),
+        notes TEXT,
+        completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id)
+      )" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS site_checklist_items (
+        id INTEGER PRIMARY KEY,
+        checklist_id INTEGER NOT NULL,
+        item_code TEXT NOT NULL,
+        item_label TEXT NOT NULL,
+        result TEXT NOT NULL
+          CHECK (result IN ('OK', 'ATTENTION', 'FAIL', 'NOT_APPLICABLE')),
+        note TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(checklist_id) REFERENCES site_checklists(id),
+        UNIQUE(checklist_id, item_code)
+      )" [])
 
     (db_exec DB
       "CREATE TABLE IF NOT EXISTS equipment (
@@ -308,6 +357,47 @@
         FOREIGN KEY(contract_id) REFERENCES contracts(id)
       )" [])
 
+    ;; 2026-07-22 추가 (7주차): 통합 계약관리 — 기존 status 5종/전이(DRAFT→
+    ;; PENDING→APPROVED→COMPLETED, DRAFT/PENDING/APPROVED→CANCELLED)는 그대로
+    ;; 두고, contracts에 idempotent ALTER로 nullable 컬럼만 보강한다. 결제/
+    ;; 미수금/PG 상태는 이번에도 넣지 않는다(PaymentOrder 도입 전 원칙 —
+    ;; CarePlan/quotes와 동일). site_id/quote_id는 quotes/sites 테이블이 이미
+    ;; 생성된 뒤라야 REFERENCES가 의미를 가지므로 이 위치(quotes 다음)에 둔다.
+    ;; 각 ALTER는 (if 조건 (do ... true) true) 형태를 명시적으로 갖춘다 — 이
+    ;; 파일의 다른 idempotent ALTER들과 동일한 방어 패턴(2026-07-21 수정 커밋
+    ;; "FreeLang if-비tail 함정" 참고 — bare 2-arg if를 do 시퀀스 안에 그냥
+    ;; 두면 조용히 스킵될 수 있어 반드시 두 분기·명시 반환값을 둔다).
+    (if (not (phase1-column-exists? "contracts" "title"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN title TEXT" []) true)
+      true)
+    (if (not (phase1-column-exists? "contracts" "site_id"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN site_id INTEGER REFERENCES sites(id)" []) true)
+      true)
+    (if (not (phase1-column-exists? "contracts" "quote_id"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN quote_id INTEGER REFERENCES quotes(id)" []) true)
+      true)
+    (if (not (phase1-column-exists? "contracts" "contract_date"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN contract_date TEXT" []) true)
+      true)
+    (if (not (phase1-column-exists? "contracts" "work_starts_at"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN work_starts_at TEXT" []) true)
+      true)
+    (if (not (phase1-column-exists? "contracts" "work_ends_at"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN work_ends_at TEXT" []) true)
+      true)
+    (if (not (phase1-column-exists? "contracts" "warranty_ends_at"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN warranty_ends_at TEXT" []) true)
+      true)
+    (if (not (phase1-column-exists? "contracts" "signed_at"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN signed_at TEXT" []) true)
+      true)
+    (if (not (phase1-column-exists? "contracts" "work_scope"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN work_scope TEXT" []) true)
+      true)
+    (if (not (phase1-column-exists? "contracts" "memo"))
+      (do (db_exec DB "ALTER TABLE contracts ADD COLUMN memo TEXT" []) true)
+      true)
+
     ;; 2026-07-21 추가 (4주차): 연간관리(CarePlan). site_id 앵커 — equipment/
     ;; part_sales/outreach_touches와 동일하게 현장 단위로 소비되는 개념이라
     ;; customer_id가 아니라 site_id에 건다(docs/09 4주차 준비 메모). 결제 상태
@@ -353,8 +443,138 @@
         FOREIGN KEY(customer_id) REFERENCES customers(id)
       )" [])
 
+    ;; 2026-08-01 추가: 세차장 점주용 운영 기록실. 회사 내부 A/S 운영 집계
+    ;; (get-ops-summary/get-ops-weekly)와 이름·책임을 섞지 않기 위해 wash_ops_로
+    ;; 분리한다. 후보지에서 운영 전환된 동일 sites.id를 계속 부모로 사용한다.
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS wash_ops_daily_records (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        operation_date TEXT NOT NULL,
+        opened_at TEXT,
+        closed_at TEXT,
+        reserved_count INTEGER NOT NULL DEFAULT 0 CHECK (reserved_count >= 0),
+        staff_count INTEGER NOT NULL DEFAULT 0 CHECK (staff_count >= 0),
+        weather TEXT,
+        busiest_period TEXT,
+        status TEXT NOT NULL DEFAULT 'NORMAL'
+          CHECK (status IN ('NORMAL','CAUTION','PROBLEM')),
+        owner_work_minutes INTEGER NOT NULL DEFAULT 0 CHECK (owner_work_minutes >= 0),
+        owner_memo TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(site_id, operation_date),
+        FOREIGN KEY(site_id) REFERENCES sites(id)
+      )" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS wash_ops_vehicle_jobs (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        job_date TEXT NOT NULL,
+        plate_number TEXT NOT NULL,
+        vehicle_model TEXT,
+        vehicle_size TEXT,
+        arrived_at TEXT,
+        started_at TEXT,
+        finished_at TEXT,
+        departed_at TEXT,
+        work_minutes INTEGER NOT NULL DEFAULT 0 CHECK (work_minutes >= 0),
+        wait_minutes INTEGER NOT NULL DEFAULT 0 CHECK (wait_minutes >= 0),
+        base_work TEXT,
+        extra_work TEXT,
+        assigned_staff TEXT,
+        special_contamination TEXT,
+        customer_request TEXT,
+        return_note TEXT,
+        payment_amount REAL NOT NULL DEFAULT 0 CHECK (payment_amount >= 0),
+        owner_involved INTEGER NOT NULL DEFAULT 0 CHECK (owner_involved IN (0,1)),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id)
+      )" [])
+
+    ;; 차량 상태는 한 JSON 칼럼에 덮어쓰지 않는다. 입고/출차 단계와 외부/내부
+    ;; 구역, 정본 점검 코드를 행으로 쌓아 항목별 반복 문제를 집계할 수 있게 한다.
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS wash_ops_vehicle_condition_checks (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        vehicle_job_id INTEGER NOT NULL,
+        inspection_stage TEXT NOT NULL DEFAULT 'ARRIVAL'
+          CHECK (inspection_stage IN ('ARRIVAL','FINAL')),
+        area_group TEXT NOT NULL
+          CHECK (area_group IN ('EXTERIOR','INTERIOR')),
+        checkpoint_code TEXT NOT NULL,
+        checkpoint_label TEXT NOT NULL,
+        condition_status TEXT NOT NULL
+          CHECK (condition_status IN ('NORMAL','CONTAMINATED','WET_ODOR','DAMAGE','RECHECK','NOT_APPLICABLE')),
+        note TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(vehicle_job_id, inspection_stage, checkpoint_code),
+        FOREIGN KEY(site_id) REFERENCES sites(id),
+        FOREIGN KEY(vehicle_job_id) REFERENCES wash_ops_vehicle_jobs(id) ON DELETE CASCADE
+      )" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS wash_ops_reworks (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        vehicle_job_id INTEGER,
+        occurred_date TEXT NOT NULL,
+        plate_number TEXT NOT NULL,
+        complaint_area TEXT NOT NULL,
+        customer_request TEXT,
+        initial_worker TEXT,
+        inspector TEXT,
+        free_minutes INTEGER NOT NULL DEFAULT 0 CHECK (free_minutes >= 0),
+        cause TEXT NOT NULL CHECK (cause IN (
+          'REQUEST_MISSED','WORK_STEP_MISSED','INSPECTION_MISSED','TIME_SHORTAGE',
+          'EXTRA_CONTAMINATION','EQUIPMENT','EXPLANATION_MISMATCH','OTHER')),
+        result TEXT,
+        prevention_action TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id),
+        FOREIGN KEY(vehicle_job_id) REFERENCES wash_ops_vehicle_jobs(id)
+      )" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS wash_ops_equipment_issues (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        equipment_id INTEGER,
+        occurred_date TEXT NOT NULL,
+        issue_title TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'OBSERVE'
+          CHECK (state IN ('OBSERVE','STOPPED','REPAIR_REQUESTED','RESOLVED')),
+        downtime_minutes INTEGER NOT NULL DEFAULT 0 CHECK (downtime_minutes >= 0),
+        action_taken TEXT,
+        note TEXT,
+        resolved_at TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id),
+        FOREIGN KEY(equipment_id) REFERENCES equipment(id)
+      )" [])
+
+    (db_exec DB
+      "CREATE TABLE IF NOT EXISTS wash_ops_notes (
+        id INTEGER PRIMARY KEY,
+        site_id INTEGER NOT NULL,
+        note_date TEXT NOT NULL,
+        content TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'UNSORTED'
+          CHECK (category IN ('UNSORTED','STAFF','EQUIPMENT','FLOW','CUSTOMER','PRICE','BOOKING','REWORK','IDEA')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(site_id) REFERENCES sites(id)
+      )" [])
+
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_contracts_customer_id ON contracts(customer_id)" [])
+    ;; 7주차 통합 계약관리 목록 필터(status/site_id)용.
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_contracts_site_id ON contracts(site_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_sites_customer_id ON sites(customer_id)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_site_checklists_site_date ON site_checklists(site_id, inspected_on DESC, id DESC)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_site_checklist_items_checklist_id ON site_checklist_items(checklist_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_equipment_site_id ON equipment(site_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_tickets_site_status ON service_tickets(site_id, status)" [])
     ;; 2026-07-21 추가: 운영 대시보드 집계(지연·일정미정·오늘방문)가 status+scheduled_at
@@ -378,6 +598,12 @@
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_care_plans_status_ends_at ON care_plans(status, ends_at)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_call_events_customer_id ON call_events(customer_id)" [])
     (db_exec DB "CREATE INDEX IF NOT EXISTS idx_call_events_phone ON call_events(phone)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_daily_site_date ON wash_ops_daily_records(site_id, operation_date)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_vehicle_site_date ON wash_ops_vehicle_jobs(site_id, job_date)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_vehicle_condition_job ON wash_ops_vehicle_condition_checks(vehicle_job_id, inspection_stage, area_group)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_rework_site_date ON wash_ops_reworks(site_id, occurred_date)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_issue_site_date ON wash_ops_equipment_issues(site_id, occurred_date)" [])
+    (db_exec DB "CREATE INDEX IF NOT EXISTS idx_wash_ops_note_site_date ON wash_ops_notes(site_id, note_date)" [])
     (db_exec DB
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_sites_public_token_hash
        ON sites(public_token_hash) WHERE public_token_hash IS NOT NULL" [])))

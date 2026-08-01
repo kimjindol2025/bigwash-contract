@@ -61,13 +61,13 @@ FreeLang v11 실행기는 병렬 프로세스 간 공유 상태가 충돌할 수
 ./scripts/verify-week6.sh
 ```
 
-이 스크립트는 12종을 `mktemp` 하위의 서로 다른 DB로 직렬 실행하며 운영
+이 스크립트는 17종을 `mktemp` 하위의 서로 다른 DB로 직렬 실행하며 운영
 `db/contracts.sqlite`와 경로가 같거나 저장소 내부에 임시 DB가 생기면 즉시
-중단한다. Admin 인라인 스크립트 구문과 OpenAPI 55개 라우트 정합도 함께
-검증한다. 운영 배포 체크리스트와 롤백/승인 경계는
+중단한다. Admin/운영 기록실 인라인 스크립트 구문, OpenAPI 73개 라우트 정합, 격리 HTTP
+인증 공격표, DB 백업·복원도 함께 검증한다. 운영 배포 체크리스트와 롤백/승인 경계는
 `docs/10-week6-readiness.md`를 따른다.
 
-전체 12개 테스트 파일(`tests/test_*.fl`) 목록:
+전체 17개 테스트 파일(`tests/test_*.fl`) 목록:
 
 ```bash
 BIGWASH_DB_PATH=/tmp/bigwash-contract-test.sqlite \
@@ -89,17 +89,26 @@ BIGWASH_DB_PATH=/tmp/bigwash-call-events-test.sqlite \
   node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_call_events.fl
 ```
 
-아래 6개는 격리된 `BIGWASH_DB_PATH`가 없으면 테스트 자체가 즉시 에러로
+아래 11개는 격리된 `BIGWASH_DB_PATH`가 없으면 테스트 자체가 즉시 에러로
 거부한다(운영 DB 오염 방지 가드, 코드에 하드코딩됨) — 위 4개처럼 "권장"이
 아니라 **필수**다. `test_ops_summary.fl` / `test_ops_weekly.fl`은 운영 집계가
 `site_id`/`customer_id`로 스코프되지 않고 테이블 전체를 세므로,
 공유 DB에 실행하면 카운트 단정 자체가 무의미해져 격리가 특히 더 중요하다.
-`test_careplan.fl`은 CarePlan 자체는 `site_id`/`customer_id`로 스코프되지만
-동일한 안전 관례로 같은 가드를 둔다.
+`test_careplan.fl`/`test_contract_management.fl`은 각각 CarePlan/계약이
+`site_id`·`customer_id`로 스코프되지만 동일한 안전 관례로 같은 가드를 둔다
+(`test_contract_management.fl`은 다수 테이블 상태를 바꾸므로 운영 DB 경로와
+같으면 즉시 거부). `test_security_gate.fl`은 추가로
+`BIGWASH_SKIP_SERVER_START=1`을 요구해 테스트 중 포트를 열지 않는다.
 
 ```bash
 BIGWASH_DB_PATH=/tmp/bigwash-customer-2nd-test.sqlite \
   node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_customer_2nd_phase.fl
+
+BIGWASH_DB_PATH=/tmp/bigwash-site-checklist-test.sqlite \
+  node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_site_checklist.fl
+
+BIGWASH_DB_PATH=/tmp/bigwash-wash-operations-test.sqlite \
+  node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_wash_operations.fl
 
 BIGWASH_DB_PATH=/tmp/bigwash-customer-consultation-test.sqlite \
   node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_customer_consultation.fl
@@ -115,11 +124,27 @@ BIGWASH_DB_PATH=/tmp/bigwash-ops-weekly-test.sqlite \
 
 BIGWASH_DB_PATH=/tmp/bigwash-careplan-test.sqlite \
   node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_careplan.fl
+
+BIGWASH_DB_PATH=/tmp/bigwash-contract-management-test.sqlite \
+  node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_contract_management.fl
+
+BIGWASH_DB_PATH=/tmp/bigwash-field-service-qa-test.sqlite \
+  node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_field_service_qa.fl
+
+BIGWASH_SKIP_SERVER_START=1 \
+BIGWASH_DB_PATH=/tmp/bigwash-security-gate-test.sqlite \
+  node /home/kim/kim/freelang-v11/bootstrap.js run tests/test_security_gate.fl
 ```
 
 이미 같은 이름의 임시 DB가 있으면 삭제하거나 새 경로를 사용한다.
 
-## 계약 API
+## 계약 API (레거시, `src/contract.fl`+`src/api.fl`)
+
+`src/api.fl`/`src/contract.fl`은 WashCare 이전 레거시 계약 도메인이다.
+7주차(2026-07-22)부터 실제로 쓰는 계약관리 API는 아래 "Phase 1 Care API"의
+`/care/contracts*` 5종(목록 필터·생성·상세·수정·상태전이)이며, 상세는
+`docs/04-washcare-api.md`·`docs/13-contract-management-report.md`를 따른다.
+레거시 서버는 참고용으로만 남긴다:
 
 ```bash
 node /home/kim/kim/freelang-v11/bootstrap.js run src/api.fl
@@ -134,22 +159,21 @@ node /home/kim/kim/freelang-v11/bootstrap.js run src/api.fl
 
 ```bash
 BIGWASH_INTERNAL_API_KEY='replace-with-a-secret' \
+BIGWASH_ADMIN_BASIC_AUTH='Basic <base64(user:password)>' \
 BIGWASH_CARE_PORT=40101 \
 node /home/kim/kim/freelang-v11/bootstrap.js run src/washcare-api.fl
 ```
 
-**현재는 개발 단계 공개 정책이다 — `BIGWASH_INTERNAL_API_KEY`를 설정해도
-안전해지는 것은 요청 검증뿐이고, 이 값 자체를 비워두면 내부 관리 API 전체가
-무인증으로 열린다** (fail-open, `internal-authorized?`, `src/washcare-api.fl`).
-2026-07-19부터 의도된 개발 모드 결정이며 운영 배포 전 인증 필수 게이트로
-전환 예정이다. 정책·차단조건·에러 응답 계약은 `docs/04-washcare-api.md`
-"인증" 절이 정본이다 — 개발 중에는 실고객·운영 데이터를 이 서버에 올리지
-않고 localhost 또는 접근이 통제된 개발망에서만 실행한다.
+내부 관리 API는 기본 fail-closed다. `BIGWASH_INTERNAL_API_KEY`가 없거나
+요청의 `x-api-key`가 틀리면 401을 반환한다. 로컬 데이터 API만 임시로 열어야
+할 때는 `BIGWASH_ALLOW_INSECURE_DEV=1`을 명시할 수 있지만 운영에서는 금지한다.
+이 개발 예외도 Admin HTTP Basic 경계는 풀지 않는다.
 
-키를 설정한 경우 내부 요청에는 `x-api-key` 헤더가 필요하다.
+Admin 브라우저 인증과 데이터 API 키는 서로 독립이다. 정책·차단조건·에러
+응답 계약은 `docs/04-washcare-api.md` "인증" 절이 정본이다.
 
-내부 API는 53개 라우트(정적 Admin UI·루트 리다이렉트·공개 2개 제외,
-2026-07-22 통화 조회·이벤트 수신 API 포함)로 늘어나 이 문서에 개별 나열하지
+내부 API는 57개 라우트(정적 Admin UI·루트 리다이렉트·공개 2개 제외,
+7주차 2026-07-22 계약관리 API 4개 추가 반영)로 늘어나 이 문서에 개별 나열하지
 않는다 — **전체
 라우트 목록과 요청/응답 스키마는 `docs/openapi-washcare.yaml`(기계 판독용)과
 `docs/04-washcare-api.md`(설명)가 정본**이다. 기동 확인용 스모크 예시만 남긴다:
@@ -163,6 +187,9 @@ node /home/kim/kim/freelang-v11/bootstrap.js run src/washcare-api.fl
   오늘방문·보증임박), Asia/Seoul 기준
 - `GET /care/ops-weekly?as_of=YYYY-MM-DD` — 주간 운영 보고(미처리·다음 주 방문·
   보증 만료 기반 점검 대상). `as_of` 생략 시 Seoul 오늘
+- `GET/POST /care/contracts`, `GET/PUT /care/contracts/:id`,
+  `PUT /care/contracts/:id/status` — 계약관리(7주차, DESIGN 5상태·items·
+  history, DRAFT만 수정 가능, DELETE 없음)
 - `GET /care/status/:token` — 고객 공개 조회(인증 없음)
 
 공개 조회(`/care/status/:token`, `/care/site-status/:token`)는 성공·404·429

@@ -145,6 +145,16 @@
 9번 회계·수금 및 7번 출장서비스의 상태를 조합한 파생 뷰로 보여준다 — 이
 모듈에서 상태값을 새로 늘리지 않는다.
 
+✅ **API·Admin 모듈은 이미 구현됨(7주차, 2026-07-22).** Care
+`/care/contracts*` 5종(목록 필터·생성·상세·수정·상태전이)이 `DESIGN.md`의
+5상태+items+history를 그대로 노출하고, 이 절이 정한 가드(상태값 비팽창,
+`contracts.status`에 계약금/중도금/잔금·작업 진행 흡수 금지)를 지켰다 —
+저장 status는 5값 그대로이며 05§17의 세분화 라벨은 Admin UI 표시 맵으로만
+존재한다. DELETE 엔드포인트는 없다(취소는 `CANCELLED` 상태전이). 결제·
+미수금·PG 연동은 여전히 9번 회계·수금 모듈(미구현) 몫이다. 상세는
+`docs/13-contract-management-report.md`, API는 `docs/04-washcare-api.md`
+참조.
+
 ## 7. 출장서비스
 
 ```text
